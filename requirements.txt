@@ -1,0 +1,5 @@
+streamlit
+zhipuai
+pandas
+openpyxl
+python-docx

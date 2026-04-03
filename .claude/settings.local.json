@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(课堂录音分析)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
