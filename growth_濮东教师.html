@@ -93,7 +93,7 @@
     <span class="meta-divider">|</span>
     <span>语文</span>
     <span class="meta-divider">|</span>
-    <span>共 9 节课</span>
+    <span>共 11 节课</span>
   </div>
 </div>
 
@@ -101,7 +101,7 @@
   <div class="section-icon">📊</div>
   <h2 class="section-title">五维能力成长曲线</h2>
   <div id="chart-radar-trend" style="width:100%;height:420px;"></div>
-  <div class="trend-summary"><p><span class='trend-up'>↑ 提升维度：<strong>教学逻辑</strong>（+13分）, <strong>互动技巧</strong>（+20分）, <strong>提问深度</strong>（+12分）, <strong>情感支持</strong>（+10分）, <strong>课堂管理</strong>（+7分）</span></p></div>
+  <div class="trend-summary"><p><span class='trend-up'>↑ 提升维度：<strong>教学逻辑</strong>（+13分）, <strong>互动技巧</strong>（+10分）</span></p></div>
 </div>
 
 <div class="section-card">
@@ -149,7 +149,15 @@
             <td>90.0</td>
             <td>0.79</td>
         </tr><tr>
-            <td>3</td><td>2026-01-08</td><td>语文</td>
+            <td>3</td><td>2026-01-07</td><td>语文</td>
+            <td>88.0</td>
+            <td>82.0</td>
+            <td>85.0</td>
+            <td>90.0</td>
+            <td>85.0</td>
+            <td>0.82</td>
+        </tr><tr>
+            <td>4</td><td>2026-01-08</td><td>语文</td>
             <td>88.0</td>
             <td>85.0</td>
             <td>82.0</td>
@@ -157,7 +165,7 @@
             <td>87.0</td>
             <td>0.8</td>
         </tr><tr>
-            <td>4</td><td>2026-03-17</td><td>语文</td>
+            <td>5</td><td>2026-03-17</td><td>语文</td>
             <td>88.0</td>
             <td>85.0</td>
             <td>82.0</td>
@@ -165,7 +173,7 @@
             <td>80.0</td>
             <td>0.73</td>
         </tr><tr>
-            <td>5</td><td>2026-03-18</td><td>语文</td>
+            <td>6</td><td>2026-03-18</td><td>语文</td>
             <td>88.0</td>
             <td>85.0</td>
             <td>82.0</td>
@@ -173,7 +181,7 @@
             <td>87.0</td>
             <td>0.82</td>
         </tr><tr>
-            <td>6</td><td>2026-03-18</td><td>语文</td>
+            <td>7</td><td>2026-03-18</td><td>语文</td>
             <td>88.0</td>
             <td>85.0</td>
             <td>82.0</td>
@@ -181,7 +189,7 @@
             <td>87.0</td>
             <td>0.79</td>
         </tr><tr>
-            <td>7</td><td>2026-03-19</td><td>语文</td>
+            <td>8</td><td>2026-03-19</td><td>语文</td>
             <td>88.0</td>
             <td>85.0</td>
             <td>75.0</td>
@@ -189,7 +197,7 @@
             <td>90.0</td>
             <td>0.72</td>
         </tr><tr>
-            <td>8</td><td>2026-03-19</td><td>语文</td>
+            <td>9</td><td>2026-03-19</td><td>语文</td>
             <td>85.0</td>
             <td>90.0</td>
             <td>75.0</td>
@@ -197,13 +205,21 @@
             <td>92.0</td>
             <td>0.82</td>
         </tr><tr>
-            <td>9</td><td>2026-03-23</td><td>语文</td>
+            <td>10</td><td>2026-03-23</td><td>语文</td>
             <td>88.0</td>
             <td>85.0</td>
             <td>82.0</td>
             <td>90.0</td>
             <td>92.0</td>
             <td>0.82</td>
+        </tr><tr>
+            <td>11</td><td>2026-03-23</td><td>语文</td>
+            <td>88.0</td>
+            <td>75.0</td>
+            <td>70.0</td>
+            <td>85.0</td>
+            <td>82.0</td>
+            <td>0.8</td>
         </tr></tbody></table></div>
 </div>
 
@@ -211,7 +227,7 @@
 
 <script>
 (function() {
-    var xData = ["2025-12-23", "2025-12-30", "2026-01-08", "2026-03-17", "2026-03-18", "2026-03-18", "2026-03-19", "2026-03-19", "2026-03-23"];
+    var xData = ["2025-12-23", "2025-12-30", "2026-01-07", "2026-01-08", "2026-03-17", "2026-03-18", "2026-03-18", "2026-03-19", "2026-03-19", "2026-03-23", "2026-03-23"];
 
     var chart1 = echarts.init(document.getElementById('chart-radar-trend'));
     chart1.setOption({
@@ -220,7 +236,7 @@
         grid: {left:50,right:30,top:40,bottom:30},
         xAxis: {type:'category',data:xData,axisLabel:{rotate:30}},
         yAxis: {type:'value',min:0,max:100,name:'分数'},
-        series:[{"name": "教学逻辑", "type": "line", "data": [75.0, 85.0, 88.0, 88.0, 88.0, 88.0, 88.0, 85.0, 88.0], "smooth": true},{"name": "互动技巧", "type": "line", "data": [65.0, 75.0, 85.0, 85.0, 85.0, 85.0, 85.0, 90.0, 85.0], "smooth": true},{"name": "提问深度", "type": "line", "data": [70.0, 80.0, 82.0, 82.0, 82.0, 82.0, 75.0, 75.0, 82.0], "smooth": true},{"name": "情感支持", "type": "line", "data": [80.0, 70.0, 90.0, 90.0, 90.0, 90.0, 92.0, 88.0, 90.0], "smooth": true},{"name": "课堂管理", "type": "line", "data": [85.0, 90.0, 87.0, 80.0, 87.0, 87.0, 90.0, 92.0, 92.0], "smooth": true}]
+        series:[{"name": "教学逻辑", "type": "line", "data": [75.0, 85.0, 88.0, 88.0, 88.0, 88.0, 88.0, 88.0, 85.0, 88.0, 88.0], "smooth": true},{"name": "互动技巧", "type": "line", "data": [65.0, 75.0, 82.0, 85.0, 85.0, 85.0, 85.0, 85.0, 90.0, 85.0, 75.0], "smooth": true},{"name": "提问深度", "type": "line", "data": [70.0, 80.0, 85.0, 82.0, 82.0, 82.0, 82.0, 75.0, 75.0, 82.0, 70.0], "smooth": true},{"name": "情感支持", "type": "line", "data": [80.0, 70.0, 90.0, 90.0, 90.0, 90.0, 90.0, 92.0, 88.0, 90.0, 85.0], "smooth": true},{"name": "课堂管理", "type": "line", "data": [85.0, 90.0, 85.0, 87.0, 80.0, 87.0, 87.0, 90.0, 92.0, 92.0, 82.0], "smooth": true}]
     });
 
     var chart2 = echarts.init(document.getElementById('chart-bloom-trend'));
@@ -230,12 +246,12 @@
         grid: {left:50,right:30,top:40,bottom:30},
         xAxis: {type:'category',data:xData,axisLabel:{rotate:30}},
         yAxis: {type:'value',name:'提问数量'},
-        series:[{"name": "记忆", "type": "bar", "stack": "bloom", "data": [3, 4, 3, 3, 8, 8, 12, 5, 8], "itemStyle": {"color": "#d4a574"}},{"name": "理解", "type": "bar", "stack": "bloom", "data": [6, 7, 8, 8, 10, 7, 8, 8, 12], "itemStyle": {"color": "#c4713b"}},{"name": "应用", "type": "bar", "stack": "bloom", "data": [2, 2, 6, 2, 2, 5, 5, 2, 6], "itemStyle": {"color": "#b8860b"}},{"name": "分析", "type": "bar", "stack": "bloom", "data": [4, 3, 4, 5, 6, 4, 2, 3, 4], "itemStyle": {"color": "#4a7c59"}},{"name": "评价", "type": "bar", "stack": "bloom", "data": [1, 1, 2, 4, 3, 2, 1, 1, 2], "itemStyle": {"color": "#2c3e50"}},{"name": "创造", "type": "bar", "stack": "bloom", "data": [1, 0, 1, 1, 1, 1, 3, 0, 1], "itemStyle": {"color": "#8b2252"}}]
+        series:[{"name": "记忆", "type": "bar", "stack": "bloom", "data": [3, 4, 3, 3, 3, 8, 8, 12, 5, 8, 8], "itemStyle": {"color": "#d4a574"}},{"name": "理解", "type": "bar", "stack": "bloom", "data": [6, 7, 4, 8, 8, 10, 7, 8, 8, 12, 6], "itemStyle": {"color": "#c4713b"}},{"name": "应用", "type": "bar", "stack": "bloom", "data": [2, 2, 2, 6, 2, 2, 5, 5, 2, 6, 2], "itemStyle": {"color": "#b8860b"}},{"name": "分析", "type": "bar", "stack": "bloom", "data": [4, 3, 3, 4, 5, 6, 4, 2, 3, 4, 1], "itemStyle": {"color": "#4a7c59"}},{"name": "评价", "type": "bar", "stack": "bloom", "data": [1, 1, 2, 2, 4, 3, 2, 1, 1, 2, 2], "itemStyle": {"color": "#2c3e50"}},{"name": "创造", "type": "bar", "stack": "bloom", "data": [1, 0, 0, 1, 1, 1, 1, 3, 0, 1, 0], "itemStyle": {"color": "#8b2252"}}]
     });
 
     var chart3 = echarts.init(document.getElementById('chart-st-trend'));
-    var rtData = [0.82, 0.79, 0.8, 0.73, 0.82, 0.79, 0.72, 0.82, 0.82].map(function(v){return v!==null?v:'-';});
-    var chData = [0.28, 0.28, 0.35, 0.32, 0.33, 0.28, 0.28, 0.35, 0.33].map(function(v){return v!==null?v:'-';});
+    var rtData = [0.82, 0.79, 0.82, 0.8, 0.73, 0.82, 0.79, 0.72, 0.82, 0.82, 0.8].map(function(v){return v!==null?v:'-';});
+    var chData = [0.28, 0.28, 0.33, 0.35, 0.32, 0.33, 0.28, 0.28, 0.35, 0.33, 0.32].map(function(v){return v!==null?v:'-';});
     chart3.setOption({
         tooltip: {trigger:'axis'},
         legend: {data:['Rt (教师行为率)','Ch (师生转换频率)'],top:0},
@@ -259,9 +275,9 @@
         xAxis: {type:'category',data:xData,axisLabel:{rotate:30}},
         yAxis: {type:'value',name:'反馈次数'},
         series: [
-            {name:'任务层级',type:'bar',stack:'hattie',data:[8, 8, 10, 7, 12, 6, 15, 12, 10],itemStyle:{color:'#d4a574'}},
-            {name:'过程层级',type:'bar',stack:'hattie',data:[5, 5, 7, 6, 8, 4, 8, 6, 8],itemStyle:{color:'#b8860b'}},
-            {name:'自我层级',type:'bar',stack:'hattie',data:[2, 1, 3, 2, 4, 1, 2, 2, 3],itemStyle:{color:'#8b2252'}}
+            {name:'任务层级',type:'bar',stack:'hattie',data:[8, 8, 8, 10, 7, 12, 6, 15, 12, 10, 7],itemStyle:{color:'#d4a574'}},
+            {name:'过程层级',type:'bar',stack:'hattie',data:[5, 5, 6, 7, 6, 8, 4, 8, 6, 8, 4],itemStyle:{color:'#b8860b'}},
+            {name:'自我层级',type:'bar',stack:'hattie',data:[2, 1, 4, 3, 2, 4, 1, 2, 2, 3, 1],itemStyle:{color:'#8b2252'}}
         ]
     });
 
