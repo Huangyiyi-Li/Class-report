@@ -131,7 +131,8 @@ async def convert_html_to_pdf(html_path, pdf_path):
         return False
 
 
-def analyze_folder(folder_path, auto_open=True, generate_pdf=True, force=False):
+def analyze_folder(folder_path, auto_open=True, generate_pdf=True, force=False,
+                   school=None, teacher=None, lesson_date=None, subject=None, grade=None):
     """分析指定文件夹"""
     folder = Path(folder_path)
 
@@ -263,7 +264,27 @@ def analyze_folder(folder_path, auto_open=True, generate_pdf=True, force=False):
         except Exception as e:
             print(f"   PDF生成跳过: {e}")
 
-    # 6. 自动打开浏览器
+    # 6. 写入数据仓库（如果提供了元数据）
+    if teacher:
+        try:
+            from icas_warehouse import save_lesson
+            save_lesson(
+                school_name=school or "默认学校",
+                teacher_name=teacher,
+                folder_name=folder_name,
+                lesson_date=lesson_date,
+                subject=subject,
+                grade=grade,
+                core_data=report_data,
+                ext_data=ext_data,
+                core_cache_key=core_key,
+                extended_cache_key=ext_key,
+            )
+            print(f"   [仓库] 已写入数据仓库 ({teacher}, {school or '默认学校'})")
+        except Exception as e:
+            print(f"   [仓库] 写入失败: {e}")
+
+    # 7. 自动打开浏览器
     if auto_open:
         print(f"\n[浏览器] 正在打开HTML...")
         webbrowser.open(f'file://{html_path.absolute()}')
@@ -286,10 +307,67 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='ICAS 课堂分析系统')
     parser.add_argument('folder', nargs='?', help='课堂文件夹路径')
     parser.add_argument('--force', action='store_true', help='强制重新分析，忽略缓存')
+
+    # 元数据参数
+    parser.add_argument('--school', help='学校名称 (写入数据仓库)')
+    parser.add_argument('--teacher', help='授课教师 (写入数据仓库)')
+    parser.add_argument('--date', dest='lesson_date', help='授课日期 YYYY-MM-DD')
+    parser.add_argument('--subject', help='学科')
+    parser.add_argument('--grade', help='年级')
+
+    # 纵向追踪命令
+    parser.add_argument('--growth', metavar='TEACHER_ID', help='生成教师成长追踪报告')
+    parser.add_argument('--overview', metavar='SCHOOL_ID', help='生成学校教学概览报告')
+    parser.add_argument('--warehouse', action='store_true', help='查看数据仓库状态')
+
+    # 缓存管理
     parser.add_argument('--cache-list', action='store_true', help='列出所有缓存条目')
     parser.add_argument('--cache-clear', nargs='?', const='__all__', metavar='FOLDER',
                         help='清除缓存 (可指定文件夹名，不指定则清除全部)')
     args = parser.parse_args()
+
+    # 数据仓库命令
+    if args.warehouse:
+        from icas_warehouse import print_warehouse_status
+        print_warehouse_status()
+        sys.exit(0)
+
+    if args.growth:
+        from icas_warehouse import get_growth_data
+        from icas_report_growth import generate_growth_html
+        import webbrowser
+
+        tid = int(args.growth)
+        lessons = get_growth_data(tid)
+        if not lessons:
+            print(f"\n[错误] 教师 ID={tid} 没有课次数据")
+            sys.exit(1)
+
+        teacher_name = lessons[0].get("teacher_name", f"教师{tid}")
+        output = Path(__file__).parent / f"成长追踪_{teacher_name}_{time.strftime('%Y%m%d_%H%M')}.html"
+        generate_growth_html(teacher_name, lessons, output_path=str(output))
+        print(f"\n[报告] {output.name}")
+        webbrowser.open(f'file://{output.absolute()}')
+        sys.exit(0)
+
+    if args.overview:
+        from icas_warehouse import get_school_overview, get_all_lessons_for_report
+        from icas_report_growth import generate_school_overview_html
+        import webbrowser
+
+        sid = int(args.overview)
+        overview = get_school_overview(sid)
+        if not overview:
+            print(f"\n[错误] 学校 ID={sid} 没有数据")
+            sys.exit(1)
+
+        school_name = overview["school"]["name"]
+        all_lessons = get_all_lessons_for_report(sid)
+        output = Path(__file__).parent / f"学校概览_{school_name}_{time.strftime('%Y%m%d_%H%M')}.html"
+        generate_school_overview_html(school_name, overview, all_lessons, output_path=str(output))
+        print(f"\n[报告] {output.name}")
+        webbrowser.open(f'file://{output.absolute()}')
+        sys.exit(0)
 
     # 缓存管理命令
     if args.cache_list:
@@ -311,4 +389,7 @@ if __name__ == '__main__':
         parser.print_help()
         sys.exit(1)
 
-    analyze_folder(args.folder, force=args.force)
+    analyze_folder(args.folder, force=args.force,
+                   school=args.school, teacher=args.teacher,
+                   lesson_date=args.lesson_date, subject=args.subject,
+                   grade=args.grade)
