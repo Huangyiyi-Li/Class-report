@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>学校教学概览 - 濮东小学</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&display=swap');
+    :root {
+        --parchment: #faf6f0; --parchment-deep: #f0ebe0;
+        --ink: #1c1917; --ink-soft: #3d3630; --ink-muted: #78716c;
+        --gold: #b8860b; --gold-bright: #daa520; --gold-pale: #f5e6c8;
+        --gold-wash: #faf3e0; --wine: #8b2252; --sage: #4a7c59;
+        --navy: #2c3e50; --terra: #c4713b;
+        --card-bg: #fffdf8; --border: #e7e0d4; --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+        margin: 0; padding: 0; background: var(--parchment);
+        font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: var(--ink); line-height: 1.75; font-size: 14px;
+    }
+    .main-content { min-height: 100vh; }
+    .report-content-wrap { max-width: 960px; margin: 0 auto; padding: 28px 40px 48px; }
+    .report-header {
+        background: linear-gradient(135deg, #1c1917 0%, #292524 30%, #3d3630 70%, #57534e 100%);
+        color: #faf6f0; padding: 36px 40px 28px;
+        border-bottom: 3px solid var(--gold); margin: -28px -40px 28px;
+    }
+    .header-badge {
+        display: inline-block; font-size: 11px; text-transform: uppercase;
+        letter-spacing: 3px; color: var(--gold-bright);
+        border: 1px solid rgba(218,165,32,0.4); padding: 3px 14px;
+        border-radius: 20px; margin-bottom: 12px;
+    }
+    .header-title {
+        font-family: "Noto Serif SC", serif; font-size: 28px; font-weight: 900;
+        margin: 0 0 8px; letter-spacing: 1px;
+    }
+    .header-meta { font-size: 13px; color: #a8a29e; }
+    .meta-divider { margin: 0 8px; color: #57534e; }
+    .kpi-row { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+    .kpi-card {
+        flex: 1; min-width: 120px; background: var(--card-bg);
+        border: 1px solid var(--border); border-radius: var(--radius);
+        padding: 20px 16px; text-align: center;
+    }
+    .kpi-value { font-family: "Noto Serif SC", serif; font-size: 28px; font-weight: 900; color: var(--gold); }
+    .kpi-label { font-size: 12px; color: var(--ink-muted); margin-top: 4px; }
+    .section-card {
+        background: var(--card-bg); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 24px 28px; margin-bottom: 24px;
+    }
+    .section-icon { font-size: 20px; margin-bottom: 4px; }
+    .section-title {
+        font-family: "Noto Serif SC", serif; font-size: 18px; font-weight: 700;
+        margin: 0 0 16px; color: var(--ink);
+        border-bottom: 2px solid var(--gold-pale); padding-bottom: 8px;
+    }
+    .chart-note { font-size: 12px; color: var(--ink-muted); text-align: center; margin-top: 8px; }
+    .trend-summary { margin-top: 12px; padding: 12px 16px; background: var(--gold-wash); border-radius: 6px; }
+    .trend-up { color: var(--sage); font-weight: 600; }
+    .trend-down { color: var(--wine); font-weight: 600; }
+    .trend-flat { color: var(--ink-muted); }
+    .detail-table-wrap { overflow-x: auto; }
+    .detail-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .detail-table th {
+        background: var(--parchment-deep); padding: 8px 10px; text-align: center;
+        font-weight: 600; border-bottom: 2px solid var(--gold-pale); white-space: nowrap;
+    }
+    .detail-table td { padding: 7px 10px; text-align: center; border-bottom: 1px solid var(--border); }
+    .detail-table tr:hover td { background: var(--gold-wash); }
+    @media print {
+        .report-content-wrap { padding: 0; }
+        .report-header { margin: 0 0 20px; }
+        .section-card { break-inside: avoid; }
+    }
+    </style>
+    
+</head>
+<body>
+<div class="main-content">
+<div class="report-content-wrap">
+
+<div class="report-header">
+  <div class="header-badge">学校教学概览</div>
+  <h1 class="header-title">濮东小学 · 教学全景</h1>
+  <div class="header-meta">
+    <span>教师 1 人</span>
+    <span class="meta-divider">|</span>
+    <span>课次 7 节</span>
+    <span class="meta-divider">|</span>
+    <span>学科 1 个</span>
+  </div>
+</div>
+
+<div class="kpi-row">
+  <div class="kpi-card"><div class="kpi-value">87.6</div><div class="kpi-label">教学逻辑</div></div>
+  <div class="kpi-card"><div class="kpi-value">83.6</div><div class="kpi-label">互动技巧</div></div>
+  <div class="kpi-card"><div class="kpi-value">80.7</div><div class="kpi-label">提问深度</div></div>
+  <div class="kpi-card"><div class="kpi-value">87.4</div><div class="kpi-label">情感支持</div></div>
+  <div class="kpi-card"><div class="kpi-value">87.6</div><div class="kpi-label">课堂管理</div></div>
+</div>
+
+<div class="section-card">
+  <div class="section-icon">👥</div>
+  <h2 class="section-title">教师能力横向对比</h2>
+  <div id="chart-teacher-compare" style="width:100%;height:450px;"></div>
+</div>
+
+<div class="section-card">
+  <div class="section-icon">📋</div>
+  <h2 class="section-title">教师明细</h2>
+  <div class="detail-table-wrap"><table class="detail-table">
+        <thead><tr><th>教师</th><th>学科</th><th>课次</th>
+        <th>教学逻辑</th><th>互动技巧</th><th>提问深度</th>
+        <th>情感支持</th><th>课堂管理</th></tr></thead>
+        <tbody><tr>
+            <td>濮东教师</td>
+            <td>语文</td>
+            <td>7</td>
+            <td>87.6</td>
+            <td>83.6</td>
+            <td>80.7</td>
+            <td>87.4</td>
+            <td>87.6</td>
+        </tr></tbody></table></div>
+</div>
+
+<div class="section-card"><div class="section-icon">📚</div><h2 class="section-title">学科维度对比</h2><div id="chart-subject-compare" style="width:100%;height:380px;"></div></div>
+
+</div></div>
+
+<script>
+(function() {
+    var chart = echarts.init(document.getElementById('chart-teacher-compare'));
+    chart.setOption({
+        tooltip: {},
+        legend: {data:["濮东教师"],top:0},
+        radar: {
+            indicator: [
+                {name:'教学逻辑',max:100},{name:'互动技巧',max:100},
+                {name:'提问深度',max:100},{name:'情感支持',max:100},
+                {name:'课堂管理',max:100}
+            ],
+            radius:'65%'
+        },
+        series:[{type:'radar',data:[{"name": "濮东教师", "value": [87.6, 83.6, 80.7, 87.4, 87.6]}]}]
+    });
+    window.addEventListener('resize',function(){chart.resize();});
+    
+        var chartSub = echarts.init(document.getElementById('chart-subject-compare'));
+        chartSub.setOption({
+            tooltip: {trigger:'axis',axisPointer:{type:'shadow'}},
+            legend: {data:['教学逻辑','互动技巧','提问深度','情感支持','课堂管理'],top:0},
+            grid: {left:80,right:30,top:40,bottom:30},
+            xAxis: {type:'category',data:["语文"]},
+            yAxis: {type:'value',min:0,max:100},
+            series:[{"name": "教学逻辑", "type": "bar", "data": [87.6], "itemStyle": {"color": "#b8860b"}},{"name": "互动技巧", "type": "bar", "data": [83.6], "itemStyle": {"color": "#4a7c59"}},{"name": "提问深度", "type": "bar", "data": [80.7], "itemStyle": {"color": "#c4713b"}},{"name": "情感支持", "type": "bar", "data": [87.4], "itemStyle": {"color": "#2c3e50"}},{"name": "课堂管理", "type": "bar", "data": [87.6], "itemStyle": {"color": "#8b2252"}}]
+        });
+        window.addEventListener('resize',function(){chartSub.resize();});
+        
+})();
+</script>
+</body></html>

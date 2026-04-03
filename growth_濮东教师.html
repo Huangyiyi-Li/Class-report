@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>教师成长追踪 - 濮东教师</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&display=swap');
+    :root {
+        --parchment: #faf6f0; --parchment-deep: #f0ebe0;
+        --ink: #1c1917; --ink-soft: #3d3630; --ink-muted: #78716c;
+        --gold: #b8860b; --gold-bright: #daa520; --gold-pale: #f5e6c8;
+        --gold-wash: #faf3e0; --wine: #8b2252; --sage: #4a7c59;
+        --navy: #2c3e50; --terra: #c4713b;
+        --card-bg: #fffdf8; --border: #e7e0d4; --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+        margin: 0; padding: 0; background: var(--parchment);
+        font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: var(--ink); line-height: 1.75; font-size: 14px;
+    }
+    .main-content { min-height: 100vh; }
+    .report-content-wrap { max-width: 960px; margin: 0 auto; padding: 28px 40px 48px; }
+    .report-header {
+        background: linear-gradient(135deg, #1c1917 0%, #292524 30%, #3d3630 70%, #57534e 100%);
+        color: #faf6f0; padding: 36px 40px 28px;
+        border-bottom: 3px solid var(--gold); margin: -28px -40px 28px;
+    }
+    .header-badge {
+        display: inline-block; font-size: 11px; text-transform: uppercase;
+        letter-spacing: 3px; color: var(--gold-bright);
+        border: 1px solid rgba(218,165,32,0.4); padding: 3px 14px;
+        border-radius: 20px; margin-bottom: 12px;
+    }
+    .header-title {
+        font-family: "Noto Serif SC", serif; font-size: 28px; font-weight: 900;
+        margin: 0 0 8px; letter-spacing: 1px;
+    }
+    .header-meta { font-size: 13px; color: #a8a29e; }
+    .meta-divider { margin: 0 8px; color: #57534e; }
+    .kpi-row { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+    .kpi-card {
+        flex: 1; min-width: 120px; background: var(--card-bg);
+        border: 1px solid var(--border); border-radius: var(--radius);
+        padding: 20px 16px; text-align: center;
+    }
+    .kpi-value { font-family: "Noto Serif SC", serif; font-size: 28px; font-weight: 900; color: var(--gold); }
+    .kpi-label { font-size: 12px; color: var(--ink-muted); margin-top: 4px; }
+    .section-card {
+        background: var(--card-bg); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 24px 28px; margin-bottom: 24px;
+    }
+    .section-icon { font-size: 20px; margin-bottom: 4px; }
+    .section-title {
+        font-family: "Noto Serif SC", serif; font-size: 18px; font-weight: 700;
+        margin: 0 0 16px; color: var(--ink);
+        border-bottom: 2px solid var(--gold-pale); padding-bottom: 8px;
+    }
+    .chart-note { font-size: 12px; color: var(--ink-muted); text-align: center; margin-top: 8px; }
+    .trend-summary { margin-top: 12px; padding: 12px 16px; background: var(--gold-wash); border-radius: 6px; }
+    .trend-up { color: var(--sage); font-weight: 600; }
+    .trend-down { color: var(--wine); font-weight: 600; }
+    .trend-flat { color: var(--ink-muted); }
+    .detail-table-wrap { overflow-x: auto; }
+    .detail-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .detail-table th {
+        background: var(--parchment-deep); padding: 8px 10px; text-align: center;
+        font-weight: 600; border-bottom: 2px solid var(--gold-pale); white-space: nowrap;
+    }
+    .detail-table td { padding: 7px 10px; text-align: center; border-bottom: 1px solid var(--border); }
+    .detail-table tr:hover td { background: var(--gold-wash); }
+    @media print {
+        .report-content-wrap { padding: 0; }
+        .report-header { margin: 0 0 20px; }
+        .section-card { break-inside: avoid; }
+    }
+    </style>
+    
+</head>
+<body>
+<div class="main-content">
+<div class="report-content-wrap">
+
+<div class="report-header">
+  <div class="header-badge">纵向追踪报告</div>
+  <h1 class="header-title">濮东教师 · 教学成长档案</h1>
+  <div class="header-meta">
+    <span>濮东小学</span>
+    <span class="meta-divider">|</span>
+    <span>语文</span>
+    <span class="meta-divider">|</span>
+    <span>共 7 节课</span>
+  </div>
+</div>
+
+<div class="section-card">
+  <div class="section-icon">📊</div>
+  <h2 class="section-title">五维能力成长曲线</h2>
+  <div id="chart-radar-trend" style="width:100%;height:420px;"></div>
+  <div class="trend-summary"><p><span class='trend-up'>↑ 提升维度：<strong>互动技巧</strong>（+10分）, <strong>情感支持</strong>（+20分）</span></p></div>
+</div>
+
+<div class="section-card">
+  <div class="section-icon">🧠</div>
+  <h2 class="section-title">提问认知层次演进</h2>
+  <div id="chart-bloom-trend" style="width:100%;height:380px;"></div>
+  <div class="chart-note">高阶思维（分析/评价/创造）占比提升表明提问质量改善</div>
+</div>
+
+<div class="section-card">
+  <div class="section-icon">🔄</div>
+  <h2 class="section-title">教学行为变化趋势</h2>
+  <div id="chart-st-trend" style="width:100%;height:350px;"></div>
+  <div class="chart-note">Rt(教师行为率)下降 + Ch(师生转换频率)上升 = 走向以学生为中心</div>
+</div>
+
+<div class="section-card">
+  <div class="section-icon">💬</div>
+  <h2 class="section-title">反馈质量演进</h2>
+  <div id="chart-hattie-trend" style="width:100%;height:320px;"></div>
+  <div class="chart-note">从任务层级反馈向过程/自我层级反馈演进，反映反馈质量提升</div>
+</div>
+
+<div class="section-card">
+  <div class="section-icon">📋</div>
+  <h2 class="section-title">课次明细</h2>
+  <div class="detail-table-wrap"><table class="detail-table">
+        <thead><tr><th>#</th><th>日期</th><th>学科</th>
+        <th>教学逻辑</th><th>互动技巧</th><th>提问深度</th>
+        <th>情感支持</th><th>课堂管理</th><th>Rt</th></tr></thead>
+        <tbody><tr>
+            <td>1</td><td>2025-12-30</td><td>语文</td>
+            <td>85.0</td>
+            <td>75.0</td>
+            <td>80.0</td>
+            <td>70.0</td>
+            <td>90.0</td>
+            <td>0.79</td>
+        </tr><tr>
+            <td>2</td><td>2026-01-08</td><td>语文</td>
+            <td>88.0</td>
+            <td>85.0</td>
+            <td>82.0</td>
+            <td>90.0</td>
+            <td>87.0</td>
+            <td>0.8</td>
+        </tr><tr>
+            <td>3</td><td>2026-03-17</td><td>语文</td>
+            <td>88.0</td>
+            <td>85.0</td>
+            <td>82.0</td>
+            <td>90.0</td>
+            <td>80.0</td>
+            <td>0.73</td>
+        </tr><tr>
+            <td>4</td><td>2026-03-18</td><td>语文</td>
+            <td>88.0</td>
+            <td>85.0</td>
+            <td>82.0</td>
+            <td>90.0</td>
+            <td>87.0</td>
+            <td>0.82</td>
+        </tr><tr>
+            <td>5</td><td>2026-03-18</td><td>语文</td>
+            <td>88.0</td>
+            <td>85.0</td>
+            <td>82.0</td>
+            <td>90.0</td>
+            <td>87.0</td>
+            <td>0.79</td>
+        </tr><tr>
+            <td>6</td><td>2026-03-19</td><td>语文</td>
+            <td>88.0</td>
+            <td>85.0</td>
+            <td>75.0</td>
+            <td>92.0</td>
+            <td>90.0</td>
+            <td>0.72</td>
+        </tr><tr>
+            <td>7</td><td>2026-03-23</td><td>语文</td>
+            <td>88.0</td>
+            <td>85.0</td>
+            <td>82.0</td>
+            <td>90.0</td>
+            <td>92.0</td>
+            <td>0.82</td>
+        </tr></tbody></table></div>
+</div>
+
+</div></div>
+
+<script>
+(function() {
+    var xData = ["2025-12-30", "2026-01-08", "2026-03-17", "2026-03-18", "2026-03-18", "2026-03-19", "2026-03-23"];
+
+    var chart1 = echarts.init(document.getElementById('chart-radar-trend'));
+    chart1.setOption({
+        tooltip: {trigger:'axis'},
+        legend: {data:["教学逻辑", "互动技巧", "提问深度", "情感支持", "课堂管理"],top:0},
+        grid: {left:50,right:30,top:40,bottom:30},
+        xAxis: {type:'category',data:xData,axisLabel:{rotate:30}},
+        yAxis: {type:'value',min:0,max:100,name:'分数'},
+        series:[{"name": "教学逻辑", "type": "line", "data": [85.0, 88.0, 88.0, 88.0, 88.0, 88.0, 88.0], "smooth": true},{"name": "互动技巧", "type": "line", "data": [75.0, 85.0, 85.0, 85.0, 85.0, 85.0, 85.0], "smooth": true},{"name": "提问深度", "type": "line", "data": [80.0, 82.0, 82.0, 82.0, 82.0, 75.0, 82.0], "smooth": true},{"name": "情感支持", "type": "line", "data": [70.0, 90.0, 90.0, 90.0, 90.0, 92.0, 90.0], "smooth": true},{"name": "课堂管理", "type": "line", "data": [90.0, 87.0, 80.0, 87.0, 87.0, 90.0, 92.0], "smooth": true}]
+    });
+
+    var chart2 = echarts.init(document.getElementById('chart-bloom-trend'));
+    chart2.setOption({
+        tooltip: {trigger:'axis',axisPointer:{type:'shadow'}},
+        legend: {data:["记忆", "理解", "应用", "分析", "评价", "创造"],top:0},
+        grid: {left:50,right:30,top:40,bottom:30},
+        xAxis: {type:'category',data:xData,axisLabel:{rotate:30}},
+        yAxis: {type:'value',name:'提问数量'},
+        series:[{"name": "记忆", "type": "bar", "stack": "bloom", "data": [4, 3, 3, 8, 8, 12, 8], "itemStyle": {"color": "#d4a574"}},{"name": "理解", "type": "bar", "stack": "bloom", "data": [7, 8, 8, 10, 7, 8, 12], "itemStyle": {"color": "#c4713b"}},{"name": "应用", "type": "bar", "stack": "bloom", "data": [2, 6, 2, 2, 5, 5, 6], "itemStyle": {"color": "#b8860b"}},{"name": "分析", "type": "bar", "stack": "bloom", "data": [3, 4, 5, 6, 4, 2, 4], "itemStyle": {"color": "#4a7c59"}},{"name": "评价", "type": "bar", "stack": "bloom", "data": [1, 2, 4, 3, 2, 1, 2], "itemStyle": {"color": "#2c3e50"}},{"name": "创造", "type": "bar", "stack": "bloom", "data": [0, 1, 1, 1, 1, 3, 1], "itemStyle": {"color": "#8b2252"}}]
+    });
+
+    var chart3 = echarts.init(document.getElementById('chart-st-trend'));
+    var rtData = [0.79, 0.8, 0.73, 0.82, 0.79, 0.72, 0.82].map(function(v){return v!==null?v:'-';});
+    var chData = [0.28, 0.35, 0.32, 0.33, 0.28, 0.28, 0.33].map(function(v){return v!==null?v:'-';});
+    chart3.setOption({
+        tooltip: {trigger:'axis'},
+        legend: {data:['Rt (教师行为率)','Ch (师生转换频率)'],top:0},
+        grid: {left:60,right:60,top:40,bottom:30},
+        xAxis: {type:'category',data:xData,axisLabel:{rotate:30}},
+        yAxis: [
+            {type:'value',name:'Rt',min:0,max:1,position:'left'},
+            {type:'value',name:'Ch',min:0,max:1,position:'right'}
+        ],
+        series: [
+            {name:'Rt (教师行为率)',type:'line',data:rtData,smooth:true,yAxisIndex:0,itemStyle:{color:'#c4713b'}},
+            {name:'Ch (师生转换频率)',type:'line',data:chData,smooth:true,yAxisIndex:1,itemStyle:{color:'#4a7c59'}}
+        ]
+    });
+
+    var chart4 = echarts.init(document.getElementById('chart-hattie-trend'));
+    chart4.setOption({
+        tooltip: {trigger:'axis'},
+        legend: {data:['任务层级','过程层级','自我层级'],top:0},
+        grid: {left:50,right:30,top:40,bottom:30},
+        xAxis: {type:'category',data:xData,axisLabel:{rotate:30}},
+        yAxis: {type:'value',name:'反馈次数'},
+        series: [
+            {name:'任务层级',type:'bar',stack:'hattie',data:[8, 10, 7, 12, 6, 15, 10],itemStyle:{color:'#d4a574'}},
+            {name:'过程层级',type:'bar',stack:'hattie',data:[5, 7, 6, 8, 4, 8, 8],itemStyle:{color:'#b8860b'}},
+            {name:'自我层级',type:'bar',stack:'hattie',data:[1, 3, 2, 4, 1, 2, 3],itemStyle:{color:'#8b2252'}}
+        ]
+    });
+
+    window.addEventListener('resize',function(){chart1.resize();chart2.resize();chart3.resize();chart4.resize();});
+})();
+</script>
+</body></html>
