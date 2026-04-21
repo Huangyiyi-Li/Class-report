@@ -1,5 +1,10 @@
 streamlit
-zhipuai
+openai
+markdown
 pandas
 openpyxl
 python-docx
+jieba
+# Optional PDF engines:
+# playwright
+# weasyprint

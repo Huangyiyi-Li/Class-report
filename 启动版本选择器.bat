@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-streamlit run src/app.py
+python run_version.py
 pause

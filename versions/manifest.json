@@ -1,0 +1,30 @@
+[
+  {
+    "id": "v1.0",
+    "title": "v1.0",
+    "runner": "python",
+    "script": "versions/v1_0/auto_analyze_simple.py",
+    "description": "单次报告，当前实际运行版本。历史同名入口为 auto_analyze_simple.py，核心模块为 icas_core.py。"
+  },
+  {
+    "id": "v1.1.a",
+    "title": "v1.1.a",
+    "runner": "python",
+    "script": "src/auto_analyze_simple.py",
+    "description": "单次报告，尝试扩充内容的版本。输出更长、更全面，但尚未给学校验证。"
+  },
+  {
+    "id": "v1.1.b",
+    "title": "v1.1.b",
+    "runner": "python",
+    "script": "v3.0/auto_analyze_v3.py",
+    "description": "单次报告，强化学科区分的版本。已具备学科/课型/教师分层能力，但尚未验证。"
+  },
+  {
+    "id": "v1.2.0",
+    "title": "v1.2.0",
+    "runner": "python",
+    "script": "versions/v1_2_0/run.py",
+    "description": "总览版本 demo。基于多节课 JSON 汇总生成整册报告。"
+  }
+]
