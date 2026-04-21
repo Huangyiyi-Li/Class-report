@@ -24,6 +24,15 @@ if PARENT_DIR not in sys.path:
 
 from icas_core import call_volc_agent, clean_json_string
 
+
+def console_print(message=""):
+    text = str(message)
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        sys.stdout.buffer.write(text.encode(encoding, errors="replace") + b"\n")
+
 # 配置文件目录
 PROFILES_DIR = Path(__file__).resolve().parent / "icas_subject_profiles"
 
@@ -310,7 +319,7 @@ def analyze_with_subject(transcription_text, subject, lesson_type=None,
         v3_data["subject_dimensions"] = json.loads(clean_json_string(result_dim))
     else:
         v3_data["subject_dimensions"] = None
-        print("[v3.0] ⚠ 学科维度分析失败")
+        console_print("[v3.0] ⚠ 学科维度分析失败")
 
     # Step 2: 学科感知的教学环节切分（可选增强）
     if not base_data or "structure" not in base_data:
@@ -351,7 +360,7 @@ def analyze_with_subject(transcription_text, subject, lesson_type=None,
         v3_data["subject_report"] = json.loads(clean_json_string(result_f))
     else:
         v3_data["subject_report"] = None
-        print("[v3.0] ⚠ 学科诊断失败")
+        console_print("[v3.0] ⚠ 学科诊断失败")
 
     print("[v3.0] 学科增强分析完成!")
     return v3_data

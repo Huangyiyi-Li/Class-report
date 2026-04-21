@@ -57,6 +57,16 @@ from icas_teacher_tier import (
 from icas_report_v3 import generate_v3_report
 
 
+def console_print(message=""):
+    """Print safely on Windows consoles that may not support emoji."""
+    text = str(message)
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        sys.stdout.buffer.write(text.encode(encoding, errors="replace") + b"\n")
+
+
 def find_transcription(folder_path):
     """在文件夹中查找转录文件"""
     folder = Path(folder_path)
@@ -113,20 +123,20 @@ def run_analysis(folder_path, subject=None, lesson_type=None,
     folder = Path(folder_path)
     folder_name = folder.name
 
-    print(f"\n{'='*60}")
-    print(f"ICAS v3.0 课堂分析")
-    print(f"{'='*60}")
-    print(f"目录: {folder}")
+    console_print(f"\n{'='*60}")
+    console_print("ICAS v3.0 课堂分析")
+    console_print(f"{'='*60}")
+    console_print(f"目录: {folder}")
     if subject:
-        print(f"学科: {subject}")
+        console_print(f"学科: {subject}")
     if lesson_type:
-        print(f"课型: {lesson_type}")
+        console_print(f"课型: {lesson_type}")
     if teacher:
-        print(f"教师: {teacher}")
-    print(f"{'='*60}\n")
+        console_print(f"教师: {teacher}")
+    console_print(f"{'='*60}\n")
 
     # ---- Step 1: 读取转录文本 ----
-    print("[Step 1/5] 读取转录文本...")
+    console_print("[Step 1/5] 读取转录文本...")
     trans_file, file_type = find_transcription(folder_path)
 
     if file_type == "excel":
@@ -137,53 +147,53 @@ def run_analysis(folder_path, subject=None, lesson_type=None,
         with open(trans_file, "r", encoding="utf-8") as f:
             transcription = f.read()
 
-    print(f"  转录文本长度: {len(transcription)} 字")
+    console_print(f"  转录文本长度: {len(transcription)} 字")
 
     # ---- Step 2: 读取教学设计（可选） ----
     teaching_design = None
     design_file = find_teaching_design(folder_path)
     if design_file:
-        print(f"[Step 2/5] 读取教学设计: {Path(design_file).name}")
+        console_print(f"[Step 2/5] 读取教学设计: {Path(design_file).name}")
         if design_file.endswith(".docx"):
             teaching_design = read_word_document(design_file)
         else:
             with open(design_file, "r", encoding="utf-8") as f:
                 teaching_design = f.read()
     else:
-        print("[Step 2/5] 未找到教学设计文件（可选）")
+        console_print("[Step 2/5] 未找到教学设计文件（可选）")
 
     # ---- Step 3: v2 基础分析 ----
-    print("[Step 3/5] 执行 v2 基础分析...")
+    console_print("[Step 3/5] 执行 v2 基础分析...")
     cached_core = get_cached_core(transcription, teaching_design or "")
     if cached_core is None:
-        print("  缓存未命中，调用 AI 分析...")
+        console_print("  缓存未命中，调用 AI 分析...")
         core_data = analyze_classroom(transcription, teaching_design)
         cache_key = make_cache_key(transcription, teaching_design or "")
         save_cached_core(cache_key, folder_name, transcription, teaching_design or "",
                          core_data, 0)
     else:
         core_data = cached_core[0]  # (data_dict, meta_dict)
-        print("  命中缓存，复用已有分析")
+        console_print("  命中缓存，复用已有分析")
 
     # v2 扩展分析
     ext_data = None
     try:
         cached_ext = get_cached_extended(transcription)
         if cached_ext is None:
-            print("  执行扩展分析...")
+            console_print("  执行扩展分析...")
             ext_data = analyze_extended(transcription)
             cache_key = make_cache_key(transcription, "")
             save_cached_extended(cache_key, folder_name, transcription, ext_data, 0)
         else:
             ext_data = cached_ext[0]  # (data_dict, meta_dict)
-            print("  扩展分析命中缓存")
+            console_print("  扩展分析命中缓存")
     except Exception as e:
-        print(f"  扩展分析跳过: {e}")
+        console_print(f"  扩展分析跳过: {e}")
 
     # ---- Step 4: v3 学科增强（如果指定了学科） ----
     v3_data = None
     if subject:
-        print(f"[Step 4/5] 执行 v3 学科增强分析 ({subject})...")
+        console_print(f"[Step 4/5] 执行 v3 学科增强分析 ({subject})...")
         v3_data = analyze_with_subject(
             transcription_text=transcription,
             subject=subject,
@@ -192,12 +202,12 @@ def run_analysis(folder_path, subject=None, lesson_type=None,
             teaching_design_text=teaching_design,
         )
     else:
-        print("[Step 4/5] 未指定学科，跳过 v3 增强")
+        console_print("[Step 4/5] 未指定学科，跳过 v3 增强")
 
     # ---- Step 4.5: 教师分层 ----
     tier_result = None
     if core_data and core_data.get("deep", {}).get("radar_scores"):
-        print("[Step 4.5/5] 教师分层...")
+        console_print("[Step 4.5/5] 教师分层...")
         radar_scores = core_data["deep"]["radar_scores"]
 
         # 学科维度分数（如果有）
@@ -212,12 +222,12 @@ def run_analysis(folder_path, subject=None, lesson_type=None,
         static_info = classify_static(subject=subject, grade=grade, experience=experience)
         tier_result["static_info"] = static_info
 
-        print(f"  分层结果: {tier_result['tier_icon']} {tier_result['tier_label']} ({tier_result['composite_score']}分)")
+        console_print(f"  分层结果: {tier_result['tier_icon']} {tier_result['tier_label']} ({tier_result['composite_score']}分)")
     else:
-        print("[Step 4.5/5] 数据不足，跳过教师分层")
+        console_print("[Step 4.5/5] 数据不足，跳过教师分层")
 
     # ---- Step 5: 生成报告 ----
-    print("[Step 5/5] 生成报告...")
+    console_print("[Step 5/5] 生成报告...")
 
     # 确定输出目录
     if output_dir:
@@ -247,9 +257,9 @@ def run_analysis(folder_path, subject=None, lesson_type=None,
         report_file = out_dir / f"ICAS_v3_{subject}_{timestamp}.html"
         with open(report_file, "w", encoding="utf-8") as f:
             f.write(html)
-        print(f"\n{'='*60}")
-        print(f"✅ v3 报告已生成: {report_file}")
-        print(f"{'='*60}")
+        console_print(f"\n{'='*60}")
+        console_print(f"✅ v3 报告已生成: {report_file}")
+        console_print(f"{'='*60}")
     else:
         # v2 兼容模式：生成原始报告
         from icas_report_extended import generate_extended_html
@@ -258,9 +268,9 @@ def run_analysis(folder_path, subject=None, lesson_type=None,
         report_file = out_dir / f"ICAS_Report_{timestamp}.html"
         with open(report_file, "w", encoding="utf-8") as f:
             f.write(html)
-        print(f"\n{'='*60}")
-        print(f"✅ v2 报告已生成: {report_file}")
-        print(f"{'='*60}")
+        console_print(f"\n{'='*60}")
+        console_print(f"✅ v2 报告已生成: {report_file}")
+        console_print(f"{'='*60}")
 
     # 保存 JSON 数据（供纵向追踪使用）
     json_data = {
@@ -284,7 +294,7 @@ def run_analysis(folder_path, subject=None, lesson_type=None,
     json_file = out_dir / f"ICAS_v3_data_{time.strftime('%Y%m%d_%H%M')}.json"
     with open(json_file, "w", encoding="utf-8") as f:
         json.dump(json_data, f, ensure_ascii=False, indent=2)
-    print(f"📊 分析数据已保存: {json_file}")
+    console_print(f"📊 分析数据已保存: {json_file}")
 
     return json_data
 
@@ -312,9 +322,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.list_subjects:
-        print("可用学科:", ", ".join(list_available_subjects()))
+        console_print("可用学科: " + ", ".join(list_available_subjects()))
     elif args.list_lesson_types:
-        print("可用课型:", ", ".join(list_available_lesson_types()))
+        console_print("可用课型: " + ", ".join(list_available_lesson_types()))
     else:
         if not args.folder:
             parser.error("未提供课程文件夹路径")
