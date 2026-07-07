@@ -370,12 +370,15 @@ git commit -m "feat(recorder): add supervised worker protocol"
 
 **Files:**
 - Create: `electron-recorder/worker/audio_journal.py`
+- Create: `electron-recorder/worker/segment_encoder.py`
 - Create: `electron-recorder/worker/test_audio_journal.py`
+- Create: `electron-recorder/worker/test_segment_encoder.py`
 - Modify: `electron-recorder/worker/recorder_worker.py`
 
 **Interfaces:**
 - Produces: `AudioJournal.append(pcm: bytes)`, `.checkpoint()`, `.finalize(end_time) -> Path`.
 - Produces: `recover_journals(recordings_dir: Path) -> list[Path]`.
+- Produces: `encode_ogg_opus(wav_path: Path, ffmpeg_path: Path) -> Path`; returns WAV unchanged when encoding fails.
 - Consumes later: queue storage enqueues each finalized WAV or Ogg path.
 
 - [ ] **Step 1: Write failing recovery tests**
@@ -490,14 +493,64 @@ def writer_loop():
             last_checkpoint = time.monotonic()
 ```
 
-- [ ] **Step 5: Run recovery tests and commit**
+- [ ] **Step 5: Write the failing Opus preference test**
 
-Run: `cd electron-recorder && python3 -m pytest worker/test_audio_journal.py -q`
+```python
+from pathlib import Path
+
+from worker.segment_encoder import encode_ogg_opus
+
+
+def test_returns_ogg_when_ffmpeg_succeeds(tmp_path: Path, monkeypatch):
+    wav = tmp_path / "segment.wav"
+    wav.write_bytes(b"wav")
+    monkeypatch.setattr("worker.segment_encoder.subprocess.run", fake_successful_ffmpeg)
+    result = encode_ogg_opus(wav, Path("ffmpeg.exe"))
+    assert result.suffix == ".ogg"
+
+
+def test_falls_back_to_wav_when_ffmpeg_fails(tmp_path: Path, monkeypatch):
+    wav = tmp_path / "segment.wav"
+    wav.write_bytes(b"wav")
+    monkeypatch.setattr("worker.segment_encoder.subprocess.run", fake_failed_ffmpeg)
+    assert encode_ogg_opus(wav, Path("ffmpeg.exe")) == wav
+```
+
+- [ ] **Step 6: Implement Opus encoding with WAV fallback**
+
+```python
+# electron-recorder/worker/segment_encoder.py
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+
+def encode_ogg_opus(wav_path: Path, ffmpeg_path: Path) -> Path:
+    target = wav_path.with_suffix(".ogg")
+    try:
+        subprocess.run([
+            str(ffmpeg_path), "-y", "-i", str(wav_path), "-ac", "1", "-ar", "16000",
+            "-c:a", "libopus", "-b:a", "32k", str(target),
+        ], check=True, capture_output=True, timeout=120)
+        if target.exists() and target.stat().st_size > 0:
+            wav_path.unlink(missing_ok=True)
+            return target
+    except (OSError, subprocess.SubprocessError):
+        target.unlink(missing_ok=True)
+    return wav_path
+```
+
+After each 5-minute WAV is finalized, call `encode_ogg_opus`. Enqueue the returned path, so Ogg is preferred and WAV is the automatic failure fallback.
+
+- [ ] **Step 7: Run recovery and encoding tests and commit**
+
+Run: `cd electron-recorder && python3 -m pytest worker/test_audio_journal.py worker/test_segment_encoder.py -q`
 
 Expected: PASS.
 
 ```bash
-git add electron-recorder/worker/audio_journal.py electron-recorder/worker/test_audio_journal.py electron-recorder/worker/recorder_worker.py
+git add electron-recorder/worker/audio_journal.py electron-recorder/worker/segment_encoder.py electron-recorder/worker/test_audio_journal.py electron-recorder/worker/test_segment_encoder.py electron-recorder/worker/recorder_worker.py
 git commit -m "feat(recorder): persist crash-safe audio journals"
 ```
 
@@ -762,6 +815,7 @@ git commit -m "feat(recorder): render worker-backed runtime state"
 **Interfaces:**
 - Produces: `electron-recorder/build/worker/ClassroomRecorderWorker.exe`.
 - Electron builder copies the worker to `resources/worker/ClassroomRecorderWorker.exe`.
+- Electron builder copies the Windows `ffmpeg.exe` from `ffmpeg-static` to `resources/ffmpeg/ffmpeg.exe`.
 
 - [ ] **Step 1: Add the PyInstaller build script**
 
@@ -795,11 +849,14 @@ Add to `package.json`:
   "build": {
     "extraResources": [
       { "from": "build", "to": "build", "filter": ["icon.ico", "icon.png"] },
-      { "from": "build/worker", "to": "worker", "filter": ["ClassroomRecorderWorker.exe"] }
+      { "from": "build/worker", "to": "worker", "filter": ["ClassroomRecorderWorker.exe"] },
+      { "from": "node_modules/ffmpeg-static/ffmpeg.exe", "to": "ffmpeg/ffmpeg.exe" }
     ]
   }
 }
 ```
+
+Add `ffmpeg-static` to `devDependencies`. Windows release builds must run on Windows so the package supplies `ffmpeg.exe`; do not package a macOS or Linux FFmpeg binary into the Windows installer.
 
 - [ ] **Step 3: Write the automated and Windows test checklist**
 
@@ -828,7 +885,7 @@ Expected: all worker and Node tests PASS; renderer build succeeds; smoke test re
 
 Run on Windows: `npm run dist:win`
 
-Expected: signed-test or unsigned controlled-test installer contains `resources/worker/ClassroomRecorderWorker.exe` and launches without requiring Python.
+Expected: signed-test or unsigned controlled-test installer contains `resources/worker/ClassroomRecorderWorker.exe` and `resources/ffmpeg/ffmpeg.exe`, and launches without requiring Python.
 
 - [ ] **Step 6: Commit**
 
