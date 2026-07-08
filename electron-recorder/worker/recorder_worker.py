@@ -13,7 +13,9 @@ from worker.audio_journal import AudioJournal, recover_journals
 from worker.config import WorkerConfig
 from worker.protocol import event, parse_command
 from worker.queue_store import QueueStore, migrate_json_queue
+from worker.retention import cleanup_completed, disk_health
 from worker.segment_encoder import encode_ogg_opus
+from worker.upload_service import UploadService
 
 
 class CaptureSession:
@@ -230,6 +232,8 @@ class RecorderWorker:
         recover=recover_journals,
         ffmpeg_path: Path = Path("ffmpeg.exe"),
         queue_store: QueueStore | None = None,
+        upload_service=None,
+        upload_poll_seconds: float = 1.0,
     ):
         self.config = config
         self.emit_event = emit_event or emit
@@ -239,6 +243,10 @@ class RecorderWorker:
         root = Path(config.data_root) if config.data_root else Path.cwd()
         self.recordings_dir = root / "recordings"
         self.queue_store = queue_store or QueueStore(root / "queue.db")
+        self.upload_service = upload_service
+        self.upload_poll_seconds = upload_poll_seconds
+        self._upload_stop = threading.Event()
+        self._upload_thread: threading.Thread | None = None
         self.legacy_queue_path = root / "queue.json"
         self.state = {
             "recording": "idle",
@@ -256,6 +264,28 @@ class RecorderWorker:
         self.state["recovered"] = len(recovered)
         for path in recovered:
             self.emit_event("recovered", {"path": str(path)})
+        if self.upload_service is not None and self._upload_thread is None:
+            self._upload_stop.clear()
+            self._upload_thread = threading.Thread(
+                target=self._upload_loop, daemon=True
+            )
+            self._upload_thread.start()
+
+    def _upload_loop(self) -> None:
+        while not self._upload_stop.is_set():
+            try:
+                now = datetime.now(timezone.utc)
+                result = self.upload_service.run_once(now)
+                cleanup_completed(self.recordings_dir, self.queue_store, now)
+                health = disk_health(self.recordings_dir)
+                if health != "healthy":
+                    self.state["health"] = health
+                if result is not None:
+                    self.state["upload"] = result.status
+            except Exception as exc:
+                self.state["health"] = "error"
+                self.emit_event("error", {"message": f"upload worker failed: {exc}"})
+            self._upload_stop.wait(self.upload_poll_seconds)
 
     def handle(self, command) -> bool:
         try:
@@ -326,6 +356,10 @@ class RecorderWorker:
         self.emit_event("error", {"message": f"journal recovery failed: {exc}"})
 
     def shutdown(self) -> None:
+        self._upload_stop.set()
+        if self._upload_thread is not None:
+            self._upload_thread.join()
+            self._upload_thread = None
         try:
             self._stop_session("idle")
         except Exception as exc:
@@ -336,9 +370,38 @@ def emit(name: str, payload: dict) -> None:
     print(event(name, payload), flush=True)
 
 
+class _XxtMetadataAdapter:
+    def __init__(self, api_client, upload_manager):
+        self.api_client = api_client
+        self.upload_manager = upload_manager
+
+    def save_audio_file_info(self, payload):
+        auth = self.upload_manager.device_auth_data
+        if auth is not None:
+            self.api_client.token = auth.access_token
+        return self.api_client.save_audio_file_info(payload)
+
+
+def create_upload_service(config: WorkerConfig, store: QueueStore):
+    if not config.device_no:
+        return None
+    from windows_client.xxt_upload import XxtDeviceApiClient, XxtUploadManager
+
+    api_client = XxtDeviceApiClient(config.base_url)
+    upload_manager = XxtUploadManager(api_client, config.device_no)
+    return UploadService(
+        store,
+        upload_manager,
+        _XxtMetadataAdapter(api_client, upload_manager),
+    )
+
+
 def main() -> int:
     config_path = Path(os.environ.get("RECORDER_CONFIG_PATH", "worker-config.json"))
-    worker = RecorderWorker(WorkerConfig.load(config_path))
+    config = WorkerConfig.load(config_path)
+    worker = RecorderWorker(config)
+    if config.device_no:
+        worker.upload_service = create_upload_service(config, worker.queue_store)
     worker.startup()
     emit("ready", dict(worker.state))
     try:

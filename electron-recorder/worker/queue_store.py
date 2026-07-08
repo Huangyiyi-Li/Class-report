@@ -19,6 +19,7 @@ class QueueItem:
     retry_at: int | None
     created_at: str
     completed_at: str | None
+    attempts: int
 
 
 class QueueStore:
@@ -50,6 +51,13 @@ class QueueStore:
                 );
                 """
             )
+            columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(segments)")
+            }
+            if "attempts" not in columns:
+                connection.execute(
+                    "ALTER TABLE segments ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
+                )
 
     def enqueue(self, segment: dict) -> int:
         local_path, segment_index = _segment_values(segment)
@@ -129,7 +137,7 @@ class QueueStore:
             ("uploading",),
             """
             UPDATE segments
-            SET status = 'failed', last_error = ?, retry_at = ?
+            SET status = 'failed', last_error = ?, retry_at = ?, attempts = attempts + 1
             WHERE id = ? AND status IN ('uploading')
             """,
             (error, _to_epoch_ms(retry_at), item_id),
@@ -166,6 +174,33 @@ class QueueStore:
                 "SELECT status, COUNT(*) AS count FROM segments GROUP BY status"
             ).fetchall()
         return {row["status"]: row["count"] for row in rows}
+
+    def completed_before(self, before: str | datetime) -> list[QueueItem]:
+        cutoff = _to_utc_datetime(before).strftime("%Y-%m-%d %H:%M:%S")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM segments
+                WHERE status = 'completed' AND completed_at < ?
+                ORDER BY id
+                """,
+                (cutoff,),
+            ).fetchall()
+        return [_queue_item(row) for row in rows]
+
+    def set_completed_at(self, item_id: int, value: str | datetime) -> None:
+        """Set a completion timestamp, primarily for migration and maintenance."""
+        completed_at = _to_utc_datetime(value).strftime("%Y-%m-%d %H:%M:%S")
+        with self._connect() as connection:
+            changed = connection.execute(
+                """
+                UPDATE segments SET completed_at = ?
+                WHERE id = ? AND status = 'completed'
+                """,
+                (completed_at, item_id),
+            ).rowcount
+        if changed != 1:
+            raise ValueError(f"queue item {item_id} is not completed")
 
     def enqueue_many(self, segments: Iterable[dict]) -> None:
         values = [_segment_values(segment) for segment in segments]
@@ -253,6 +288,16 @@ def _queue_item(row: sqlite3.Row) -> QueueItem:
 
 
 def _to_epoch_ms(value: str | datetime) -> int:
+    utc_value = _to_utc_datetime(value)
+    elapsed = utc_value - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return (
+        elapsed.days * 86_400_000
+        + elapsed.seconds * 1_000
+        + elapsed.microseconds // 1_000
+    )
+
+
+def _to_utc_datetime(value: str | datetime) -> datetime:
     if isinstance(value, str):
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     elif isinstance(value, datetime):
@@ -261,10 +306,4 @@ def _to_epoch_ms(value: str | datetime) -> int:
         raise TypeError("timestamp must be an ISO string or datetime")
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("timestamp must include a UTC offset")
-    utc_value = parsed.astimezone(timezone.utc)
-    elapsed = utc_value - datetime(1970, 1, 1, tzinfo=timezone.utc)
-    return (
-        elapsed.days * 86_400_000
-        + elapsed.seconds * 1_000
-        + elapsed.microseconds // 1_000
-    )
+    return parsed.astimezone(timezone.utc)

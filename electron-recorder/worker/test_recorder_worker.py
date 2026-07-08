@@ -123,3 +123,31 @@ def test_main_shuts_down_worker_when_stdin_reaches_eof(monkeypatch):
     assert main() == 0
     assert calls == ["startup", "shutdown"]
     assert finalized == [True]
+
+
+def test_worker_runs_upload_service_in_background_and_stops_it(tmp_path: Path):
+    class UploadService:
+        def __init__(self):
+            self.calls = 0
+
+        def run_once(self, now):
+            self.calls += 1
+
+    service = UploadService()
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path)),
+        emit_event=lambda name, payload: None,
+        recover=lambda root, on_error: [],
+        upload_service=service,
+        upload_poll_seconds=0.01,
+    )
+    worker.startup()
+    deadline = time.monotonic() + 1
+    while service.calls == 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    worker.shutdown()
+    calls = service.calls
+    time.sleep(0.03)
+    assert calls > 0
+    assert service.calls == calls
