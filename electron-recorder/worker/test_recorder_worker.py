@@ -1,9 +1,10 @@
 from pathlib import Path
 from types import SimpleNamespace
+import io
 import time
 
 from worker.config import WorkerConfig
-from worker.recorder_worker import RecorderWorker
+from worker.recorder_worker import RecorderWorker, main
 
 
 def command(name: str):
@@ -90,3 +91,35 @@ def test_capture_error_changes_recording_and_health_state(tmp_path: Path):
     while captured["session"].stopped == 0 and time.monotonic() < deadline:
         time.sleep(0.01)
     assert captured["session"].stopped == 1
+
+
+def test_main_shuts_down_worker_when_stdin_reaches_eof(monkeypatch):
+    calls = []
+    finalized = []
+
+    class ActiveSession:
+        def stop(self):
+            finalized.append(True)
+
+    class FakeWorker:
+        state = {"recording": "recording"}
+
+        def __init__(self, config):
+            self.session = ActiveSession()
+
+        def startup(self):
+            calls.append("startup")
+
+        def handle(self, command):
+            return True
+
+        def shutdown(self):
+            calls.append("shutdown")
+            self.session.stop()
+
+    monkeypatch.setattr("worker.recorder_worker.RecorderWorker", FakeWorker)
+    monkeypatch.setattr("worker.recorder_worker.sys.stdin", io.StringIO(""))
+
+    assert main() == 0
+    assert calls == ["startup", "shutdown"]
+    assert finalized == [True]

@@ -269,16 +269,52 @@ def test_encoder_failure_from_finalizer_is_observable(tmp_path: Path):
 
 
 def test_pcm_queue_overrun_becomes_explicit_failure(tmp_path: Path):
+    errors = []
     session = CaptureSession(
         WorkerConfig(),
         FakeJournal(tmp_path / "segment.wav"),
         ffmpeg_path=Path("ffmpeg.exe"),
+        on_error=errors.append,
     )
     for _ in range(session.pcm_queue.maxsize):
         session.pcm_queue.put_nowait(b"pcm")
 
     session.audio_callback(FakeInputData(), 1, None, None)
 
+    assert errors == []
+    assert not session.stop_event.is_set()
+    session.process_control_event(timeout=0)
+
     with pytest.raises(RuntimeError, match="PCM queue overrun"):
         session.raise_if_failed()
     assert session.stop_event.is_set()
+
+
+def test_finalized_path_queue_is_bounded(tmp_path: Path):
+    session = CaptureSession(
+        WorkerConfig(),
+        FakeJournal(tmp_path / "segment.wav"),
+        ffmpeg_path=Path("ffmpeg.exe"),
+    )
+
+    assert session.finalized_paths.maxsize > 0
+
+
+def test_finalized_path_backpressure_becomes_explicit_failure(tmp_path: Path):
+    journal = FakeJournal(tmp_path / "segment.wav")
+    session = CaptureSession(
+        WorkerConfig(),
+        journal,
+        ffmpeg_path=Path("ffmpeg.exe"),
+        encoder=lambda wav, ffmpeg: wav,
+    )
+    session.FINALIZED_PATH_PUT_TIMEOUT = 0
+    for _ in range(session.finalized_paths.maxsize):
+        session.finalized_paths.put_nowait(tmp_path / "queued.wav")
+    session.finalize_queue.put(journal)
+    session.finalize_queue.put(None)
+
+    session.finalizer_loop()
+
+    with pytest.raises(RuntimeError, match="backpressure timeout"):
+        session.raise_if_failed()

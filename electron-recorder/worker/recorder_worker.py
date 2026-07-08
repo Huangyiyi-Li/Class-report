@@ -16,6 +16,9 @@ from worker.segment_encoder import encode_ogg_opus
 
 
 class CaptureSession:
+    FINALIZED_PATH_CAPACITY = 32
+    FINALIZED_PATH_PUT_TIMEOUT = 1
+
     def __init__(
         self,
         config: WorkerConfig,
@@ -38,10 +41,16 @@ class CaptureSession:
         self.on_error = on_error
         self.pcm_queue: queue.Queue[bytes] = queue.Queue(maxsize=256)
         self.finalize_queue: queue.Queue = queue.Queue(maxsize=8)
-        self.finalized_paths: queue.Queue[Path] = queue.Queue()
+        self.finalized_paths: queue.Queue[Path] = queue.Queue(
+            maxsize=self.FINALIZED_PATH_CAPACITY
+        )
+        self.control_queue = queue.SimpleQueue()
+        self._control_sentinel = object()
+        self._callback_failure_signaled = False
         self.stop_event = threading.Event()
         self._writer_thread: threading.Thread | None = None
         self._finalizer_thread: threading.Thread | None = None
+        self._monitor_thread: threading.Thread | None = None
         self._stream = None
         self._stream_lock = threading.Lock()
         self._failure: Exception | None = None
@@ -53,7 +62,23 @@ class CaptureSession:
         try:
             self.pcm_queue.put_nowait(indata.copy().tobytes())
         except queue.Full:
-            self._record_failure(RuntimeError("PCM queue overrun"))
+            if not self._callback_failure_signaled:
+                self._callback_failure_signaled = True
+                self.control_queue.put(RuntimeError("PCM queue overrun"))
+
+    def process_control_event(self, timeout: float | None = None) -> bool:
+        try:
+            item = self.control_queue.get(timeout=timeout)
+        except queue.Empty:
+            return True
+        if item is self._control_sentinel:
+            return False
+        self._record_failure(item)
+        return True
+
+    def monitor_loop(self) -> None:
+        while self.process_control_event():
+            pass
 
     def writer_loop(self) -> None:
         try:
@@ -87,7 +112,14 @@ class CaptureSession:
                 return
             try:
                 wav_path = journal.finalize(datetime.now(timezone.utc))
-                self.finalized_paths.put(self.encoder(wav_path, self.ffmpeg_path))
+                final_path = self.encoder(wav_path, self.ffmpeg_path)
+                self.finalized_paths.put(
+                    final_path, timeout=self.FINALIZED_PATH_PUT_TIMEOUT
+                )
+            except queue.Full:
+                self._record_failure(
+                    RuntimeError("finalized path queue backpressure timeout")
+                )
             except Exception as exc:
                 self._record_failure(exc)
 
@@ -119,14 +151,24 @@ class CaptureSession:
 
     def start(self) -> None:
         self.stop_event.clear()
+        self._monitor_thread = threading.Thread(target=self.monitor_loop, daemon=True)
+        self._monitor_thread.start()
         factory = self.stream_factory or _sounddevice_input_stream
-        self._stream = factory(
-            callback=self.audio_callback,
-            samplerate=self.journal.rate,
-            channels=self.journal.channels,
-            dtype={1: "int8", 2: "int16", 4: "int32"}[self.journal.sample_width],
-        )
-        self._stream.start()
+        try:
+            self._stream = factory(
+                callback=self.audio_callback,
+                samplerate=self.journal.rate,
+                channels=self.journal.channels,
+                dtype={1: "int8", 2: "int16", 4: "int32"}[
+                    self.journal.sample_width
+                ],
+            )
+            self._stream.start()
+        except Exception:
+            self.control_queue.put(self._control_sentinel)
+            self._monitor_thread.join()
+            self._monitor_thread = None
+            raise
         self._finalizer_thread = threading.Thread(
             target=self.finalizer_loop, daemon=True
         )
@@ -143,6 +185,10 @@ class CaptureSession:
         if self._finalizer_thread is not None:
             self._finalizer_thread.join()
             self._finalizer_thread = None
+        if self._monitor_thread is not None:
+            self.control_queue.put(self._control_sentinel)
+            self._monitor_thread.join()
+            self._monitor_thread = None
         self.raise_if_failed()
 
     def _close_stream(self) -> None:
@@ -260,6 +306,12 @@ class RecorderWorker:
         self.state["health"] = "error"
         self.emit_event("error", {"message": f"journal recovery failed: {exc}"})
 
+    def shutdown(self) -> None:
+        try:
+            self._stop_session("idle")
+        except Exception as exc:
+            self._capture_error(exc)
+
 
 def emit(name: str, payload: dict) -> None:
     print(event(name, payload), flush=True)
@@ -270,14 +322,17 @@ def main() -> int:
     worker = RecorderWorker(WorkerConfig.load(config_path))
     worker.startup()
     emit("ready", dict(worker.state))
-    for line in sys.stdin:
-        try:
-            command = parse_command(line)
-            if not worker.handle(command):
-                return 0
-        except Exception as exc:
-            emit("error", {"message": str(exc)})
-    return 0
+    try:
+        for line in sys.stdin:
+            try:
+                command = parse_command(line)
+                if not worker.handle(command):
+                    return 0
+            except Exception as exc:
+                emit("error", {"message": str(exc)})
+        return 0
+    finally:
+        worker.shutdown()
 
 
 if __name__ == "__main__":
