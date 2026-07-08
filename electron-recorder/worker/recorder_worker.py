@@ -12,6 +12,7 @@ from typing import Callable
 from worker.audio_journal import AudioJournal, recover_journals
 from worker.config import WorkerConfig
 from worker.protocol import event, parse_command
+from worker.queue_store import QueueStore, migrate_json_queue
 from worker.segment_encoder import encode_ogg_opus
 
 
@@ -30,6 +31,7 @@ class CaptureSession:
         journal_factory=None,
         clock: Callable[[], float] = time.monotonic,
         on_error: Callable[[Exception], None] | None = None,
+        queue_store: QueueStore | None = None,
     ):
         self.config = config
         self.journal = journal
@@ -39,6 +41,8 @@ class CaptureSession:
         self.journal_factory = journal_factory
         self.clock = clock
         self.on_error = on_error
+        self.queue_store = queue_store
+        self._segment_index = 0
         self.pcm_queue: queue.Queue[bytes] = queue.Queue(maxsize=256)
         self.finalize_queue: queue.Queue = queue.Queue(maxsize=8)
         self.finalized_paths: queue.Queue[Path] = queue.Queue(
@@ -113,6 +117,14 @@ class CaptureSession:
             try:
                 wav_path = journal.finalize(datetime.now(timezone.utc))
                 final_path = self.encoder(wav_path, self.ffmpeg_path)
+                self._segment_index += 1
+                if self.queue_store is not None:
+                    self.queue_store.enqueue(
+                        {
+                            "local_path": str(final_path),
+                            "segment_index": self._segment_index,
+                        }
+                    )
                 self.finalized_paths.put(
                     final_path, timeout=self.FINALIZED_PATH_PUT_TIMEOUT
                 )
@@ -215,6 +227,7 @@ class RecorderWorker:
         session_factory=None,
         recover=recover_journals,
         ffmpeg_path: Path = Path("ffmpeg.exe"),
+        queue_store: QueueStore | None = None,
     ):
         self.config = config
         self.emit_event = emit_event or emit
@@ -223,6 +236,8 @@ class RecorderWorker:
         self.ffmpeg_path = ffmpeg_path
         root = Path(config.data_root) if config.data_root else Path.cwd()
         self.recordings_dir = root / "recordings"
+        self.queue_store = queue_store or QueueStore(root / "queue.db")
+        self.legacy_queue_path = root / "queue.json"
         self.state = {
             "recording": "idle",
             "upload": "clear",
@@ -234,6 +249,7 @@ class RecorderWorker:
 
     def startup(self) -> None:
         self.recordings_dir.mkdir(parents=True, exist_ok=True)
+        migrate_json_queue(self.legacy_queue_path, self.queue_store)
         recovered = self.recover(self.recordings_dir, self._recovery_error)
         self.state["recovered"] = len(recovered)
         for path in recovered:
@@ -260,6 +276,7 @@ class RecorderWorker:
                         journal=journal,
                         ffmpeg_path=self.ffmpeg_path,
                         on_error=self._capture_error,
+                        queue_store=self.queue_store,
                     )
                     self.session.start()
                 self.state["recording"] = "recording"
