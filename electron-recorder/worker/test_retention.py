@@ -18,6 +18,7 @@ def add_segment(store, path, status):
         else:
             store.mark_uploaded(item_id, "https://files.test/" + path.name)
             if status == "completed":
+                store.claim_next(NOW)
                 store.mark_completed(item_id)
     return item_id
 
@@ -63,3 +64,18 @@ def test_disk_health_uses_five_gib_threshold(tmp_path, monkeypatch):
     assert disk_health(tmp_path) == "healthy"
     monkeypatch.setattr("worker.retention._free_bytes", lambda path: (_ for _ in ()).throw(OSError("gone")))
     assert disk_health(tmp_path) == "unavailable"
+
+
+def test_completed_symlink_cannot_delete_pending_target(tmp_path):
+    store = QueueStore(tmp_path / "queue.db")
+    pending = tmp_path / "pending.wav"
+    pending.write_bytes(b"keep")
+    link = tmp_path / "completed.wav"
+    link.symlink_to(pending)
+    completed_id = add_segment(store, link, "completed")
+    store.enqueue({"local_path": str(pending), "segment_index": 1})
+    store.set_completed_at(completed_id, NOW - timedelta(days=8))
+
+    assert cleanup_completed(tmp_path, store, NOW) == []
+    assert link.is_symlink()
+    assert pending.read_bytes() == b"keep"

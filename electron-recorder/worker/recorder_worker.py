@@ -127,6 +127,17 @@ class CaptureSession:
                         {
                             "local_path": str(final_path),
                             "segment_index": segment_index,
+                            "code": journal.device_id,
+                            "device_no": journal.device_id,
+                            "school_id": self.config.school_id,
+                            "location_id": self.config.location_id,
+                            "start_time": journal.started_at.isoformat(),
+                            "end_time": finalized_at.isoformat(),
+                            "rate": journal.rate,
+                            "bits": journal.sample_width * 8,
+                            "channel": journal.channels,
+                            "audio_type": 1,
+                            "audio_format": final_path.suffix.lstrip(".").lower(),
                         }
                     )
                 self.finalized_paths.put(
@@ -234,6 +245,7 @@ class RecorderWorker:
         queue_store: QueueStore | None = None,
         upload_service=None,
         upload_poll_seconds: float = 1.0,
+        shutdown_join_seconds: float = 5.0,
     ):
         self.config = config
         self.emit_event = emit_event or emit
@@ -245,6 +257,7 @@ class RecorderWorker:
         self.queue_store = queue_store or QueueStore(root / "queue.db")
         self.upload_service = upload_service
         self.upload_poll_seconds = upload_poll_seconds
+        self.shutdown_join_seconds = shutdown_join_seconds
         self._upload_stop = threading.Event()
         self._upload_thread: threading.Thread | None = None
         self.legacy_queue_path = root / "queue.json"
@@ -358,8 +371,15 @@ class RecorderWorker:
     def shutdown(self) -> None:
         self._upload_stop.set()
         if self._upload_thread is not None:
-            self._upload_thread.join()
-            self._upload_thread = None
+            thread = self._upload_thread
+            thread.join(timeout=self.shutdown_join_seconds)
+            if thread.is_alive():
+                self.state["health"] = "error"
+                self.emit_event(
+                    "error", {"message": "upload worker did not stop before timeout"}
+                )
+            else:
+                self._upload_thread = None
         try:
             self._stop_session("idle")
         except Exception as exc:

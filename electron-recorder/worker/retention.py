@@ -20,14 +20,17 @@ def cleanup_completed(
     cutoff = _as_datetime(now) - timedelta(days=retention_days)
     deleted = []
     for item in store.completed_before(cutoff):
-        path = Path(item.local_path).resolve()
+        original = Path(item.local_path)
+        if original.is_symlink():
+            continue
+        path = original.resolve()
         if not path.is_relative_to(root):
             continue
         try:
-            path.unlink()
+            original.unlink()
         except FileNotFoundError:
             continue
-        deleted.append(path)
+        deleted.append(original)
     return deleted
 
 

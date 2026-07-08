@@ -20,6 +20,19 @@ class QueueItem:
     created_at: str
     completed_at: str | None
     attempts: int
+    metadata_attempts: int
+    code: str
+    device_no: str
+    school_id: int | None
+    location_id: str
+    start_time: str
+    end_time: str
+    rate: int
+    bits: int
+    channel: int
+    audio_type: int
+    audio_format: str
+    action: str = ""
 
 
 class QueueStore:
@@ -54,26 +67,47 @@ class QueueStore:
             columns = {
                 row[1] for row in connection.execute("PRAGMA table_info(segments)")
             }
-            if "attempts" not in columns:
+            additions = {
+                "attempts": "INTEGER NOT NULL DEFAULT 0",
+                "metadata_attempts": "INTEGER NOT NULL DEFAULT 0",
+                "code": "TEXT NOT NULL DEFAULT ''",
+                "device_no": "TEXT NOT NULL DEFAULT ''",
+                "school_id": "INTEGER",
+                "location_id": "TEXT NOT NULL DEFAULT ''",
+                "start_time": "TEXT NOT NULL DEFAULT ''",
+                "end_time": "TEXT NOT NULL DEFAULT ''",
+                "rate": "INTEGER NOT NULL DEFAULT 16000",
+                "bits": "INTEGER NOT NULL DEFAULT 16",
+                "channel": "INTEGER NOT NULL DEFAULT 1",
+                "audio_type": "INTEGER NOT NULL DEFAULT 1",
+                "audio_format": "TEXT NOT NULL DEFAULT ''",
+            }
+            for name, declaration in additions.items():
+                if name in columns:
+                    continue
                 connection.execute(
-                    "ALTER TABLE segments ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
+                    f"ALTER TABLE segments ADD COLUMN {name} {declaration}"
                 )
 
     def enqueue(self, segment: dict) -> int:
-        local_path, segment_index = _segment_values(segment)
+        values = _segment_values(segment)
         with self._connect() as connection:
-            return self._insert(connection, local_path, segment_index)
+            return self._insert(connection, values)
 
     def claim_next(self, now: str | datetime) -> QueueItem | None:
         now_epoch = _to_epoch_ms(now)
+        lease_until = now_epoch + 300_000
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 """
                 SELECT * FROM segments
-                WHERE status = 'pending'
-                   OR (status = 'failed' AND retry_at <= ?)
-                ORDER BY id
+                WHERE status IN ('pending', 'uploaded')
+                   OR (status IN ('failed', 'metadata_failed', 'uploading', 'registering')
+                       AND retry_at <= ?)
+                ORDER BY CASE
+                    WHEN status IN ('pending', 'failed', 'uploading') THEN 0 ELSE 1
+                END, id
                 LIMIT 1
                 """,
                 (now_epoch,),
@@ -84,13 +118,17 @@ class QueueStore:
             updated = connection.execute(
                 """
                 UPDATE segments
-                SET status = 'uploading', retry_at = NULL
+                SET status = CASE
+                    WHEN status IN ('uploaded', 'metadata_failed', 'registering')
+                    THEN 'registering' ELSE 'uploading' END,
+                    retry_at = ?
                 WHERE id = ? AND (
-                  status = 'pending'
-                  OR (status = 'failed' AND retry_at <= ?)
+                  status IN ('pending', 'uploaded')
+                  OR (status IN ('failed', 'metadata_failed', 'uploading', 'registering')
+                      AND retry_at <= ?)
                 )
                 """,
-                (row["id"], now_epoch),
+                (lease_until, row["id"], now_epoch),
             ).rowcount
             if updated != 1:
                 connection.rollback()
@@ -99,7 +137,8 @@ class QueueStore:
                 "SELECT * FROM segments WHERE id = ?", (row["id"],)
             ).fetchone()
             connection.commit()
-            return _queue_item(claimed)
+            action = "register" if claimed["status"] == "registering" else "upload"
+            return _queue_item(claimed, action)
 
     def mark_uploaded(self, item_id: int, url: str) -> None:
         self._transition(
@@ -118,12 +157,12 @@ class QueueStore:
         self._transition(
             item_id,
             "completed",
-            ("uploaded",),
+            ("registering",),
             """
             UPDATE segments
             SET status = 'completed', completed_at = CURRENT_TIMESTAMP,
                 last_error = '', retry_at = NULL
-            WHERE id = ? AND status IN ('uploaded')
+            WHERE id = ? AND status = 'registering'
             """,
             (item_id,),
         )
@@ -139,6 +178,22 @@ class QueueStore:
             UPDATE segments
             SET status = 'failed', last_error = ?, retry_at = ?, attempts = attempts + 1
             WHERE id = ? AND status IN ('uploading')
+            """,
+            (error, _to_epoch_ms(retry_at), item_id),
+        )
+
+    def mark_metadata_failed(
+        self, item_id: int, error: str, retry_at: str | datetime
+    ) -> None:
+        self._transition(
+            item_id,
+            "metadata_failed",
+            ("registering",),
+            """
+            UPDATE segments
+            SET status = 'metadata_failed', last_error = ?, retry_at = ?,
+                metadata_attempts = metadata_attempts + 1
+            WHERE id = ? AND status = 'registering'
             """,
             (error, _to_epoch_ms(retry_at), item_id),
         )
@@ -206,8 +261,8 @@ class QueueStore:
         values = [_segment_values(segment) for segment in segments]
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            for local_path, segment_index in values:
-                self._insert(connection, local_path, segment_index)
+            for value in values:
+                self._insert(connection, value)
             connection.commit()
 
     def _connect(self) -> sqlite3.Connection:
@@ -217,19 +272,36 @@ class QueueStore:
         return connection
 
     @staticmethod
-    def _insert(
-        connection: sqlite3.Connection, local_path: str, segment_index: int
-    ) -> int:
+    def _insert(connection: sqlite3.Connection, values: dict) -> int:
         connection.execute(
             """
-            INSERT INTO segments(local_path, segment_index)
-            VALUES (?, ?)
+            INSERT INTO segments(
+              local_path, segment_index, code, device_no, school_id, location_id,
+              start_time, end_time, rate, bits, channel, audio_type, audio_format
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(local_path) DO NOTHING
             """,
-            (local_path, segment_index),
+            tuple(
+                values[name]
+                for name in (
+                    "local_path",
+                    "segment_index",
+                    "code",
+                    "device_no",
+                    "school_id",
+                    "location_id",
+                    "start_time",
+                    "end_time",
+                    "rate",
+                    "bits",
+                    "channel",
+                    "audio_type",
+                    "audio_format",
+                )
+            ),
         )
         row = connection.execute(
-            "SELECT id FROM segments WHERE local_path = ?", (local_path,)
+            "SELECT id FROM segments WHERE local_path = ?", (values["local_path"],)
         ).fetchone()
         return int(row["id"])
 
@@ -271,7 +343,7 @@ def migrate_json_queue(json_path: str | Path, store: QueueStore) -> None:
     source.replace(source.with_name(f"{source.name}.migrated"))
 
 
-def _segment_values(segment: dict) -> tuple[str, int]:
+def _segment_values(segment: dict) -> dict:
     if not isinstance(segment, dict):
         raise TypeError("queue segment must be an object")
     local_path = segment.get("local_path", segment.get("localPath"))
@@ -280,11 +352,40 @@ def _segment_values(segment: dict) -> tuple[str, int]:
         raise ValueError("local_path is required")
     if isinstance(segment_index, bool) or not isinstance(segment_index, int):
         raise ValueError("segment_index must be an integer")
-    return local_path, segment_index
+    return {
+        "local_path": local_path,
+        "segment_index": segment_index,
+        "code": str(segment.get("code") or segment.get("device_no") or ""),
+        "device_no": str(
+            segment.get("device_no")
+            or segment.get("deviceNo")
+            or segment.get("code")
+            or ""
+        ),
+        "school_id": segment.get("school_id", segment.get("schoolId")),
+        "location_id": str(
+            segment.get("location_id") or segment.get("locationId") or ""
+        ),
+        "start_time": str(
+            segment.get("start_time") or segment.get("startTime") or ""
+        ),
+        "end_time": str(
+            segment.get("end_time") or segment.get("endTime") or ""
+        ),
+        "rate": int(segment.get("rate", 16000)),
+        "bits": int(segment.get("bits", 16)),
+        "channel": int(segment.get("channel", 1)),
+        "audio_type": int(segment.get("audio_type", segment.get("audioType", 1))),
+        "audio_format": str(
+            segment.get("audio_format")
+            or segment.get("format")
+            or Path(local_path).suffix.lstrip(".")
+        ),
+    }
 
 
-def _queue_item(row: sqlite3.Row) -> QueueItem:
-    return QueueItem(**dict(row))
+def _queue_item(row: sqlite3.Row, action: str = "") -> QueueItem:
+    return QueueItem(**dict(row), action=action)
 
 
 def _to_epoch_ms(value: str | datetime) -> int:

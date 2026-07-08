@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import io
 import time
+import threading
 
 from worker.config import WorkerConfig
 from worker.recorder_worker import RecorderWorker, main
@@ -151,3 +152,30 @@ def test_worker_runs_upload_service_in_background_and_stops_it(tmp_path: Path):
     time.sleep(0.03)
     assert calls > 0
     assert service.calls == calls
+
+
+def test_shutdown_is_bounded_when_upload_service_blocks(tmp_path: Path):
+    entered = threading.Event()
+
+    class BlockingService:
+        def run_once(self, now):
+            entered.set()
+            threading.Event().wait()
+
+    events = []
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path)),
+        emit_event=lambda name, payload: events.append((name, payload)),
+        recover=lambda root, on_error: [],
+        upload_service=BlockingService(),
+        upload_poll_seconds=0.01,
+        shutdown_join_seconds=0.05,
+    )
+    worker.startup()
+    assert entered.wait(1)
+
+    started = time.monotonic()
+    worker.shutdown()
+
+    assert time.monotonic() - started < 0.5
+    assert any("did not stop" in payload["message"] for name, payload in events if name == "error")

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import queue
+import threading
 
 from worker.queue_store import QueueStore
 
@@ -23,30 +25,29 @@ class UploadResult:
 
 
 class UploadService:
-    def __init__(self, store: QueueStore, uploader, metadata_client):
+    def __init__(self, store: QueueStore, uploader, metadata_client, network_timeout=30.0):
         self.store = store
         self.uploader = uploader
         self.metadata_client = metadata_client
+        self.network_timeout = network_timeout
 
     def run_once(self, now: str | datetime) -> UploadResult | None:
         current = _utc_datetime(now)
         item = self.store.claim_next(current)
         if item is None:
             return None
+        if item.action == "register":
+            return self._register(item, current)
+        return self._upload(item, current)
+
+    def _upload(self, item, current):
         try:
             path = Path(item.local_path)
-            uploaded_url = self.uploader.upload(path)
-            self.metadata_client.save_audio_file_info(
-                {
-                    "segmentIndex": item.segment_index,
-                    "filePath": uploaded_url,
-                    "fileSize": path.stat().st_size,
-                    "format": path.suffix.lstrip(".").lower(),
-                }
+            uploaded_url = _call_with_timeout(
+                self.uploader.upload, self.network_timeout, path
             )
             self.store.mark_uploaded(item.id, uploaded_url)
-            self.store.mark_completed(item.id)
-            return UploadResult(item.id, "completed")
+            return UploadResult(item.id, "uploaded")
         except Exception as exc:
             retry_at = current + timedelta(seconds=retry_delay(item.attempts))
             self.store.mark_failed(item.id, str(exc), retry_at)
@@ -56,6 +57,65 @@ class UploadService:
                 int(retry_at.timestamp() * 1000),
                 str(exc),
             )
+
+    def _register(self, item, current):
+        try:
+            _call_with_timeout(
+                self.metadata_client.save_audio_file_info,
+                self.network_timeout,
+                _metadata_payload(item),
+            )
+            self.store.mark_completed(item.id)
+            return UploadResult(item.id, "completed")
+        except Exception as exc:
+            retry_at = current + timedelta(
+                seconds=retry_delay(item.metadata_attempts)
+            )
+            self.store.mark_metadata_failed(item.id, str(exc), retry_at)
+            return UploadResult(
+                item.id,
+                "metadata_failed",
+                int(retry_at.timestamp() * 1000),
+                str(exc),
+            )
+
+
+def _metadata_payload(item) -> dict:
+    return {
+        "code": item.code,
+        "deviceNo": item.device_no,
+        "schoolId": item.school_id,
+        "locationId": item.location_id,
+        "segmentIndex": item.segment_index,
+        "filePath": item.uploaded_url,
+        "fileSize": Path(item.local_path).stat().st_size,
+        "format": item.audio_format,
+        "startTime": item.start_time,
+        "endTime": item.end_time,
+        "rate": item.rate,
+        "bits": item.bits,
+        "channel": item.channel,
+        "audioType": item.audio_type,
+    }
+
+
+def _call_with_timeout(function, timeout: float, *args):
+    outcome = queue.Queue(maxsize=1)
+
+    def invoke():
+        try:
+            outcome.put((True, function(*args)))
+        except Exception as exc:
+            outcome.put((False, exc))
+
+    threading.Thread(target=invoke, daemon=True).start()
+    try:
+        succeeded, value = outcome.get(timeout=timeout)
+    except queue.Empty as exc:
+        raise TimeoutError(f"network operation timed out after {timeout:g}s") from exc
+    if not succeeded:
+        raise value
+    return value
 
 
 def _utc_datetime(value: str | datetime) -> datetime:

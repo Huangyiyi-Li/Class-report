@@ -45,3 +45,14 @@
 
 - A metadata-registration failure retries the complete item, including upload. This preserves the strict state machine and avoids stranding an `uploaded` row without registered metadata; the production object key is stable for the same segment.
 - Production XXT imports are intentionally lazy so unconfigured workers and tests do not require optional OSS dependencies.
+
+## Review follow-up
+
+- Replaced the combined upload/register transaction with durable two-phase work: upload claims transition to `uploading`, persist the URL as `uploaded`, then a separate register claim transitions through `registering` to `completed`.
+- Added independent `metadata_failed` retries and counters. Repeated metadata failures never invoke the uploader again.
+- Added five-minute claim leases so stale `uploading` and `registering` work is atomically reclaimable after a crash.
+- Expanded the SQLite segment record and capture enqueue path with device, school/location, start/end, encoding, and audio contract fields used to build the production XXT payload.
+- Added an XXT fallback contract test proving the worker payload reaches the Android-compatible fallback without missing-key errors and without network access.
+- Retention now rejects symlinks, checks the resolved target remains under the recordings root, and unlinks only the original non-symlink path.
+- Network upload and metadata calls have an explicit 30-second service timeout. Worker shutdown uses a bounded five-second join and emits an observable error if a custom/blocking service cannot stop.
+- Added regressions for metadata-only restart recovery, stale upload/register claims, non-blocking queue progress, symlink safety, network timeout, and bounded shutdown.

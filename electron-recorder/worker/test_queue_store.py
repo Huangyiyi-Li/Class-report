@@ -27,18 +27,21 @@ def test_completed_item_is_not_claimed_again(tmp_path: Path):
     item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
     store.claim_next("2026-07-07T00:00:00Z")
     store.mark_uploaded(item_id, "https://example.test/one.wav")
+    store.claim_next("2026-07-07T00:00:00Z")
     store.mark_completed(item_id)
 
     assert store.claim_next("2026-07-07T00:00:00Z") is None
 
 
-def test_uploaded_item_is_not_claimed_again(tmp_path: Path):
+def test_uploaded_item_is_claimed_for_registration_without_upload(tmp_path: Path):
     store = QueueStore(tmp_path / "queue.db")
     item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
     store.claim_next("2026-07-07T00:00:00Z")
     store.mark_uploaded(item_id, "https://example.test/one.wav")
 
-    assert store.claim_next("2026-07-07T00:00:00Z") is None
+    claimed = store.claim_next("2026-07-07T00:00:00Z")
+    assert claimed.id == item_id
+    assert claimed.action == "register"
 
 
 def test_claim_next_is_atomic_between_workers(tmp_path: Path):
@@ -197,6 +200,7 @@ def test_finalized_encoded_path_is_persisted_in_queue(tmp_path: Path):
         sample_width = 2
         root = tmp_path
         device_id = "device-1"
+        started_at = datetime(2026, 7, 7, tzinfo=timezone.utc)
 
         def finalize(self, end_time):
             return tmp_path / "segment.wav"
@@ -220,11 +224,33 @@ def test_finalized_encoded_path_is_persisted_in_queue(tmp_path: Path):
     item = store.claim_next("2026-07-07T00:00:00Z")
     assert item.local_path == str(encoded)
     assert item.segment_index == 2
+    assert item.code == "device-1"
+    assert item.device_no == "device-1"
+    assert item.start_time == "2026-07-07T00:00:00+00:00"
+    assert item.rate == 16000
+    assert item.bits == 16
+    assert item.channel == 1
+
+
+def test_uploaded_and_stale_registering_are_claimed_for_registration(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
+    upload = store.claim_next("2026-07-07T00:00:00Z")
+    assert upload.action == "upload"
+    store.mark_uploaded(item_id, "https://files.test/one.wav")
+
+    register = store.claim_next("2026-07-07T00:00:01Z")
+    assert register.action == "register"
+    assert store.claim_next("2026-07-07T00:00:02Z") is None
+    recovered = store.claim_next("2026-07-07T00:05:02Z")
+    assert recovered.id == item_id
+    assert recovered.action == "register"
 
 
 def _completed_item(store: QueueStore) -> int:
     item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
     store.claim_next("2026-07-07T00:00:00Z")
     store.mark_uploaded(item_id, "https://example.test/one.wav")
+    store.claim_next("2026-07-07T00:00:00Z")
     store.mark_completed(item_id)
     return item_id

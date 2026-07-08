@@ -21,6 +21,7 @@ class AudioJournal:
         root.mkdir(parents=True, exist_ok=True)
         self.root = root
         self.device_id = device_id
+        self.started_at = started_at
         stem = f"{device_id}_{started_at.strftime('%Y%m%d_%H%M%S_%f')}"
         self.part_path = root / f"{stem}.pcm.part"
         self.meta_path = root / f"{stem}.json"
