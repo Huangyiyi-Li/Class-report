@@ -8,17 +8,27 @@ export class WorkerSupervisor extends EventEmitter {
     this.restartDelayMs = restartDelayMs;
     this.buffer = "";
     this.stopping = false;
+    this.restartTimer = null;
+    this.childExited = false;
+    this.on("error", () => {});
   }
 
   start() {
     this.child = this.spawnWorker();
+    this.childExited = false;
     this.child.stdout.on("data", (chunk) =>
       this.consume(chunk.toString("utf8")),
     );
     this.child.on("exit", (code) => {
+      this.childExited = true;
       this.emit("exit", code);
       if (!this.stopping) {
-        setTimeout(() => this.start(), this.restartDelayMs);
+        this.restartTimer = setTimeout(() => {
+          this.restartTimer = null;
+          if (!this.stopping) {
+            this.start();
+          }
+        }, this.restartDelayMs);
       }
     });
   }
@@ -28,7 +38,13 @@ export class WorkerSupervisor extends EventEmitter {
     const lines = this.buffer.split("\n");
     this.buffer = lines.pop() || "";
     for (const line of lines.filter(Boolean)) {
-      const message = JSON.parse(line);
+      let message;
+      try {
+        message = JSON.parse(line);
+      } catch (error) {
+        this.emit("error", error);
+        continue;
+      }
       this.emit(message.event, message.payload);
     }
   }
@@ -41,6 +57,12 @@ export class WorkerSupervisor extends EventEmitter {
 
   stop() {
     this.stopping = true;
-    this.send("shutdown");
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    if (!this.childExited) {
+      this.send("shutdown");
+    }
   }
 }
