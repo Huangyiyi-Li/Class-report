@@ -36,3 +36,17 @@ def test_normalizes_system_drive_with_forward_slash():
 
 def test_accepts_non_system_drive_data_root():
     validate_data_root(Path("D:/ClassroomRecorderData"), "C:")
+
+
+def test_save_atomic_persists_worker_settings(tmp_path: Path):
+    path = tmp_path / "worker-config.json"
+    config = WorkerConfig(
+        data_root="D:/Recorder",
+        auto_record_enabled=True,
+        input_device="Microphone 2",
+    )
+
+    config.save_atomic(path)
+
+    assert WorkerConfig.load(path) == config
+    assert not path.with_suffix(".json.tmp").exists()

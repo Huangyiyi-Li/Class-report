@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 import queue
+import shutil
 import sys
 import threading
 import time
 from datetime import datetime, timezone
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
@@ -186,6 +188,7 @@ class CaptureSession:
                 callback=self.audio_callback,
                 samplerate=self.journal.rate,
                 channels=self.journal.channels,
+                device=self.config.input_device or None,
                 dtype={1: "int8", 2: "int16", 4: "int32"}[
                     self.journal.sample_width
                 ],
@@ -246,6 +249,7 @@ class RecorderWorker:
         upload_service=None,
         upload_poll_seconds: float = 1.0,
         shutdown_join_seconds: float = 5.0,
+        config_path: Path | None = None,
     ):
         self.config = config
         self.emit_event = emit_event or emit
@@ -258,6 +262,8 @@ class RecorderWorker:
         self.upload_service = upload_service
         self.upload_poll_seconds = upload_poll_seconds
         self.shutdown_join_seconds = shutdown_join_seconds
+        self.config_path = config_path
+        self._upload_lock = threading.Lock()
         self._upload_stop = threading.Event()
         self._upload_thread: threading.Thread | None = None
         self.legacy_queue_path = root / "queue.json"
@@ -266,6 +272,7 @@ class RecorderWorker:
             "upload": "clear",
             "health": "healthy",
             "recovered": 0,
+            "latestError": "",
         }
         self.session: CaptureSession | None = None
         self._state_lock = threading.Lock()
@@ -288,11 +295,12 @@ class RecorderWorker:
         while not self._upload_stop.is_set():
             try:
                 now = datetime.now(timezone.utc)
-                result = self.upload_service.run_once(now)
+                with self._upload_lock:
+                    result = self.upload_service.run_once(now)
                 cleanup_completed(self.recordings_dir, self.queue_store, now)
                 health = disk_health(self.recordings_dir)
                 if health != "healthy":
-                    self.state["health"] = health
+                    self.state["health"] = "disk_low" if health == "low" else health
                 if result is not None:
                     self.state["upload"] = result.status
             except Exception as exc:
@@ -304,7 +312,7 @@ class RecorderWorker:
         try:
             if command.command == "shutdown":
                 self._stop_session("idle")
-                self.emit_event("snapshot", dict(self.state))
+                self.emit_event("snapshot", self.snapshot())
                 return False
             if command.command == "start":
                 if self.session is None:
@@ -329,7 +337,14 @@ class RecorderWorker:
                 self._stop_session("paused")
             elif command.command == "stop":
                 self._stop_session("idle")
-            self.emit_event("snapshot", dict(self.state))
+            elif command.command == "flush_queue":
+                self._flush_queue()
+            elif command.command == "update_settings":
+                if self.state["recording"] == "recording":
+                    self._command_error("录音中不允许变更运行设置")
+                    return True
+                self._update_settings(command.payload)
+            self.emit_event("snapshot", self.snapshot())
             return True
         except Exception as exc:
             self._capture_error(exc)
@@ -346,6 +361,7 @@ class RecorderWorker:
         with self._state_lock:
             self.state["recording"] = "error"
             self.state["health"] = "error"
+            self.state["latestError"] = str(exc)
             failed_session = self.session
             self.session = None
         if failed_session is not None:
@@ -355,7 +371,7 @@ class RecorderWorker:
                 daemon=True,
             ).start()
         self.emit_event("error", {"message": str(exc)})
-        self.emit_event("snapshot", dict(self.state))
+        self.emit_event("snapshot", self.snapshot())
 
     @staticmethod
     def _cleanup_failed_session(session) -> None:
@@ -366,7 +382,57 @@ class RecorderWorker:
 
     def _recovery_error(self, exc: Exception) -> None:
         self.state["health"] = "error"
+        self.state["latestError"] = str(exc)
         self.emit_event("error", {"message": f"journal recovery failed: {exc}"})
+
+    def snapshot(self) -> dict:
+        counts = self.queue_store.counts()
+        pending = sum(count for status, count in counts.items() if status != "completed")
+        try:
+            free_bytes = shutil.disk_usage(self.recordings_dir).free
+            disk_status = disk_health(self.recordings_dir)
+            disk_health_name = "disk_low" if disk_status == "low" else disk_status
+        except OSError:
+            free_bytes = 0
+            disk_health_name = "storage_unavailable"
+        location = None
+        if self.config.location_id or self.config.location_name:
+            location = {
+                "locationId": self.config.location_id,
+                "locationName": self.config.location_name,
+            }
+        return {
+            **self.state,
+            "pending": pending,
+            "completed": counts.get("completed", 0),
+            "location": location,
+            "dataRoot": self.config.data_root,
+            "freeDiskBytes": free_bytes,
+            "diskHealth": disk_health_name,
+        }
+
+    def _flush_queue(self) -> None:
+        if self.upload_service is None:
+            return
+        with self._upload_lock:
+            while self.upload_service.run_once(datetime.now(timezone.utc)) is not None:
+                pass
+
+    def _update_settings(self, payload: dict) -> None:
+        mapping = {
+            "autoRecordEnabled": "auto_record_enabled",
+            "inputDevice": "input_device",
+            "dataRoot": "data_root",
+        }
+        changes = {mapping[key]: value for key, value in payload.items() if key in mapping}
+        self.config = replace(self.config, **changes)
+        if self.config_path is not None:
+            self.config.save_atomic(self.config_path)
+
+    def _command_error(self, message: str) -> None:
+        self.state["latestError"] = message
+        self.emit_event("error", {"message": message})
+        self.emit_event("snapshot", self.snapshot())
 
     def shutdown(self) -> None:
         self._upload_stop.set()
@@ -418,11 +484,11 @@ def create_upload_service(config: WorkerConfig, store: QueueStore):
 def main() -> int:
     config_path = Path(os.environ.get("RECORDER_CONFIG_PATH", "worker-config.json"))
     config = WorkerConfig.load(config_path)
-    worker = RecorderWorker(config)
+    worker = RecorderWorker(config, config_path=config_path)
     if config.device_no:
         worker.upload_service = create_upload_service(config, worker.queue_store)
     worker.startup()
-    emit("ready", dict(worker.state))
+    emit("ready", worker.snapshot())
     try:
         for line in sys.stdin:
             try:

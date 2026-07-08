@@ -10,3 +10,9 @@ def test_parse_start_command():
 def test_reject_unknown_command():
     with pytest.raises(ValueError, match="unsupported command"):
         parse_command('{"id":"1","command":"format_disk","payload":{}}')
+
+
+@pytest.mark.parametrize("name", ["flush_queue", "update_settings"])
+def test_parse_runtime_control_commands(name):
+    parsed = parse_command(f'{{"id":"1","command":"{name}","payload":{{}}}}')
+    assert parsed.command == name
