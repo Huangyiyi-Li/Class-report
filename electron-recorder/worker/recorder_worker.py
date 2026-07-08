@@ -42,7 +42,6 @@ class CaptureSession:
         self.clock = clock
         self.on_error = on_error
         self.queue_store = queue_store
-        self._segment_index = 0
         self.pcm_queue: queue.Queue[bytes] = queue.Queue(maxsize=256)
         self.finalize_queue: queue.Queue = queue.Queue(maxsize=8)
         self.finalized_paths: queue.Queue[Path] = queue.Queue(
@@ -115,14 +114,17 @@ class CaptureSession:
             if journal is None:
                 return
             try:
-                wav_path = journal.finalize(datetime.now(timezone.utc))
+                finalized_at = datetime.now(timezone.utc)
+                wav_path = journal.finalize(finalized_at)
                 final_path = self.encoder(wav_path, self.ffmpeg_path)
-                self._segment_index += 1
                 if self.queue_store is not None:
+                    segment_index = self.queue_store.next_segment_index(
+                        journal.device_id, finalized_at.date().isoformat()
+                    )
                     self.queue_store.enqueue(
                         {
                             "local_path": str(final_path),
-                            "segment_index": self._segment_index,
+                            "segment_index": segment_index,
                         }
                     )
                 self.finalized_paths.put(

@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ def test_failed_item_does_not_block_next_item(tmp_path: Path):
     first = store.enqueue({"local_path": "one.wav", "segment_index": 1})
     second = store.enqueue({"local_path": "two.wav", "segment_index": 2})
 
+    assert store.claim_next("2026-07-07T00:00:00Z").id == first
     store.mark_failed(first, "offline", "2099-01-01T00:00:00Z")
 
     assert store.claim_next("2026-07-07T00:00:00Z").id == second
@@ -23,6 +25,7 @@ def test_failed_item_does_not_block_next_item(tmp_path: Path):
 def test_completed_item_is_not_claimed_again(tmp_path: Path):
     store = QueueStore(tmp_path / "queue.db")
     item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
+    store.claim_next("2026-07-07T00:00:00Z")
     store.mark_uploaded(item_id, "https://example.test/one.wav")
     store.mark_completed(item_id)
 
@@ -32,6 +35,7 @@ def test_completed_item_is_not_claimed_again(tmp_path: Path):
 def test_uploaded_item_is_not_claimed_again(tmp_path: Path):
     store = QueueStore(tmp_path / "queue.db")
     item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
+    store.claim_next("2026-07-07T00:00:00Z")
     store.mark_uploaded(item_id, "https://example.test/one.wav")
 
     assert store.claim_next("2026-07-07T00:00:00Z") is None
@@ -60,9 +64,82 @@ def test_counts_groups_items_by_status(tmp_path: Path):
     store = QueueStore(tmp_path / "queue.db")
     first = store.enqueue({"local_path": "one.wav", "segment_index": 1})
     store.enqueue({"local_path": "two.wav", "segment_index": 2})
+    store.claim_next("2026-07-07T00:00:00Z")
     store.mark_failed(first, "offline", "2099-01-01T00:00:00Z")
 
     assert store.counts() == {"failed": 1, "pending": 1}
+
+
+def test_completed_item_rejects_transition_to_failed(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    item_id = _completed_item(store)
+
+    with pytest.raises(ValueError, match="completed.*failed"):
+        store.mark_failed(item_id, "offline", "2026-07-08T00:00:00Z")
+
+    assert store.counts() == {"completed": 1}
+
+
+def test_completed_item_rejects_transition_to_uploaded(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    item_id = _completed_item(store)
+
+    with pytest.raises(ValueError, match="completed.*uploaded"):
+        store.mark_uploaded(item_id, "https://example.test/replacement.wav")
+
+    assert store.counts() == {"completed": 1}
+
+
+def test_pending_item_rejects_transition_to_completed(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
+
+    with pytest.raises(ValueError, match="pending.*completed"):
+        store.mark_completed(item_id)
+
+    assert store.counts() == {"pending": 1}
+
+
+def test_repeating_completed_transition_is_idempotent(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    item_id = _completed_item(store)
+
+    store.mark_completed(item_id)
+
+    assert store.counts() == {"completed": 1}
+
+
+def test_retry_time_with_offset_is_compared_as_same_utc_instant(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
+    store.claim_next("2026-07-06T23:00:00Z")
+    store.mark_failed(item_id, "offline", "2026-07-07T08:00:00+08:00")
+
+    claimed = store.claim_next(datetime(2026, 7, 7, tzinfo=timezone.utc))
+
+    assert claimed.id == item_id
+
+
+def test_retry_time_preserves_fractional_second_ordering(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
+    store.claim_next("2026-07-07T00:00:00Z")
+    store.mark_failed(item_id, "offline", "2026-07-07T00:00:01.500Z")
+
+    assert store.claim_next("2026-07-07T00:00:01.499Z") is None
+    assert store.claim_next("2026-07-07T00:00:01.500Z").id == item_id
+
+
+def test_segment_index_is_persistent_per_device_and_day(tmp_path: Path):
+    database = tmp_path / "queue.db"
+    first = QueueStore(database)
+
+    assert first.next_segment_index("device-1", "2026-07-07") == 1
+    assert first.next_segment_index("device-1", "2026-07-07") == 2
+    reopened = QueueStore(database)
+    assert reopened.next_segment_index("device-1", "2026-07-07") == 3
+    assert reopened.next_segment_index("device-1", "2026-07-08") == 1
+    assert reopened.next_segment_index("device-2", "2026-07-07") == 1
 
 
 def test_json_queue_migration_is_idempotent(tmp_path: Path):
@@ -107,6 +184,10 @@ def test_database_uses_wal_journal_mode(tmp_path: Path):
 
     with sqlite3.connect(database) as connection:
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
+        columns = {
+            row[1]: row[2] for row in connection.execute("PRAGMA table_info(segments)")
+        }
+        assert columns["retry_at"] == "INTEGER"
 
 
 def test_finalized_encoded_path_is_persisted_in_queue(tmp_path: Path):
@@ -122,6 +203,8 @@ def test_finalized_encoded_path_is_persisted_in_queue(tmp_path: Path):
 
     encoded = tmp_path / "segment.ogg"
     store = QueueStore(tmp_path / "queue.db")
+    today = datetime.now(timezone.utc).date().isoformat()
+    assert store.next_segment_index("device-1", today) == 1
     session = CaptureSession(
         WorkerConfig(),
         Journal(),
@@ -136,4 +219,12 @@ def test_finalized_encoded_path_is_persisted_in_queue(tmp_path: Path):
 
     item = store.claim_next("2026-07-07T00:00:00Z")
     assert item.local_path == str(encoded)
-    assert item.segment_index == 1
+    assert item.segment_index == 2
+
+
+def _completed_item(store: QueueStore) -> int:
+    item_id = store.enqueue({"local_path": "one.wav", "segment_index": 1})
+    store.claim_next("2026-07-07T00:00:00Z")
+    store.mark_uploaded(item_id, "https://example.test/one.wav")
+    store.mark_completed(item_id)
+    return item_id

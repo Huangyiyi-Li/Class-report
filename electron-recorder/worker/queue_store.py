@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -15,7 +16,7 @@ class QueueItem:
     status: str
     uploaded_url: str
     last_error: str
-    retry_at: str | None
+    retry_at: int | None
     created_at: str
     completed_at: str | None
 
@@ -35,12 +36,18 @@ class QueueStore:
                   status TEXT NOT NULL DEFAULT 'pending',
                   uploaded_url TEXT NOT NULL DEFAULT '',
                   last_error TEXT NOT NULL DEFAULT '',
-                  retry_at TEXT,
+                  retry_at INTEGER,
                   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   completed_at TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_segments_claim
                   ON segments(status, retry_at, id);
+                CREATE TABLE IF NOT EXISTS segment_counters (
+                  device_id TEXT NOT NULL,
+                  day TEXT NOT NULL,
+                  current_index INTEGER NOT NULL,
+                  PRIMARY KEY (device_id, day)
+                );
                 """
             )
 
@@ -49,7 +56,8 @@ class QueueStore:
         with self._connect() as connection:
             return self._insert(connection, local_path, segment_index)
 
-    def claim_next(self, now: str) -> QueueItem | None:
+    def claim_next(self, now: str | datetime) -> QueueItem | None:
+        now_epoch = _to_epoch_ms(now)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
@@ -60,7 +68,7 @@ class QueueStore:
                 ORDER BY id
                 LIMIT 1
                 """,
-                (now,),
+                (now_epoch,),
             ).fetchone()
             if row is None:
                 connection.commit()
@@ -74,7 +82,7 @@ class QueueStore:
                   OR (status = 'failed' AND retry_at <= ?)
                 )
                 """,
-                (row["id"], now),
+                (row["id"], now_epoch),
             ).rowcount
             if updated != 1:
                 connection.rollback()
@@ -86,35 +94,71 @@ class QueueStore:
             return _queue_item(claimed)
 
     def mark_uploaded(self, item_id: int, url: str) -> None:
-        self._update(
+        self._transition(
+            item_id,
+            "uploaded",
+            ("uploading",),
             """
             UPDATE segments
             SET status = 'uploaded', uploaded_url = ?, last_error = '', retry_at = NULL
-            WHERE id = ?
+            WHERE id = ? AND status IN ('uploading')
             """,
             (url, item_id),
         )
 
     def mark_completed(self, item_id: int) -> None:
-        self._update(
+        self._transition(
+            item_id,
+            "completed",
+            ("uploaded",),
             """
             UPDATE segments
             SET status = 'completed', completed_at = CURRENT_TIMESTAMP,
                 last_error = '', retry_at = NULL
-            WHERE id = ?
+            WHERE id = ? AND status IN ('uploaded')
             """,
             (item_id,),
         )
 
-    def mark_failed(self, item_id: int, error: str, retry_at: str) -> None:
-        self._update(
+    def mark_failed(
+        self, item_id: int, error: str, retry_at: str | datetime
+    ) -> None:
+        self._transition(
+            item_id,
+            "failed",
+            ("uploading",),
             """
             UPDATE segments
             SET status = 'failed', last_error = ?, retry_at = ?
-            WHERE id = ?
+            WHERE id = ? AND status IN ('uploading')
             """,
-            (error, retry_at, item_id),
+            (error, _to_epoch_ms(retry_at), item_id),
         )
+
+    def next_segment_index(self, device_id: str, day: str) -> int:
+        if not device_id or not day:
+            raise ValueError("device_id and day are required")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT current_index FROM segment_counters
+                WHERE device_id = ? AND day = ?
+                """,
+                (device_id, day),
+            ).fetchone()
+            next_index = 1 if row is None else int(row["current_index"]) + 1
+            connection.execute(
+                """
+                INSERT INTO segment_counters(device_id, day, current_index)
+                VALUES (?, ?, ?)
+                ON CONFLICT(device_id, day)
+                DO UPDATE SET current_index = excluded.current_index
+                """,
+                (device_id, day, next_index),
+            )
+            connection.commit()
+            return next_index
 
     def counts(self) -> dict[str, int]:
         with self._connect() as connection:
@@ -154,9 +198,31 @@ class QueueStore:
         ).fetchone()
         return int(row["id"])
 
-    def _update(self, sql: str, parameters: tuple) -> None:
+    def _transition(
+        self,
+        item_id: int,
+        target_status: str,
+        source_statuses: tuple[str, ...],
+        sql: str,
+        parameters: tuple,
+    ) -> None:
         with self._connect() as connection:
-            connection.execute(sql, parameters)
+            changed = connection.execute(sql, parameters).rowcount
+            if changed == 1:
+                return
+            row = connection.execute(
+                "SELECT status FROM segments WHERE id = ?", (item_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"queue item {item_id} does not exist")
+            current_status = row["status"]
+            if current_status == target_status:
+                return
+            sources = ", ".join(source_statuses)
+            raise ValueError(
+                f"cannot transition queue item {item_id} from {current_status} "
+                f"to {target_status}; expected {sources}"
+            )
 
 
 def migrate_json_queue(json_path: str | Path, store: QueueStore) -> None:
@@ -184,3 +250,21 @@ def _segment_values(segment: dict) -> tuple[str, int]:
 
 def _queue_item(row: sqlite3.Row) -> QueueItem:
     return QueueItem(**dict(row))
+
+
+def _to_epoch_ms(value: str | datetime) -> int:
+    if isinstance(value, str):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    elif isinstance(value, datetime):
+        parsed = value
+    else:
+        raise TypeError("timestamp must be an ISO string or datetime")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("timestamp must include a UTC offset")
+    utc_value = parsed.astimezone(timezone.utc)
+    elapsed = utc_value - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return (
+        elapsed.days * 86_400_000
+        + elapsed.seconds * 1_000
+        + elapsed.microseconds // 1_000
+    )
