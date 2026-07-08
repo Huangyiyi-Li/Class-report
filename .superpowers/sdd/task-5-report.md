@@ -54,5 +54,13 @@
 - Expanded the SQLite segment record and capture enqueue path with device, school/location, start/end, encoding, and audio contract fields used to build the production XXT payload.
 - Added an XXT fallback contract test proving the worker payload reaches the Android-compatible fallback without missing-key errors and without network access.
 - Retention now rejects symlinks, checks the resolved target remains under the recordings root, and unlinks only the original non-symlink path.
-- Network upload and metadata calls have an explicit 30-second service timeout. Worker shutdown uses a bounded five-second join and emits an observable error if a custom/blocking service cannot stop.
+- Worker shutdown uses a bounded five-second join and emits an observable error if a custom/blocking service cannot stop; the final timeout design is documented in the second review follow-up below.
 - Added regressions for metadata-only restart recovery, stale upload/register claims, non-blocking queue progress, symlink safety, network timeout, and bounded shutdown.
+
+## Second review follow-up
+
+- Replaced the conditional token copy with `XxtProductionAdapter`: metadata registration now actively ensures device authentication, injects the fresh access token, and only then calls the primary/fallback metadata API. This works after a process restart when SQLite already contains an `uploaded` row and no upload occurs in the new process.
+- Removed the UploadService daemon-thread timeout wrapper. Upload and registration now run synchronously on the recorder's daemon upload worker, so a timed-out lower-level request is finished before the row becomes retryable and no abandoned request thread can overlap a retry.
+- Centralized the 30-second request timeout in the narrow production client files. Device auth, OSS-token acquisition, primary/fallback metadata registration use the explicit HTTP timeout; OSS upload constructs its bucket with the same 30-second connect/socket timeout.
+- Kept shutdown bounded at five seconds. If the synchronous worker is still inside a lower-level request, shutdown emits an error and returns while the daemon worker cannot keep the process alive.
+- Fresh verification: worker suite `63 passed`; focused Windows timeout contracts `2 passed`.

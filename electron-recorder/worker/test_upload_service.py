@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
 import threading
-import time
 
 from worker.queue_store import QueueStore
 from worker.upload_service import RETRY_SECONDS, UploadService, retry_delay
@@ -169,18 +168,32 @@ def test_stale_uploading_claim_is_recovered(tmp_path):
     assert uploader.calls == ["one.wav"]
 
 
-def test_blocked_upload_times_out_and_becomes_retryable(tmp_path):
+def test_bottom_layer_timeout_becomes_retryable(tmp_path):
     store = seeded_store(tmp_path, ["one.wav"])
 
-    class BlockingUploader:
+    class TimedOutUploader:
         def upload(self, path):
-            threading.Event().wait()
+            raise TimeoutError("socket timed out after 30s")
 
-    started = time.monotonic()
     result = UploadService(
-        store, BlockingUploader(), FakeMetadataClient(), network_timeout=0.02
+        store, TimedOutUploader(), FakeMetadataClient()
     ).run_once("2026-07-07T00:00:00Z")
 
-    assert time.monotonic() - started < 0.5
     assert result.status == "failed"
     assert "timed out" in result.error
+
+
+def test_upload_service_runs_network_call_synchronously(tmp_path, monkeypatch):
+    store = seeded_store(tmp_path, ["one.wav"])
+    monkeypatch.setattr(
+        threading,
+        "Thread",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("UploadService must not create timeout threads")
+        ),
+    )
+
+    result = UploadService(store, FakeUploader(), FakeMetadataClient()).run_once(
+        "2026-07-07T00:00:00Z"
+    )
+    assert result.status == "uploaded"

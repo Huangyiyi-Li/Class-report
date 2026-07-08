@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import queue
-import threading
 
 from worker.queue_store import QueueStore
 
@@ -25,11 +23,10 @@ class UploadResult:
 
 
 class UploadService:
-    def __init__(self, store: QueueStore, uploader, metadata_client, network_timeout=30.0):
+    def __init__(self, store: QueueStore, uploader, metadata_client):
         self.store = store
         self.uploader = uploader
         self.metadata_client = metadata_client
-        self.network_timeout = network_timeout
 
     def run_once(self, now: str | datetime) -> UploadResult | None:
         current = _utc_datetime(now)
@@ -43,9 +40,7 @@ class UploadService:
     def _upload(self, item, current):
         try:
             path = Path(item.local_path)
-            uploaded_url = _call_with_timeout(
-                self.uploader.upload, self.network_timeout, path
-            )
+            uploaded_url = self.uploader.upload(path)
             self.store.mark_uploaded(item.id, uploaded_url)
             return UploadResult(item.id, "uploaded")
         except Exception as exc:
@@ -60,11 +55,7 @@ class UploadService:
 
     def _register(self, item, current):
         try:
-            _call_with_timeout(
-                self.metadata_client.save_audio_file_info,
-                self.network_timeout,
-                _metadata_payload(item),
-            )
+            self.metadata_client.save_audio_file_info(_metadata_payload(item))
             self.store.mark_completed(item.id)
             return UploadResult(item.id, "completed")
         except Exception as exc:
@@ -97,25 +88,6 @@ def _metadata_payload(item) -> dict:
         "channel": item.channel,
         "audioType": item.audio_type,
     }
-
-
-def _call_with_timeout(function, timeout: float, *args):
-    outcome = queue.Queue(maxsize=1)
-
-    def invoke():
-        try:
-            outcome.put((True, function(*args)))
-        except Exception as exc:
-            outcome.put((False, exc))
-
-    threading.Thread(target=invoke, daemon=True).start()
-    try:
-        succeeded, value = outcome.get(timeout=timeout)
-    except queue.Empty as exc:
-        raise TimeoutError(f"network operation timed out after {timeout:g}s") from exc
-    if not succeeded:
-        raise value
-    return value
 
 
 def _utc_datetime(value: str | datetime) -> datetime:

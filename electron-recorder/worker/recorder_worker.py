@@ -390,15 +390,17 @@ def emit(name: str, payload: dict) -> None:
     print(event(name, payload), flush=True)
 
 
-class _XxtMetadataAdapter:
+class XxtProductionAdapter:
     def __init__(self, api_client, upload_manager):
         self.api_client = api_client
         self.upload_manager = upload_manager
 
+    def upload(self, path):
+        return self.upload_manager.upload(path)
+
     def save_audio_file_info(self, payload):
-        auth = self.upload_manager.device_auth_data
-        if auth is not None:
-            self.api_client.token = auth.access_token
+        auth = self.upload_manager.ensure_device_auth()
+        self.api_client.token = auth.access_token
         return self.api_client.save_audio_file_info(payload)
 
 
@@ -409,11 +411,8 @@ def create_upload_service(config: WorkerConfig, store: QueueStore):
 
     api_client = XxtDeviceApiClient(config.base_url)
     upload_manager = XxtUploadManager(api_client, config.device_no)
-    return UploadService(
-        store,
-        upload_manager,
-        _XxtMetadataAdapter(api_client, upload_manager),
-    )
+    adapter = XxtProductionAdapter(api_client, upload_manager)
+    return UploadService(store, adapter, adapter)
 
 
 def main() -> int:
