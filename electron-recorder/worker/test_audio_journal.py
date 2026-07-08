@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+import time
+
 from worker.audio_journal import AudioJournal, recover_journals
 from worker.config import WorkerConfig
 from worker.recorder_worker import CaptureSession
@@ -31,6 +34,46 @@ def test_recovers_unfinished_part_as_wav(tmp_path: Path):
     assert recovered[0].exists()
 
 
+def test_recovery_isolates_corrupt_metadata_and_keeps_its_pcm(tmp_path: Path):
+    corrupt_part = tmp_path / "corrupt.pcm.part"
+    corrupt_part.write_bytes(b"pcm")
+    (tmp_path / "corrupt.json").write_text("not-json", encoding="utf-8")
+    valid = AudioJournal(
+        tmp_path, "device-1", datetime.now(timezone.utc), 16000, 1, 2
+    )
+    valid.append(b"\x00\x01")
+    valid.checkpoint()
+
+    errors = []
+    recovered = recover_journals(tmp_path, on_error=errors.append)
+
+    assert len(recovered) == 1
+    assert corrupt_part.exists()
+    assert len(errors) == 1
+
+
+def test_finalize_keeps_journal_when_atomic_wav_replace_fails(
+    tmp_path: Path, monkeypatch
+):
+    journal = AudioJournal(
+        tmp_path, "device-1", datetime.now(timezone.utc), 16000, 1, 2
+    )
+    journal.append(b"\x00\x01")
+    real_replace = __import__("os").replace
+
+    def fail_wav_replace(source, target):
+        if str(target).endswith(".wav"):
+            raise OSError("replace failed")
+        return real_replace(source, target)
+
+    monkeypatch.setattr("worker.audio_journal.os.replace", fail_wav_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        journal.finalize()
+    assert journal.part_path.exists()
+    assert journal.meta_path.exists()
+
+
 class FakeInputData:
     def copy(self):
         return self
@@ -45,6 +88,8 @@ class FakeJournal:
         self.rate = 16000
         self.channels = 1
         self.sample_width = 2
+        self.root = wav_path.parent
+        self.device_id = "device-1"
         self.appended = []
         self.checkpoints = 0
         self.finalized = 0
@@ -59,6 +104,11 @@ class FakeJournal:
         self.finalized += 1
         self.wav_path.write_bytes(b"wav")
         return self.wav_path
+
+
+class FailingJournal(FakeJournal):
+    def append(self, pcm: bytes):
+        raise OSError("disk full")
 
 
 def test_audio_callback_only_queues_pcm(tmp_path: Path):
@@ -88,19 +138,19 @@ def test_writer_checkpoints_and_enqueues_encoded_final_path(tmp_path: Path):
 
     assert journal.appended == [b"pcm"]
     assert journal.checkpoints == 1
+    assert journal.finalized == 0
+    session.finalizer_loop()
     assert journal.finalized == 1
     assert session.finalized_paths.get_nowait() == encoded
 
 
 def test_writer_rotates_journal_at_segment_boundary(tmp_path: Path):
     first = FakeJournal(tmp_path / "first.wav")
-    second = FakeJournal(tmp_path / "second.wav")
     session = CaptureSession(
         WorkerConfig(segment_seconds=300, checkpoint_seconds=1000),
         first,
         ffmpeg_path=Path("ffmpeg.exe"),
         encoder=lambda wav, ffmpeg: wav,
-        journal_factory=lambda: second,
         clock=iter([0.0, 100.0, 301.0]).__next__,
     )
     session.pcm_queue.put(b"first")
@@ -108,11 +158,12 @@ def test_writer_rotates_journal_at_segment_boundary(tmp_path: Path):
     session.stop_event.set()
 
     session.writer_loop()
+    session.finalizer_loop()
 
     assert first.appended == [b"first"]
-    assert second.appended == [b"second"]
     assert first.finalized == 1
-    assert second.finalized == 1
+    assert session.journal is not first
+    assert session.finalized_paths.qsize() == 2
 
 
 def test_start_configures_input_stream_for_journal_format(tmp_path: Path):
@@ -148,3 +199,86 @@ def test_start_configures_input_stream_for_journal_format(tmp_path: Path):
     assert captured["channels"] == 1
     assert captured["dtype"] == "int16"
     assert captured["started"] is True
+
+
+def test_writer_failure_is_stored_and_observable_by_owner(tmp_path: Path):
+    errors = []
+    journal = FailingJournal(tmp_path / "segment.wav")
+    session = CaptureSession(
+        WorkerConfig(),
+        journal,
+        ffmpeg_path=Path("ffmpeg.exe"),
+        on_error=errors.append,
+        clock=iter([0.0, 1.0]).__next__,
+    )
+    session.pcm_queue.put(b"pcm")
+    session.stop_event.set()
+
+    session.writer_loop()
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        session.raise_if_failed()
+    assert len(errors) == 1
+
+
+def test_async_writer_failure_stops_stream_and_stop_raises(tmp_path: Path):
+    stopped = []
+
+    class FakeStream:
+        def start(self):
+            pass
+
+        def stop(self):
+            stopped.append(True)
+
+        def close(self):
+            pass
+
+    session = CaptureSession(
+        WorkerConfig(),
+        FailingJournal(tmp_path / "segment.wav"),
+        ffmpeg_path=Path("ffmpeg.exe"),
+        stream_factory=lambda **kwargs: FakeStream(),
+    )
+    session.pcm_queue.put(b"pcm")
+    session.start()
+    deadline = time.monotonic() + 1
+    while not stopped and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert stopped
+    with pytest.raises(RuntimeError, match="disk full"):
+        session.stop()
+
+
+def test_encoder_failure_from_finalizer_is_observable(tmp_path: Path):
+    journal = FakeJournal(tmp_path / "segment.wav")
+    session = CaptureSession(
+        WorkerConfig(),
+        journal,
+        ffmpeg_path=Path("ffmpeg.exe"),
+        encoder=lambda wav, ffmpeg: (_ for _ in ()).throw(OSError("ffmpeg failed")),
+    )
+    session.finalize_queue.put(journal)
+    session.finalize_queue.put(None)
+
+    session.finalizer_loop()
+
+    with pytest.raises(RuntimeError, match="ffmpeg failed"):
+        session.raise_if_failed()
+
+
+def test_pcm_queue_overrun_becomes_explicit_failure(tmp_path: Path):
+    session = CaptureSession(
+        WorkerConfig(),
+        FakeJournal(tmp_path / "segment.wav"),
+        ffmpeg_path=Path("ffmpeg.exe"),
+    )
+    for _ in range(session.pcm_queue.maxsize):
+        session.pcm_queue.put_nowait(b"pcm")
+
+    session.audio_callback(FakeInputData(), 1, None, None)
+
+    with pytest.raises(RuntimeError, match="PCM queue overrun"):
+        session.raise_if_failed()
+    assert session.stop_event.is_set()
