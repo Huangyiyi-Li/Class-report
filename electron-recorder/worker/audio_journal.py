@@ -71,14 +71,28 @@ class AudioJournal:
 
 
 def _pcm_to_wav(
-    part: Path, target: Path, rate: int, channels: int, sample_width: int
+    part: Path,
+    target: Path,
+    rate: int,
+    channels: int,
+    sample_width: int,
+    *,
+    frame_count: int | None = None,
 ) -> None:
+    if frame_count is None:
+        pcm = part.read_bytes()
+    else:
+        byte_count = frame_count * channels * sample_width
+        with part.open("rb") as source:
+            pcm = source.read(byte_count)
+        if len(pcm) != byte_count:
+            raise ValueError("journal PCM is shorter than its durable frame count")
     temporary = target.with_suffix(target.suffix + ".tmp")
     with wave.open(str(temporary), "wb") as output:
         output.setframerate(rate)
         output.setnchannels(channels)
         output.setsampwidth(sample_width)
-        output.writeframes(part.read_bytes())
+        output.writeframes(pcm)
     with temporary.open("rb") as output_file:
         os.fsync(output_file.fileno())
     os.replace(temporary, target)
@@ -94,17 +108,28 @@ def recover_journals(
             meta_path = part.with_suffix("").with_suffix(".json")
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             target = part.with_suffix("").with_suffix(".wav")
+            frame_size = meta["channels"] * meta["sampleWidth"]
+            durable_frames = meta.get("durableFrames")
+            if durable_frames is None:
+                durable_frames = part.stat().st_size // frame_size
+            if (
+                isinstance(durable_frames, bool)
+                or not isinstance(durable_frames, int)
+                or durable_frames < 0
+            ):
+                raise ValueError("journal durableFrames must be a non-negative integer")
             _pcm_to_wav(
                 part,
                 target,
                 meta["rate"],
                 meta["channels"],
                 meta["sampleWidth"],
+                frame_count=durable_frames,
             )
             if queue_store is not None:
                 started_at = datetime.fromisoformat(meta["startedAt"])
                 ended_at = started_at + timedelta(
-                    seconds=meta["durableFrames"] / meta["rate"]
+                    seconds=durable_frames / meta["rate"]
                 )
                 device_id = meta["deviceId"]
                 segment = {

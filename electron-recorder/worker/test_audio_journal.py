@@ -1,4 +1,6 @@
-from datetime import datetime, timezone
+import json
+import wave
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -87,7 +89,45 @@ def test_recovery_end_time_uses_durable_pcm_frames_not_file_mtime(tmp_path: Path
     store = QueueStore(tmp_path / "queue.db")
     recover_journals(tmp_path, queue_store=store)
     item = store.claim_next(datetime.now(timezone.utc))
-    assert item.end_time == (started + __import__("datetime").timedelta(seconds=2)).isoformat()
+    assert item.end_time == (started + timedelta(seconds=2)).isoformat()
+
+
+def test_recovery_discards_pcm_beyond_durable_frames(tmp_path: Path):
+    started = datetime(2026, 7, 12, 23, 59, tzinfo=timezone.utc)
+    journal = AudioJournal(tmp_path, "device", started, 10, 2, 2)
+    durable_pcm = b"abcdefgh"
+    journal.append(durable_pcm)  # 2 complete frames
+    journal.checkpoint()
+    journal.append(b"unconfirmed-tail")
+    journal.file.close()
+    store = QueueStore(tmp_path / "queue.db")
+
+    recovered = recover_journals(tmp_path, queue_store=store)
+
+    with wave.open(str(recovered[0]), "rb") as audio:
+        assert audio.getnframes() == 2
+        assert audio.readframes(10) == durable_pcm
+    item = store.claim_next(datetime.now(timezone.utc))
+    assert item.end_time == (started + timedelta(seconds=0.2)).isoformat()
+
+
+def test_legacy_recovery_uses_only_complete_frames_from_part(tmp_path: Path):
+    started = datetime(2026, 7, 12, 23, 59, tzinfo=timezone.utc)
+    journal = AudioJournal(tmp_path, "legacy-device", started, 10, 2, 2)
+    journal.append(b"abcdefghij")  # 2 complete frames plus a partial frame
+    journal.file.close()
+    metadata = json.loads(journal.meta_path.read_text(encoding="utf-8"))
+    metadata.pop("durableFrames")
+    journal.meta_path.write_text(json.dumps(metadata), encoding="utf-8")
+    store = QueueStore(tmp_path / "queue.db")
+
+    recovered = recover_journals(tmp_path, queue_store=store)
+
+    with wave.open(str(recovered[0]), "rb") as audio:
+        assert audio.getnframes() == 2
+        assert audio.readframes(10) == b"abcdefgh"
+    item = store.claim_next(datetime.now(timezone.utc))
+    assert item.end_time == (started + timedelta(seconds=0.2)).isoformat()
 
 
 def test_recovery_isolates_corrupt_metadata_and_keeps_its_pcm(tmp_path: Path):

@@ -244,6 +244,44 @@ def test_stop_waits_for_inflight_retry_start_and_leaves_no_session_or_timer(tmp_
     assert worker._capture_retry_timer is None
 
 
+def test_shutdown_waits_for_inflight_retry_and_invalidates_capture(tmp_path: Path):
+    entered, release = threading.Event(), threading.Event()
+    sessions = []
+
+    class BarrierSession(FakeSession):
+        def start(self):
+            entered.set()
+            release.wait(1)
+            super().start()
+
+    def factory(**_):
+        session = BarrierSession() if sessions else FakeSession()
+        sessions.append(session)
+        return session
+
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        session_factory=factory, recover=lambda *_: [], startup_gate=allow_startup,
+        emit_event=lambda *_: None, capture_retry_delays=(0.01,),
+    )
+    worker.startup()
+    worker.handle(command("start"))
+    worker._capture_error(OSError("disconnect"))
+    assert entered.wait(1)
+
+    shutdown = threading.Thread(target=worker.shutdown)
+    shutdown.start()
+    time.sleep(0.02)
+    assert shutdown.is_alive()
+    release.set()
+    shutdown.join(1)
+
+    assert not shutdown.is_alive()
+    assert worker._desired_recording is False
+    assert worker.session is None
+    assert worker._capture_retry_timer is None
+
+
 def test_main_lifetime_is_not_tied_to_stdin_eof(monkeypatch, tmp_path):
     calls = []
     finalized = []

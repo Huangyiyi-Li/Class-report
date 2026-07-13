@@ -3,11 +3,11 @@
 ## Implemented
 
 - Audio journals now durably persist recording-time device, school, location, and start-time metadata alongside the PCM format metadata.
-- Journal metadata checkpoints include `durableFrames`; recovery derives `end_time` from recording-time start/rate/frame data and never from recovery-time file timestamps.
+- Journal metadata checkpoints include `durableFrames`; recovery writes only those complete durable frames and derives `end_time` from the same count. Legacy metadata without the field falls back to the part file's complete-frame count, discarding any partial trailing frame.
 - `QueueStore.enqueue_recovered` performs duplicate detection, segment-index allocation, and insertion in one SQLite transaction, so crash retries neither duplicate rows nor consume another index.
 - Capture sessions expose a first-durable-write event through `wait_until_ready(timeout)`. The worker waits up to the injected/default three-second deadline before publishing `recording`; a silent opened stream is stopped and mapped to `microphone_unavailable`.
 - Microphone open failures map to `microphone_unavailable` regardless of the backend exception type, dispose the failed candidate session, and remain retryable.
-- Unexpected capture failures retain desired-recording intent and use one bounded backoff timer. Capture transitions share a lock and generation; stop, pause, and shutdown invalidate callbacks, cancel timers, and cannot return ahead of an in-flight retry start.
+- Unexpected capture failures retain desired-recording intent and use one bounded backoff timer. Capture transitions share a lock and generation; stop, pause, command shutdown, and the real finally/signal shutdown path invalidate callbacks, cancel timers, and cannot return ahead of an in-flight retry start.
 - Electron preferences default safely before bootstrap and, after bootstrap, live beside the non-system worker config. Before bootstrap auto-launch IPC and startup registration return a Chinese failed result without changing state or touching OS registration; `userData` contains only the secret-free config locator.
 - The controlled integration harness explicitly signals its simulated durable-write readiness.
 - Testing documentation identifies controlled pre-provisioned binding fixtures as technical validation only and keeps self-service QR binding as an external integration blocker.
@@ -19,6 +19,7 @@
 - Regression: the real Python worker/Node client integration exposed a synchronous readiness ordering race; the failing integration test drove the ordering fix.
 - Remediation RED covered an in-flight retry/stop barrier, silent-stream readiness timeout, deterministic frame-derived recovery time, transactional recovery replay, and pre-bootstrap auto-launch rejection.
 - Final review RED replaced the synthetic `OSError` with a generic backend startup exception; the fix now cleans up the failed candidate and preserves `microphone_unavailable` plus retry behavior for real PortAudio-style failures.
+- Follow-up review RED proved the real `shutdown()` returned during an in-flight retry and journal recovery included bytes beyond the durable boundary or rejected legacy metadata. The shared shutdown helper and frame-bounded recovery make those paths deterministic.
 
 ## Scope
 

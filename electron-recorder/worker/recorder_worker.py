@@ -360,11 +360,7 @@ class RecorderWorker:
 
     def execute_command(self, command) -> bool:
         if command.command == "shutdown":
-            with self._capture_transition_lock:
-                self._cancel_capture_retry()
-                self._desired_recording = False
-                self._capture_generation += 1
-                self._stop_session("idle")
+            self._shutdown_capture()
             self.emit_event("snapshot", self.snapshot())
             return False
         if command.command == "start":
@@ -496,6 +492,13 @@ class RecorderWorker:
         if session is not None:
             session.stop()
         self.state["recording"] = next_state
+
+    def _shutdown_capture(self) -> None:
+        with self._capture_transition_lock:
+            self._desired_recording = False
+            self._capture_generation += 1
+            self._cancel_capture_retry()
+            self._stop_session("idle")
 
     def _capture_error(self, exc: Exception, generation: int | None = None) -> None:
         with self._state_lock:
@@ -633,6 +636,10 @@ class RecorderWorker:
         self.emit_event("snapshot", self.snapshot())
 
     def shutdown(self) -> None:
+        try:
+            self._shutdown_capture()
+        except Exception as exc:
+            self._capture_error(exc)
         self._upload_stop.set()
         if self._upload_thread is not None:
             thread = self._upload_thread
@@ -644,10 +651,6 @@ class RecorderWorker:
                 )
             else:
                 self._upload_thread = None
-        try:
-            self._stop_session("idle")
-        except Exception as exc:
-            self._capture_error(exc)
 
 
 def emit(name: str, payload: dict) -> None:
