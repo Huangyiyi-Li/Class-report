@@ -19,7 +19,7 @@
 
 ---
 
-### Task R1: Reproducible Repository Baseline
+### Task 1: Reproducible Repository Baseline
 
 **Files:**
 - Modify: `.gitignore`
@@ -40,7 +40,7 @@
 - [ ] Run the repository test, `npm test`, and `npm run build`; confirm all pass.
 - [ ] Commit with `build(recorder): make clean checkout reproducible`.
 
-### Task R2: Production Startup Gates and Automatic Recording
+### Task 2: Production Startup Gates and Automatic Recording
 
 **Files:**
 - Modify: `electron-recorder/worker/config.py`
@@ -59,7 +59,7 @@
 - [ ] Implement automatic start after recovery and queue initialization, using the same guarded start path as manual recording.
 - [ ] Run the full worker suite and commit with `fix(recorder): enforce startup safety gates`.
 
-### Task R3: Detached Worker and Reconnectable Local Control
+### Task 3: Detached Worker and Reconnectable Local Control
 
 **Files:**
 - Create: `electron-recorder/worker/control_server.py`
@@ -81,7 +81,7 @@
 - [ ] Preserve explicit start/pause/stop commands, but remove shutdown-on-Electron-quit behavior.
 - [ ] Run full Python/Node suites plus Electron smoke and commit with `refactor(recorder): detach worker lifecycle from Electron`.
 
-### Task R4: Persisted Settings, Verified Auto-Launch, and Safe IPC
+### Task 4: Persisted Settings, Verified Auto-Launch, and Safe IPC
 
 **Files:**
 - Create: `electron-recorder/src/settings.js`
@@ -103,7 +103,7 @@
 - [ ] Ensure binding identifiers cannot be changed through the general renderer settings IPC.
 - [ ] Run full test/build/smoke verification and commit with `fix(recorder): persist and validate runtime settings`.
 
-### Task R5: Diagnostics, Packaging Inputs, and Delivery Gate
+### Task 5: Diagnostics, Packaging Inputs, and Delivery Gate
 
 **Files:**
 - Create: `electron-recorder/scripts/build-worker.py`
@@ -135,4 +135,3 @@
 6. Renderer IPC rejects malformed settings and cannot mutate binding identity.
 7. The installer definition includes the worker and Windows FFmpeg.
 8. All automated checks pass; true Windows/ice-point/72-hour checks remain explicit release gates until executed.
-
