@@ -159,3 +159,36 @@ Bootstrap intentionally performs only the minimum path validation requested here
 ### Remaining scope
 
 Task 4 still owns binding UX/config completeness and disabling the root field with redeployment guidance. Task 5 still owns Windows-host lock validation.
+
+## Fourth remediation: acknowledged worker-owned persistence
+
+### RED evidence
+
+- `WorkerClient` had no `sendCommand` API, so concurrent command IDs could not be correlated and callers could not distinguish worker persistence success from a socket write.
+- ControlServer emitted snapshots but no command-specific result ACK; the new authenticated command test timed out waiting for `command_result`.
+- Disconnected and timed-out settings commands lacked a deterministic rejection/cleanup contract.
+- A synchronous exception from `launchWorker()` escaped the recovery loop instead of being reported and retried.
+- Bootstrap called `realpath` before safely creating a missing legal root and did not reapply local/non-system policy to the canonical result.
+
+### GREEN changes
+
+- Added `command_result` frames containing the original command ID plus `success` or `error`. The server serializes `execute_command`, completes worker handling and atomic config save, then ACKs only that authenticated client.
+- Added `WorkerClient.sendCommand()`. It tracks independent command IDs, resolves only matching successful ACKs, rejects worker errors, rejects all pending commands on disconnect, and removes timeout state without caching or replaying commands.
+- Existing `send()` delegates to the ACK path so start/pause/stop remain compatible while IPC callers can await completion.
+- For an established formal config, Electron never writes settings first. It sends `update_settings` to the online worker and mutates Electron memory only after ACK. Recording rejection, disconnection, save failure, and timeout leave Electron and disk unchanged and tell the caller to retry later.
+- First bootstrap remains the sole Electron-owned config write. Runtime data-root changes are also rejected inside the worker protocol.
+- Idle worker settings tests prove memory and disk converge after save; recording tests prove both remain unchanged on rejection. Node tests prove disconnected commands do not write or silently resend.
+- Command ACK tests cover out-of-order concurrent IDs, error rejection, timeout cleanup, and disconnect cleanup.
+- Bootstrap now lexically validates, safely creates a missing root, canonicalizes it, then revalidates canonical local/non-system policy before any config or locator write. Injected `D:`→`C:` and `D:`→UNC canonical mappings are rejected with zero file writes.
+- Both synchronous launch exceptions and asynchronous child `error` events are emitted through the client/main error path while launch cooldown and long-term recovery continue.
+
+### Verification
+
+- Full Python worker suite: 97 passed.
+- Full Node suite: 50 passed.
+- Vite production build and Electron UI smoke: passed.
+- Syntax and diff checks: passed.
+
+### Remaining scope
+
+Task 4 retains the disabled-root/redeployment UI copy and binding validation. Task 5 retains Windows-host lock validation.

@@ -503,10 +503,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
   ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);
   ipcMain.handle("recorder:flush", () => supervisor?.send("flush_queue") ?? false);
-  ipcMain.handle("recorder:update-settings", (_event, patch) => {
-    const result = applyWorkerSettings({
+  ipcMain.handle("recorder:update-settings", async (_event, patch) => {
+    const result = await applyWorkerSettings({
       settings, patch, workerLocation, supervisor,
-      persist: (candidate) => bootstrapWorkerConfig({ userDataDir: app.getPath("userData"), patch: candidate }),
+      persistBootstrap: (candidate) => bootstrapWorkerConfig({ userDataDir: app.getPath("userData"), patch: candidate }),
       attach: (location) => {
         workerLocation = location;
         attachWorkerClient(new WorkerClient({ runtimeDir: location.runtimeDir, launchWorker: spawnRecorderWorker }));

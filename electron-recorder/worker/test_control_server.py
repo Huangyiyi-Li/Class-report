@@ -54,6 +54,8 @@ def test_authenticated_client_can_command_worker(tmp_path):
         message = read_message(stream)
         assert message["event"] == "snapshot"
         assert message["payload"]["recording"] == "recording"
+        result = read_message(stream)
+        assert result == {"event": "command_result", "payload": {"id": "1", "success": True}}
         assert worker.commands == ["start"]
         sock.close()
 

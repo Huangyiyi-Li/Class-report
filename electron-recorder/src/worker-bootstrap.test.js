@@ -81,3 +81,17 @@ test("failed atomic replace removes its exclusive random temporary file", () => 
   assert.throws(() => atomicWriteJson(target, { value: true }));
   assert.deepEqual(fs.readdirSync(directory), ["target"]);
 });
+
+for (const canonical of ["C:\\Recorder", "\\\\server\\share\\Recorder"]) {
+  test(`canonicalized bootstrap root ${canonical} is rejected before file writes`, () => {
+    const userData = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-user-"));
+    let mkdirs = 0;
+    assert.throws(() => bootstrapWorkerConfig({
+      userDataDir: userData, patch: { dataRoot: "D:\\Recorder" },
+      validationOptions: { platform: "win32", systemDrive: "C:" },
+      mkdirRoot: () => { mkdirs += 1; }, realpath: () => canonical,
+    }));
+    assert.equal(mkdirs, 1);
+    assert.deepEqual(fs.readdirSync(userData), []);
+  });
+}

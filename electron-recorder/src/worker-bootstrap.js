@@ -47,9 +47,11 @@ export function validateBootstrapDataRoot(dataRoot, { platform = process.platfor
   return dataRoot;
 }
 
-export function bootstrapWorkerConfig({ userDataDir, patch }) {
-  validateBootstrapDataRoot(patch?.dataRoot);
-  const dataRoot = fs.realpathSync.native(patch.dataRoot);
+export function bootstrapWorkerConfig({ userDataDir, patch, validationOptions = {}, mkdirRoot = (root) => fs.mkdirSync(root, { recursive: true }), realpath = fs.realpathSync.native }) {
+  validateBootstrapDataRoot(patch?.dataRoot, validationOptions);
+  mkdirRoot(patch.dataRoot);
+  const dataRoot = realpath(patch.dataRoot);
+  validateBootstrapDataRoot(dataRoot, validationOptions);
   const located = loadWorkerLocator(userDataDir);
   if (located && located.dataRoot !== dataRoot) {
     throw new Error("录音数据目录首次部署后不可修改，需重新部署");
@@ -69,18 +71,19 @@ export function bootstrapWorkerConfig({ userDataDir, patch }) {
   return { configPath, runtimeDir: path.join(dataRoot, "runtime"), dataRoot };
 }
 
-export function loadWorkerLocator(userDataDir, validationOptions = {}) {
+export function loadWorkerLocator(userDataDir, validationOptions = {}, realpath = fs.realpathSync.native) {
   try {
     const locator = JSON.parse(fs.readFileSync(path.join(userDataDir, "worker-config-locator.json"), "utf8"));
     if (typeof locator.dataRoot !== "string" || typeof locator.configPath !== "string") return null;
     validateBootstrapDataRoot(locator.dataRoot, validationOptions);
     if (!path.isAbsolute(locator.configPath)) return null;
-    const root = fs.realpathSync.native(locator.dataRoot);
+    const root = realpath(locator.dataRoot);
+    validateBootstrapDataRoot(root, validationOptions);
     const expected = path.join(root, ".classroom-recorder", "worker-config.json");
     if (path.resolve(locator.configPath) !== path.resolve(path.join(locator.dataRoot, ".classroom-recorder", "worker-config.json"))) return null;
-    if (fs.realpathSync.native(locator.configPath) !== expected) return null;
+    if (realpath(locator.configPath) !== expected) return null;
     const config = JSON.parse(fs.readFileSync(locator.configPath, "utf8"));
-    if (typeof config.data_root !== "string" || fs.realpathSync.native(config.data_root) !== root) return null;
+    if (typeof config.data_root !== "string" || realpath(config.data_root) !== root) return null;
     return { configPath: expected, runtimeDir: path.join(root, "runtime"), dataRoot: root };
   } catch {
     return null;

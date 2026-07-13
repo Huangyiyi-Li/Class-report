@@ -252,3 +252,45 @@ test("asynchronous spawn ENOENT is reported and long recovery continues", async 
   assert.equal(client.socket, socket);
   client.disconnect();
 });
+
+test("concurrent command acknowledgements resolve by command id", async () => {
+  const socket = new FakeSocket();
+  const client = new WorkerClient({ readEndpoint: async () => endpoint, openSocket: async () => socket, launchWorker() {} });
+  await client.connect();
+  const first = client.sendCommand("pause");
+  const second = client.sendCommand("stop");
+  const [firstMessage, secondMessage] = socket.writes.slice(-2);
+  socket.emit("data", Buffer.from(`${JSON.stringify({ event: "command_result", payload: { id: secondMessage.id, success: true } })}\n`));
+  socket.emit("data", Buffer.from(`${JSON.stringify({ event: "command_result", payload: { id: firstMessage.id, success: true } })}\n`));
+  await Promise.all([first, second]);
+  assert.equal(client.pendingCommands.size, 0);
+  client.disconnect();
+});
+
+test("disconnected and timed out commands reject without queued resend", async () => {
+  const socket = new FakeSocket();
+  const client = new WorkerClient({ readEndpoint: async () => endpoint, openSocket: async () => socket, launchWorker() {}, commandTimeoutMs: 5 });
+  await client.connect();
+  const timedOut = client.sendCommand("update_settings", { inputDevice: "mic-2" });
+  await assert.rejects(timedOut, /timed out/);
+  assert.equal(client.pendingCommands.size, 0);
+  client.disconnect();
+  await assert.rejects(client.sendCommand("update_settings", {}), /not connected/);
+  assert.equal(socket.writes.filter((message) => message.command === "update_settings").length, 1);
+});
+
+test("synchronous launch failure is emitted and recovery continues", async () => {
+  const socket = new FakeSocket();
+  const errors = [];
+  let attempts = 0;
+  const client = new WorkerClient({
+    readEndpoint: async () => endpoint,
+    openSocket: async () => { if (++attempts === 1) throw new Error("offline"); return socket; },
+    launchWorker() { throw Object.assign(new Error("spawn sync ENOENT"), { code: "ENOENT" }); },
+    retryDelayMs: 1,
+  });
+  client.on("error", (error) => errors.push(error));
+  await client.connect();
+  assert.equal(errors.some((error) => error.code === "ENOENT"), true);
+  client.disconnect();
+});

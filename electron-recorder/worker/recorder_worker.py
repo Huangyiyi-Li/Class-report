@@ -21,6 +21,10 @@ from worker.segment_encoder import encode_ogg_opus
 from worker.upload_service import UploadService
 
 
+class CommandRejected(ValueError):
+    pass
+
+
 class CaptureSession:
     FINALIZED_PATH_CAPACITY = 32
     FINALIZED_PATH_PUT_TIMEOUT = 1
@@ -324,27 +328,33 @@ class RecorderWorker:
                 self.emit_event("error", {"message": f"upload worker failed: {exc}"})
             self._upload_stop.wait(self.upload_poll_seconds)
 
+    def execute_command(self, command) -> bool:
+        if command.command == "shutdown":
+            self._stop_session("idle")
+            self.emit_event("snapshot", self.snapshot())
+            return False
+        if command.command == "start":
+            if not self._guarded_start():
+                raise CommandRejected(self.state["latestError"] or "recording start rejected")
+        elif command.command == "pause":
+            self._stop_session("paused")
+        elif command.command == "stop":
+            self._stop_session("idle")
+        elif command.command == "flush_queue":
+            self._flush_queue()
+        elif command.command == "update_settings":
+            if self.state["recording"] == "recording":
+                self._command_error("录音中不允许变更运行设置")
+                raise CommandRejected("录音中不允许变更运行设置")
+            self._update_settings(command.payload)
+        self.emit_event("snapshot", self.snapshot())
+        return True
+
     def handle(self, command) -> bool:
         try:
-            if command.command == "shutdown":
-                self._stop_session("idle")
-                self.emit_event("snapshot", self.snapshot())
-                return False
-            if command.command == "start":
-                self._guarded_start()
-            elif command.command == "pause":
-                self._stop_session("paused")
-            elif command.command == "stop":
-                self._stop_session("idle")
-            elif command.command == "flush_queue":
-                self._flush_queue()
-            elif command.command == "update_settings":
-                if self.state["recording"] == "recording":
-                    self._command_error("录音中不允许变更运行设置")
-                    return True
-                self._update_settings(command.payload)
-            self.emit_event("snapshot", self.snapshot())
-            return True
+            return self.execute_command(command)
+        except CommandRejected:
+            return command.command != "shutdown"
         except Exception as exc:
             self._capture_error(exc)
             return command.command != "shutdown"
@@ -468,10 +478,12 @@ class RecorderWorker:
                 pass
 
     def _update_settings(self, payload: dict) -> None:
+        requested_root = payload.get("dataRoot")
+        if requested_root and requested_root != self.config.data_root:
+            raise CommandRejected("录音数据目录首次部署后不可修改，需重新部署")
         mapping = {
             "autoRecordEnabled": "auto_record_enabled",
             "inputDevice": "input_device",
-            "dataRoot": "data_root",
         }
         changes = {mapping[key]: value for key, value in payload.items() if key in mapping}
         candidate = replace(self.config, **changes)

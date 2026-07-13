@@ -23,7 +23,7 @@ function defaultOpenSocket({ host, port }) {
 export class WorkerClient extends EventEmitter {
   constructor({ runtimeDir, readEndpoint = () => defaultReadEndpoint(runtimeDir), openSocket = defaultOpenSocket,
     launchWorker, retryDelayMs = 200, maxRetryDelayMs = 2000, maxAttempts = 25,
-    authenticationTimeoutMs = 2000, launchCooldownMs = 5000 }) {
+    authenticationTimeoutMs = 2000, launchCooldownMs = 5000, commandTimeoutMs = 5000 }) {
     super();
     this.readEndpoint = readEndpoint;
     this.openSocket = openSocket;
@@ -33,6 +33,8 @@ export class WorkerClient extends EventEmitter {
     this.maxAttempts = maxAttempts;
     this.authenticationTimeoutMs = authenticationTimeoutMs;
     this.launchCooldownMs = launchCooldownMs;
+    this.commandTimeoutMs = commandTimeoutMs;
+    this.pendingCommands = new Map();
     this.socket = null;
     this.pendingSocket = null;
     this.terminal = false;
@@ -97,8 +99,12 @@ export class WorkerClient extends EventEmitter {
           this._assertActive(generation);
           const now = Date.now();
           if (now >= this.nextLaunchAt) {
-            const child = this.launchWorker({ detached: true, stdio: "ignore" });
-            child?.once?.("error", (launchError) => this.emit("error", launchError));
+            try {
+              const child = this.launchWorker({ detached: true, stdio: "ignore" });
+              child?.once?.("error", (launchError) => this.emit("error", launchError));
+            } catch (launchError) {
+              this.emit("error", launchError);
+            }
             this.nextLaunchAt = now + this.launchCooldownMs;
           }
           await this._sleep(Math.min(this.retryDelayMs * (attempt + 1), this.maxRetryDelayMs), generation);
@@ -162,7 +168,8 @@ export class WorkerClient extends EventEmitter {
       for (const line of lines.filter(Boolean)) {
         try {
           const message = JSON.parse(line);
-          this.emit(message.event, message.payload);
+          if (message.event === "command_result") this._settleCommand(message.payload);
+          else this.emit(message.event, message.payload);
         } catch (error) { this.emit("error", error); }
       }
     };
@@ -170,6 +177,7 @@ export class WorkerClient extends EventEmitter {
       if (error) this.emit("error", error);
       if (this.socket !== socket) return;
       this.socket = null;
+      this._rejectPendingCommands(new Error("worker disconnected; retry the command later"));
       socket.removeListener("data", onData);
       this.emit("disconnect");
       if (!this.terminal && generation === this.generation) this.connect().catch((failure) => {
@@ -181,9 +189,46 @@ export class WorkerClient extends EventEmitter {
     socket.on("close", () => lost());
   }
 
+  sendCommand(command, payload = {}) {
+    if (!this.socket) return Promise.reject(new Error("worker is not connected; retry later"));
+    const id = crypto.randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingCommands.delete(id);
+        reject(new Error(`worker command timed out: ${command}`));
+      }, this.commandTimeoutMs);
+      this.pendingCommands.set(id, { resolve, reject, timer });
+      try {
+        this.socket.write(`${JSON.stringify({ id, command, payload })}\n`);
+      } catch (error) {
+        clearTimeout(timer);
+        this.pendingCommands.delete(id);
+        reject(error);
+      }
+    });
+  }
+
   send(command, payload = {}) {
-    if (!this.socket) throw new Error("worker is not connected");
-    this.socket.write(`${JSON.stringify({ id: crypto.randomUUID(), command, payload })}\n`);
+    const result = this.sendCommand(command, payload);
+    result.catch((error) => this.emit("error", error));
+    return result;
+  }
+
+  _settleCommand(payload) {
+    const pending = this.pendingCommands.get(payload?.id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.pendingCommands.delete(payload.id);
+    if (payload.success) pending.resolve(payload);
+    else pending.reject(new Error(payload.error || "worker command failed"));
+  }
+
+  _rejectPendingCommands(error) {
+    for (const pending of this.pendingCommands.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pendingCommands.clear();
   }
 
   disconnect() {
@@ -191,6 +236,7 @@ export class WorkerClient extends EventEmitter {
     this.terminal = true;
     this.generation += 1;
     this.recoveryPromise = null;
+    this._rejectPendingCommands(new Error("worker disconnected; retry the command later"));
     for (const cancel of [...this.cancelSleeps]) cancel();
     const pending = this.pendingSocket;
     this.pendingSocket = null;

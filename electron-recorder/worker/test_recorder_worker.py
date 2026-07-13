@@ -354,22 +354,25 @@ def test_update_settings_whitelists_and_persists_when_idle(tmp_path: Path):
     worker.handle(command("update_settings", {
         "autoRecordEnabled": True,
         "inputDevice": "mic-2",
-        "dataRoot": str(tmp_path / "next"),
+        "dataRoot": str(tmp_path),
         "baseUrl": "https://evil.invalid",
     }))
 
     saved = WorkerConfig.load(config_path)
     assert saved.auto_record_enabled is True
     assert saved.input_device == "mic-2"
-    assert saved.data_root == str(tmp_path / "next")
+    assert saved.data_root == str(tmp_path)
     assert saved.base_url == "https://rest.xxt.cn"
 
 
 def test_update_settings_is_rejected_while_recording(tmp_path: Path):
     events = []
+    config_path = tmp_path / "worker-config.json"
+    original = WorkerConfig(data_root=str(tmp_path))
+    original.save_atomic(config_path)
     worker = RecorderWorker(
-        WorkerConfig(data_root=str(tmp_path)),
-        config_path=tmp_path / "worker-config.json",
+        original,
+        config_path=config_path,
         emit_event=lambda name, payload: events.append((name, payload)),
         recover=lambda root, on_error: [],
     )
@@ -379,6 +382,7 @@ def test_update_settings_is_rejected_while_recording(tmp_path: Path):
 
     assert any(name == "error" and "录音中" in payload["message"] for name, payload in events)
     assert worker.config.input_device == ""
+    assert WorkerConfig.load(config_path).input_device == ""
 
 
 def test_auto_record_starts_exactly_once_after_recovery_and_queue_initialization(tmp_path: Path):
@@ -473,7 +477,7 @@ def test_invalid_data_root_never_creates_storage_before_or_during_startup(
     assert worker.queue_store is None
 
 
-def test_data_root_update_atomically_rebinds_all_storage_paths(tmp_path: Path):
+def test_data_root_update_is_rejected_without_rebinding_storage(tmp_path: Path):
     old_root = tmp_path / "old"
     new_root = tmp_path / "new"
     captured = {}
@@ -491,18 +495,19 @@ def test_data_root_update_atomically_rebinds_all_storage_paths(tmp_path: Path):
     )
     worker.startup()
     old_database = worker.queue_store.database_path
+    original = worker.config
 
     worker.handle(command("update_settings", {"dataRoot": str(new_root)}))
     worker.handle(command("start"))
 
-    assert worker.config.data_root == str(new_root)
-    assert worker.recordings_dir == new_root / "recordings"
-    assert worker.queue_store.database_path == new_root / "queue.db"
-    assert worker.legacy_queue_path == new_root / "queue.json"
-    assert captured["journal"].root == new_root / "recordings"
+    assert worker.config == original
+    assert worker.recordings_dir == old_root / "recordings"
+    assert worker.queue_store.database_path == old_root / "queue.db"
+    assert worker.legacy_queue_path == old_root / "queue.json"
+    assert captured["journal"].root == old_root / "recordings"
     assert captured["queue_store"] is worker.queue_store
     assert old_database == old_root / "queue.db"
-    assert list((old_root / "recordings").iterdir()) == []
+    assert not new_root.exists()
 
 
 def test_failed_data_root_switch_preserves_old_configuration_and_resources(tmp_path: Path):

@@ -54,12 +54,16 @@ class _ControlHandler(socketserver.StreamRequestHandler):
                     break
                 if len(raw_line) > server.max_line_bytes or not raw_line.endswith(b"\n"):
                     break
+                command = None
                 try:
                     command = parse_command(raw_line.decode("utf-8"))
                     with server.command_lock:
-                        server.worker.handle(command)
+                        execute = getattr(server.worker, "execute_command", server.worker.handle)
+                        execute(command)
+                    self._send("command_result", {"id": command.id, "success": True})
                 except Exception as exc:
-                    self._send("error", {"message": str(exc)})
+                    command_id = command.id if command is not None else ""
+                    self._send("command_result", {"id": command_id, "success": False, "error": str(exc)})
         except (ConnectionResetError, OSError):
             pass
         finally:
