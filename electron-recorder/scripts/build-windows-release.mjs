@@ -18,13 +18,18 @@ const env = {
 };
 
 function run(command, args, options = {}) {
+  console.log(`Running ${command} ${args.join(" ")}`);
   const result = spawnSync(command, args, {
     env,
     stdio: "inherit",
     shell: false,
     ...options,
   });
-  if (result.status !== 0) process.exit(result.status ?? 1);
+  if (result.error) console.error(result.error);
+  if (result.status !== 0) {
+    console.error(`${command} exited with status ${result.status} and signal ${result.signal || "none"}`);
+    process.exit(result.status ?? 1);
+  }
 }
 
 if (process.platform !== "win32") {

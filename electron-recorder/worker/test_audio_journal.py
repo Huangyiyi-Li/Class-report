@@ -21,6 +21,7 @@ def test_checkpoint_persists_pcm_before_finalize(tmp_path: Path):
     journal.checkpoint()
 
     assert journal.part_path.stat().st_size == 32000
+    journal.file.close()
 
 
 def test_recovers_unfinished_part_as_wav(tmp_path: Path):
@@ -29,6 +30,7 @@ def test_recovers_unfinished_part_as_wav(tmp_path: Path):
     )
     journal.append(b"\x00\x01" * 1600)
     journal.checkpoint()
+    journal.file.close()
 
     recovered = recover_journals(tmp_path)
 
@@ -45,6 +47,7 @@ def test_recovery_enqueues_once_with_journal_time_binding_metadata(tmp_path: Pat
     )
     journal.append(b"\x00\x01" * 10)
     journal.checkpoint()
+    journal.file.close()
     store = QueueStore(tmp_path / "queue.db")
 
     first = recover_journals(tmp_path, queue_store=store)
@@ -85,6 +88,7 @@ def test_recovery_end_time_uses_durable_pcm_frames_not_file_mtime(tmp_path: Path
     journal = AudioJournal(tmp_path, "device", started, 10, 2, 2)
     journal.append(b"\x00" * 80)  # 20 frames = 2 seconds at 10 Hz
     journal.checkpoint()
+    journal.file.close()
     journal.part_path.touch()
     store = QueueStore(tmp_path / "queue.db")
     recover_journals(tmp_path, queue_store=store)
@@ -139,6 +143,7 @@ def test_recovery_isolates_corrupt_metadata_and_keeps_its_pcm(tmp_path: Path):
     )
     valid.append(b"\x00\x01")
     valid.checkpoint()
+    valid.file.close()
 
     errors = []
     recovered = recover_journals(tmp_path, on_error=errors.append)

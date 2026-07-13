@@ -49,10 +49,11 @@ jobs:
       - name: Install Node.js dependencies
         run: npm ci
 
-      - name: Run automated checks
-        run: |
-          python -m pytest worker ../windows_client/test_timeouts.py -q
-          npm test
+      - name: Run Python checks
+        run: python -m pytest worker ../windows_client/test_timeouts.py -q
+
+      - name: Run Node.js checks
+        run: npm test
 
       - name: Install Windows FFmpeg
         run: |
