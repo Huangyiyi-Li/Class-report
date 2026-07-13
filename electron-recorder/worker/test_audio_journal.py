@@ -6,6 +6,7 @@ import time
 
 from worker.audio_journal import AudioJournal, recover_journals
 from worker.config import WorkerConfig
+from worker.queue_store import QueueStore
 from worker.recorder_worker import CaptureSession
 
 
@@ -32,6 +33,48 @@ def test_recovers_unfinished_part_as_wav(tmp_path: Path):
     assert len(recovered) == 1
     assert recovered[0].suffix == ".wav"
     assert recovered[0].exists()
+
+
+def test_recovery_enqueues_once_with_journal_time_binding_metadata(tmp_path: Path):
+    started = datetime(2026, 7, 12, 23, 59, tzinfo=timezone.utc)
+    journal = AudioJournal(
+        tmp_path, "old-device", started, 16000, 1, 2,
+        school_id=17, location_id="old-room",
+    )
+    journal.append(b"\x00\x01" * 10)
+    journal.checkpoint()
+    store = QueueStore(tmp_path / "queue.db")
+
+    first = recover_journals(tmp_path, queue_store=store)
+    second = recover_journals(tmp_path, queue_store=store)
+
+    assert len(first) == 1
+    assert second == []
+    item = store.claim_next(datetime.now(timezone.utc))
+    assert item is not None
+    assert item.device_no == "old-device"
+    assert item.school_id == 17
+    assert item.location_id == "old-room"
+    assert item.start_time == started.isoformat()
+    store.mark_failed(item.id, "offline", datetime.now(timezone.utc))
+    assert store.claim_next(datetime.now(timezone.utc)).id == item.id
+
+
+def test_first_durable_write_notifies_capture_ready_once(tmp_path: Path):
+    ready = []
+    journal = FakeJournal(tmp_path / "segment.wav")
+    session = CaptureSession(
+        WorkerConfig(checkpoint_seconds=1000), journal, Path("ffmpeg.exe"),
+        on_ready=lambda: ready.append(True), clock=iter([0.0, 1.0, 2.0]).__next__,
+    )
+    session.pcm_queue.put(b"one")
+    session.pcm_queue.put(b"two")
+    session.stop_event.set()
+
+    session.writer_loop()
+
+    assert journal.checkpoints == 1
+    assert ready == [True]
 
 
 def test_recovery_isolates_corrupt_metadata_and_keeps_its_pcm(tmp_path: Path):

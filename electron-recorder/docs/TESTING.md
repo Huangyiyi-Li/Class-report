@@ -43,6 +43,8 @@ Get-ChildItem .\release -Recurse -Filter ffmpeg.exe
 6. Electron 退出时 worker 正在录音：worker 继续运行；Electron 重启后可重连。
 7. 诊断导出：保存成功和失败均有明确反馈，且 password、token、secret、authorization、control token 等字段在任意嵌套层级均已脱敏。
 
+技术验证可以使用受控的预置设备/学校/教室 binding fixture，仅用于验证上述安全门和采集恢复链路。该 fixture 不是生产用户绑定流程；小程序和 binding service 仓库当前不在本项目中，自助扫码绑定仍是外部集成阻塞项。
+
 ## 发布前人工门禁
 
 Mac 自动化不能替代以下门禁；未在目标环境留存证据前不得发布：

@@ -444,7 +444,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   const userDataDir = app.getPath("userData");
   workerLocation = loadWorkerLocator(app.getPath("userData"));
   settings = {
-    ...loadSettings(userDataDir),
+    ...loadSettings(workerLocation?.configPath),
     ...(workerLocation ? loadWorkerCoreSettings(workerLocation.configPath) : {}),
     dataRoot: workerLocation?.dataRoot || "",
   };
@@ -511,7 +511,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     });
     settings = result.settings;
     workerLocation = result.workerLocation;
-    persistSettings(userDataDir, {
+    persistSettings(workerLocation.configPath, {
       autoLaunch: settings.autoLaunch,
       autoRecordEnabled: settings.autoRecordEnabled,
       inputDevice: settings.inputDevice,
@@ -522,7 +522,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("app:set-auto-launch", async (_event, enabled) => {
     const desired = validateAutoLaunchValue(enabled);
     settings = { ...settings, autoLaunch: desired };
-    persistSettings(userDataDir, {
+    persistSettings(workerLocation.configPath, {
       autoLaunch: desired,
       autoRecordEnabled: settings.autoRecordEnabled,
       inputDevice: settings.inputDevice,

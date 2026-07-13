@@ -13,21 +13,32 @@ import {
 } from "./settings.js";
 
 test("settings default to auto-launch disabled", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-settings-"));
-  assert.equal(loadSettings(root).autoLaunch, false);
+  assert.equal(loadSettings(null).autoLaunch, false);
+});
+
+test("preferences stay default before bootstrap and persist beside worker config", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-data-"));
+  const configPath = path.join(root, ".classroom-recorder", "worker-config.json");
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, "{}", "utf8");
+  assert.deepEqual(loadSettings(null), { autoLaunch: false, autoRecordEnabled: false, inputDevice: "default" });
+  saveSettings(configPath, { autoLaunch: true, autoRecordEnabled: false, inputDevice: "default" });
+  assert.equal(fs.existsSync(path.join(path.dirname(configPath), "settings.json")), true);
+  assert.equal(loadSettings(configPath).autoLaunch, true);
 });
 
 test("settings persist across a fresh load without worker or binding fields", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-settings-"));
-  saveSettings(root, { autoLaunch: true, autoRecordEnabled: true, inputDevice: "mic-2" });
-  assert.deepEqual(loadSettings(root), { autoLaunch: true, autoRecordEnabled: true, inputDevice: "mic-2" });
+  const configPath = path.join(root, "worker-config.json");
+  saveSettings(configPath, { autoLaunch: true, autoRecordEnabled: true, inputDevice: "mic-2" });
+  assert.deepEqual(loadSettings(configPath), { autoLaunch: true, autoRecordEnabled: true, inputDevice: "mic-2" });
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, "settings.json"), "utf8")).deviceNo, undefined);
 });
 
 test("invalid or corrupt persisted settings fall back safely", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-settings-"));
   fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify({ autoLaunch: "yes", inputDevice: { id: 1 } }));
-  assert.deepEqual(loadSettings(root), { autoLaunch: false, autoRecordEnabled: false, inputDevice: "default" });
+  assert.deepEqual(loadSettings(path.join(root, "worker-config.json")), { autoLaunch: false, autoRecordEnabled: false, inputDevice: "default" });
 });
 
 test("worker core settings are loaded as authority instead of stale Electron defaults", () => {

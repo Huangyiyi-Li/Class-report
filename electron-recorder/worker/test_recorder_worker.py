@@ -135,6 +135,61 @@ def test_capture_error_changes_recording_and_health_state(tmp_path: Path):
     assert captured["session"].stopped == 1
 
 
+def test_recording_is_published_only_after_session_reports_durable_write(tmp_path: Path):
+    captured = {}
+    def session_factory(**kwargs):
+        captured.update(kwargs)
+        return FakeSession()
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        session_factory=session_factory, recover=lambda *_: [],
+        startup_gate=allow_startup, emit_event=lambda *_: None,
+    )
+    worker.startup()
+    worker.handle(command("start"))
+    assert worker.state["recording"] != "recording"
+    captured["on_ready"]()
+    assert worker.state["recording"] == "recording"
+
+
+def test_missing_microphone_maps_to_microphone_unavailable(tmp_path: Path):
+    class MissingMicrophone(FakeSession):
+        def start(self): raise OSError("No input device")
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        session_factory=lambda **_: MissingMicrophone(), recover=lambda *_: [],
+        startup_gate=allow_startup, emit_event=lambda *_: None,
+    )
+    worker.startup()
+    worker.handle(command("start"))
+    assert worker.state["recording"] == "microphone_unavailable"
+
+
+def test_unexpected_capture_failure_retries_and_stop_cancels_future_retry(tmp_path: Path):
+    callbacks, sessions = [], []
+    def session_factory(**kwargs):
+        callbacks.append(kwargs)
+        session = FakeSession()
+        sessions.append(session)
+        return session
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        session_factory=session_factory, recover=lambda *_: [],
+        startup_gate=allow_startup, emit_event=lambda *_: None,
+        capture_retry_delays=(0.01, 0.02),
+    )
+    worker.startup()
+    worker.handle(command("start"))
+    callbacks[0]["on_error"](OSError("device disconnected"))
+    deadline = time.monotonic() + 1
+    while len(sessions) < 2 and time.monotonic() < deadline: time.sleep(0.01)
+    assert len(sessions) == 2
+    callbacks[1]["on_error"](OSError("device disconnected again"))
+    worker.handle(command("stop"))
+    time.sleep(0.05)
+    assert len(sessions) == 2
+
+
 def test_main_lifetime_is_not_tied_to_stdin_eof(monkeypatch, tmp_path):
     calls = []
     finalized = []

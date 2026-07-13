@@ -59,9 +59,14 @@ function validatePersisted(payload) {
   };
 }
 
-export function loadSettings(userDataDir) {
+function settingsPath(configPath) {
+  return configPath ? path.join(path.dirname(configPath), "settings.json") : null;
+}
+
+export function loadSettings(configPath) {
+  if (!configPath) return { ...DEFAULT_SETTINGS };
   try {
-    return validatePersisted(JSON.parse(fs.readFileSync(path.join(userDataDir, "settings.json"), "utf8")));
+    return validatePersisted(JSON.parse(fs.readFileSync(settingsPath(configPath), "utf8")));
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -80,9 +85,10 @@ export function loadWorkerCoreSettings(configPath) {
   }
 }
 
-export function saveSettings(userDataDir, settings) {
+export function saveSettings(configPath, settings) {
+  if (!configPath) throw new Error("worker configuration is not bootstrapped");
   const persisted = validatePersisted(settings);
-  atomicWriteJson(path.join(userDataDir, "settings.json"), persisted);
+  atomicWriteJson(settingsPath(configPath), persisted);
   return persisted;
 }
 
