@@ -5,10 +5,14 @@ import path from "node:path";
 import test from "node:test";
 import { atomicWriteJson, bootstrapWorkerConfig, loadWorkerLocator, validateBootstrapDataRoot } from "./worker-bootstrap.js";
 
+// Generic persistence tests use the runner's temporary drive. Windows policy
+// enforcement is covered separately with explicit win32 paths below.
+const filesystemValidation = { platform: "linux" };
+
 test("first settings save writes full config outside userData and a secret-free locator", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-data-"));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-user-"));
-  const result = bootstrapWorkerConfig({ userDataDir: userData, patch: { dataRoot: root, autoRecordEnabled: true, inputDevice: "mic-1" } });
+  const result = bootstrapWorkerConfig({ userDataDir: userData, patch: { dataRoot: root, autoRecordEnabled: true, inputDevice: "mic-1" }, validationOptions: filesystemValidation });
   assert.equal(result.runtimeDir, path.join(result.dataRoot, "runtime"));
   assert.equal(result.configPath.startsWith(result.dataRoot), true);
   assert.equal(result.configPath.startsWith(userData), false);
@@ -24,8 +28,8 @@ test("first settings save writes full config outside userData and a secret-free 
 test("restart resolves the non-system config through locator", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-data-"));
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-user-"));
-  const created = bootstrapWorkerConfig({ userDataDir: userData, patch: { dataRoot: root } });
-  assert.deepEqual(loadWorkerLocator(userData), created);
+  const created = bootstrapWorkerConfig({ userDataDir: userData, patch: { dataRoot: root }, validationOptions: filesystemValidation });
+  assert.deepEqual(loadWorkerLocator(userData, filesystemValidation), created);
 });
 
 test("Windows bootstrap rejects missing and system-drive roots", () => {
@@ -40,12 +44,12 @@ for (const state of ["idle", "recording"]) {
     const firstRoot = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-data-"));
     const nextRoot = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-data-"));
     const userData = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-user-"));
-    const original = bootstrapWorkerConfig({ userDataDir: userData, patch: { dataRoot: firstRoot } });
+    const original = bootstrapWorkerConfig({ userDataDir: userData, patch: { dataRoot: firstRoot }, validationOptions: filesystemValidation });
     assert.throws(
-      () => bootstrapWorkerConfig({ userDataDir: userData, patch: { dataRoot: nextRoot } }),
+      () => bootstrapWorkerConfig({ userDataDir: userData, patch: { dataRoot: nextRoot }, validationOptions: filesystemValidation }),
       /首次部署后不可修改/,
     );
-    assert.deepEqual(loadWorkerLocator(userData), original);
+    assert.deepEqual(loadWorkerLocator(userData, filesystemValidation), original);
     assert.equal(fs.existsSync(path.join(nextRoot, ".classroom-recorder", "worker-config.json")), false);
   });
 }

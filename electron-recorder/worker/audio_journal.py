@@ -93,7 +93,9 @@ def _pcm_to_wav(
         output.setnchannels(channels)
         output.setsampwidth(sample_width)
         output.writeframes(pcm)
-    with temporary.open("rb") as output_file:
+    # Windows cannot flush a handle opened read-only. Reopen the completed WAV
+    # for update so fsync/FlushFileBuffers receives a writable handle.
+    with temporary.open("r+b") as output_file:
         os.fsync(output_file.fileno())
     os.replace(temporary, target)
     _fsync_directory(target.parent)
@@ -166,6 +168,10 @@ def _write_metadata(target: Path, payload: dict) -> None:
 
 
 def _fsync_directory(directory: Path) -> None:
+    # Windows does not support fsync on directory handles. The file itself is
+    # flushed before the atomic replace above.
+    if os.name == "nt":
+        return
     try:
         descriptor = os.open(directory, os.O_RDONLY)
     except OSError:

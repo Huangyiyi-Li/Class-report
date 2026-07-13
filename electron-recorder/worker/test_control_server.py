@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 import time
@@ -100,7 +101,7 @@ def test_endpoint_is_loopback_and_secret_files_are_owner_restricted(tmp_path):
         endpoint = json.loads((tmp_path / "worker-endpoint.json").read_text())
         assert endpoint == {"host": "127.0.0.1", "port": server.port}
         assert (tmp_path / "worker-token").read_text() == server.token
-        if hasattr((tmp_path / "worker-token").stat(), "st_mode"):
+        if os.name != "nt":
             assert (tmp_path / "worker-token").stat().st_mode & 0o077 == 0
             assert (tmp_path / "worker-endpoint.json").stat().st_mode & 0o077 == 0
 

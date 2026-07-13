@@ -52,7 +52,7 @@ export function bootstrapWorkerConfig({ userDataDir, patch, validationOptions = 
   mkdirRoot(patch.dataRoot);
   const dataRoot = realpath(patch.dataRoot);
   validateBootstrapDataRoot(dataRoot, validationOptions);
-  const located = loadWorkerLocator(userDataDir);
+  const located = loadWorkerLocator(userDataDir, validationOptions);
   if (located && located.dataRoot !== dataRoot) {
     throw new Error("录音数据目录首次部署后不可修改，需重新部署");
   }
