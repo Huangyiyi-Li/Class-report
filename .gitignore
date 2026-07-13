@@ -15,9 +15,27 @@ venv/
 *.sqlite*
 *.html
 !docs/**/*.html
+!electron-recorder/index.html
 *.pdf
 *.log
 runs/
+
+# Electron recorder dependencies and generated artifacts
+electron-recorder/node_modules/
+electron-recorder/dist/
+electron-recorder/release/
+electron-recorder/worker/build/
+electron-recorder/worker/dist/
+electron-recorder/worker/*.spec
+electron-recorder/.pytest_cache/
+electron-recorder/**/*.pyc
+
+# Local release archives and legacy demo launchers
+electron-recorder/*.tgz
+electron-recorder/*.zip
+electron-recorder/0[1-3]_*.bat
+electron-recorder/main.js
+electron-recorder/WINDOWS_TEST_README.md
 
 # Local workflow / agent metadata
 .claude/

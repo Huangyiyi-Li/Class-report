@@ -1,0 +1,88 @@
+{
+  "name": "classroom-recorder-electron",
+  "version": "0.1.17",
+  "private": true,
+  "description": "课堂录音采集助手 Windows 客户端",
+  "author": "XXT",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "electron": "npm run build && electron .",
+    "electron:smoke": "npm run build && ELECTRON_SMOKE_TEST=1 electron .",
+    "electron:dev": "node scripts/start-dev.mjs",
+    "electron:dev:app": "electron .",
+    "electron:install": "node scripts/install-electron.mjs",
+    "build": "vite build",
+    "pack:win": "npm run build && electron-builder --win dir --x64 --publish never",
+    "dist:win": "node scripts/build-windows-release.mjs",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test src/*.test.js"
+  },
+  "dependencies": {
+    "@audio/encode-opus": "^1.0.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.4",
+    "electron": "^35.7.5",
+    "electron-builder": "^26.8.1",
+    "lucide-react": "^0.545.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "vite": "^7.1.9"
+  },
+  "build": {
+    "appId": "cn.xxt.classroom-recorder",
+    "productName": "课堂录音采集助手",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/renderer/**",
+      "src/main.js",
+      "src/backend.js",
+      "src/preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build",
+        "to": "build",
+        "filter": [
+          "icon.ico",
+          "icon.png"
+        ]
+      }
+    ],
+    "asar": true,
+    "compression": "normal",
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "warningsAsErrors": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "课堂录音采集助手",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}
