@@ -53,6 +53,7 @@ test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   const workflow = readFileSync(path.join(repositoryRoot, ".github/workflows/windows-recorder.yml"), "utf8");
   assert.match(workflow, /runs-on:\s*windows-2022/);
   assert.match(workflow, /branches:\s*\n\s*- master/);
+  assert.match(workflow, /tags:\s*\n\s*- ["']recorder-v\*/);
   assert.match(workflow, /Run Python checks/);
   assert.match(workflow, /Run Node\.js checks/);
   assert.match(workflow, /python scripts\/build-worker\.py/);
@@ -60,6 +61,8 @@ test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   assert.match(workflow, /electron-builder --win nsis portable --x64/);
   assert.match(workflow, /FFMPEG_EXE/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /--prerelease/);
   assert.match(workflow, /release\/\*\.exe/);
 });
 

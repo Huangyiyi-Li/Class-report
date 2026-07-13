@@ -6,6 +6,8 @@ on:
     branches:
       - master
       - feat/windows-recorder-production
+    tags:
+      - "recorder-v*"
     paths:
       - ".github/workflows/windows-recorder.yml"
       - "electron-recorder/**"
@@ -14,6 +16,9 @@ on:
 concurrency:
   group: windows-recorder-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   build-windows-installer:
@@ -93,3 +98,11 @@ jobs:
           path: electron-recorder/release/*.exe
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub pre-release
+        if: startsWith(github.ref, 'refs/tags/recorder-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = Get-ChildItem release -Filter *.exe | ForEach-Object { $_.FullName }
+          gh release create $env:GITHUB_REF_NAME $assets --verify-tag --prerelease --title "课堂录音采集助手 $env:GITHUB_REF_NAME" --notes "Windows 10/11 测试版。优先下载 Setup 安装版；Portable 为免安装版。"
