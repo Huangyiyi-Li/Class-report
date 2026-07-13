@@ -1,0 +1,5 @@
+pyinstaller
+sounddevice
+numpy
+oss2
+pytest

@@ -5,9 +5,9 @@
 从干净检出的仓库执行：
 
 ```powershell
-python -m pip install pytest pyinstaller sounddevice
-python -m pytest worker
 cd electron-recorder
+python -m pip install -r worker\requirements-build.txt
+python -m pytest worker
 npm ci
 npm test
 npm run build

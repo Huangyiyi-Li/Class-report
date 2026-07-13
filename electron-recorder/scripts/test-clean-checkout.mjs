@@ -44,4 +44,14 @@ assert.deepEqual(
   `generated directories contain tracked files: ${trackedGeneratedFiles.join(", ")}`,
 );
 
+const ignoredGeneratedInputs = execFileSync(
+  "git",
+  ["check-ignore", "electron-recorder/build/worker/ClassroomRecorderWorker.exe", "electron-recorder/build/ffmpeg/ffmpeg.exe"],
+  { cwd: repositoryDir, encoding: "utf8" },
+).trim().split("\n");
+assert.deepEqual(ignoredGeneratedInputs, [
+  "electron-recorder/build/worker/ClassroomRecorderWorker.exe",
+  "electron-recorder/build/ffmpeg/ffmpeg.exe",
+]);
+
 console.log("clean-checkout repository inputs are tracked and generated directories are clean");

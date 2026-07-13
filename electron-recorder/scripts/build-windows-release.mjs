@@ -43,5 +43,5 @@ cpSync(ffmpegSource, ffmpegDestination);
 
 run(pythonCommand, ["scripts/build-worker.py"], { cwd: recorderDir });
 run(npmCommand, ["run", "build"]);
-const builderArgs = ["electron-builder", "--win", "nsis", "zip", "--x64", "--publish", "never"];
+const builderArgs = ["electron-builder", "--win", "nsis", "portable", "--x64", "--publish", "never"];
 run(npxCommand, builderArgs);

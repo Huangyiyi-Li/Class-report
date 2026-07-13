@@ -24,6 +24,8 @@ runs/
 electron-recorder/node_modules/
 electron-recorder/dist/
 electron-recorder/release/
+electron-recorder/build/worker/
+electron-recorder/build/ffmpeg/
 electron-recorder/worker/build/
 electron-recorder/worker/dist/
 electron-recorder/worker/*.spec
