@@ -17,7 +17,12 @@
     "pack:win": "npm run build && electron-builder --win dir --x64 --publish never",
     "dist:win": "node scripts/build-windows-release.mjs",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --test src/*.test.js"
+    "test": "node --test src/*.test.js && npm run test:repository",
+    "test:repository": "node scripts/test-clean-checkout.mjs",
+    "build:worker": "python scripts/build-worker.py"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@audio/encode-opus": "^1.0.2"
@@ -47,6 +52,7 @@
       "src/worker-settings.js",
       "src/settings.js",
       "src/backend.js",
+      "src/diagnostics.js",
       "src/preload.cjs",
       "package.json"
     ],
@@ -58,6 +64,14 @@
           "icon.ico",
           "icon.png"
         ]
+      },
+      {
+        "from": "build/worker/ClassroomRecorderWorker.exe",
+        "to": "worker/ClassroomRecorderWorker.exe"
+      },
+      {
+        "from": "build/ffmpeg/ffmpeg.exe",
+        "to": "ffmpeg/ffmpeg.exe"
       }
     ],
     "asar": true,

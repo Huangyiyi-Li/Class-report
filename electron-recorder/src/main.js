@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, shell as electronShell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, shell as electronShell, Tray } from "electron";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
@@ -8,6 +8,7 @@ import { bootstrapWorkerConfig, loadWorkerLocator } from "./worker-bootstrap.js"
 import { applyWorkerSettings } from "./worker-settings.js";
 import { createRuntimeState } from "./runtime-state.js";
 import { configureSingleInstance } from "./single-instance.js";
+import { writeDiagnosticFile } from "./diagnostics.js";
 import { applyAutoLaunch, loadSettings, loadWorkerCoreSettings, saveSettings as persistSettings, validateAutoLaunchValue, validateSettingsPatch } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -295,6 +296,7 @@ function spawnRecorderWorker() {
   let child;
   if (app.isPackaged) {
     child = spawn(path.join(process.resourcesPath, "worker", "ClassroomRecorderWorker.exe"), [], {
+      cwd: path.join(process.resourcesPath, "ffmpeg"),
       env: { ...process.env, RECORDER_CONFIG_PATH: configPath },
       detached: true,
       stdio: "ignore",
@@ -534,10 +536,29 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     if (dataDir) electronShell.openPath(dataDir);
     return true;
   });
-  ipcMain.handle("recorder:export-diagnostics", () => ({
-    snapshot: workerSnapshot,
-    exportedAt: new Date().toISOString(),
-  }));
+  ipcMain.handle("recorder:export-diagnostics", async () => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出诊断信息",
+      defaultPath: `classroom-recorder-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    try {
+      writeDiagnosticFile(result.filePath, {
+        snapshot: workerSnapshot,
+        settings,
+        autoLaunchStatus,
+        workerLocation,
+        exportedAt: new Date().toISOString(),
+        appVersion: app.getVersion(),
+      });
+      await dialog.showMessageBox(mainWindow, { type: "info", message: "诊断信息导出成功", detail: result.filePath });
+      return { ok: true, filePath: result.filePath };
+    } catch (error) {
+      await dialog.showMessageBox(mainWindow, { type: "error", message: "诊断信息导出失败", detail: error.message });
+      return { ok: false, error: error.message };
+    }
+  });
   ipcMain.handle("window:minimize-to-tray", () => {
     mainWindow?.hide();
     showFloatingBallWindow();

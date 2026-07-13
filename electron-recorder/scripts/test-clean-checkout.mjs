@@ -24,16 +24,19 @@ const requiredFiles = [
   "electron-recorder/build/icon.ico",
   "electron-recorder/build/icon.png",
   "electron-recorder/scripts/build-windows-release.mjs",
+  "electron-recorder/scripts/build-worker.py",
   "electron-recorder/scripts/install-electron.mjs",
   "electron-recorder/scripts/start-dev.mjs",
   "electron-recorder/scripts/test-clean-checkout.mjs",
+  "electron-recorder/docs/TESTING.md",
+  "electron-recorder/WINDOWS_TEST_README.md",
 ];
 
 const missingFiles = requiredFiles.filter((file) => !trackedFiles.has(file));
 assert.deepEqual(missingFiles, [], `required build inputs are not tracked: ${missingFiles.join(", ")}`);
 
 const generatedDirectory =
-  /(^|\/)(node_modules|dist|release)(\/|$)|^electron-recorder\/worker\/build\//;
+  /(^|\/)(node_modules|dist|release)(\/|$)|^electron-recorder\/(worker\/build|build\/(worker|ffmpeg))\//;
 const trackedGeneratedFiles = [...trackedFiles].filter((file) => generatedDirectory.test(file));
 assert.deepEqual(
   trackedGeneratedFiles,

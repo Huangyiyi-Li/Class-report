@@ -1,11 +1,13 @@
-import { cpSync, existsSync, rmSync, symlinkSync } from "node:fs";
-import { homedir } from "node:os";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const isWindows = process.platform === "win32";
 const npmCommand = isWindows ? "npm.cmd" : "npm";
 const npxCommand = isWindows ? "npx.cmd" : "npx";
+const pythonCommand = process.env.PYTHON || "python";
+const recorderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const env = {
   ...process.env,
@@ -25,68 +27,21 @@ function run(command, args, options = {}) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-function tryRun(command, args) {
-  return spawnSync(command, args, {
-    env,
-    stdio: "inherit",
-    shell: false,
-  }).status ?? 1;
+if (process.platform !== "win32") {
+  console.error("Windows release inputs must be built and packaged on Windows.");
+  process.exit(1);
 }
 
-function output(command, args) {
-  const result = spawnSync(command, args, {
-    env,
-    encoding: "utf8",
-    shell: false,
-  });
-  return result.status === 0 ? result.stdout.trim() : "";
+const ffmpegSource = process.env.FFMPEG_EXE;
+if (!ffmpegSource || !existsSync(ffmpegSource)) {
+  console.error("Set FFMPEG_EXE to a trusted Windows ffmpeg.exe before packaging.");
+  process.exit(1);
 }
+const ffmpegDestination = path.join(recorderDir, "build", "ffmpeg", "ffmpeg.exe");
+mkdirSync(path.dirname(ffmpegDestination), { recursive: true });
+cpSync(ffmpegSource, ffmpegDestination);
 
-function prepareAppleSiliconNsis() {
-  if (process.platform !== "darwin" || process.arch !== "arm64") return;
-
-  const cacheNsisDir = path.join(
-    homedir(),
-    "Library/Caches/electron-builder/nsis/nsis-3.0.4.1-nsis-3.0.4.1",
-  );
-
-  if (!existsSync(cacheNsisDir)) {
-    tryRun(npxCommand, ["electron-builder", "--win", "nsis", "--x64", "--publish", "never"]);
-  }
-
-  if (!existsSync(cacheNsisDir)) {
-    console.error("未找到 electron-builder 的 NSIS 缓存，请重新运行本命令。");
-    process.exit(1);
-  }
-
-  const makensis = output("which", ["makensis"]);
-  if (!makensis) {
-    console.error("Apple Silicon Mac 需要先安装 makensis：brew install makensis");
-    process.exit(1);
-  }
-
-  const nsisShareDir = output("brew", ["--prefix", "makensis"]);
-  const homebrewNsisDir = nsisShareDir ? path.join(nsisShareDir, "share", "nsis") : "";
-  if (!homebrewNsisDir || !existsSync(homebrewNsisDir)) {
-    console.error("未找到 Homebrew NSIS 目录，请先运行：brew install makensis");
-    process.exit(1);
-  }
-
-  const bridgeDir = "/tmp/electron-builder-nsis-arm64";
-  rmSync(bridgeDir, { recursive: true, force: true });
-  cpSync(homebrewNsisDir, bridgeDir, { recursive: true });
-  cpSync(path.join(cacheNsisDir, "elevate.exe"), path.join(bridgeDir, "elevate.exe"));
-  rmSync(path.join(bridgeDir, "mac"), { recursive: true, force: true });
-  cpSync(path.join(cacheNsisDir, "mac"), path.join(bridgeDir, "mac"), { recursive: true });
-  rmSync(path.join(bridgeDir, "mac", "makensis"), { force: true });
-  symlinkSync(makensis, path.join(bridgeDir, "mac", "makensis"));
-  env.ELECTRON_BUILDER_NSIS_DIR = bridgeDir;
-}
-
+run(pythonCommand, ["scripts/build-worker.py"], { cwd: recorderDir });
 run(npmCommand, ["run", "build"]);
-prepareAppleSiliconNsis();
 const builderArgs = ["electron-builder", "--win", "nsis", "zip", "--x64", "--publish", "never"];
-if (process.platform === "darwin" && process.arch === "arm64") {
-  builderArgs.push("--config.win.signAndEditExecutable=false");
-}
 run(npxCommand, builderArgs);
