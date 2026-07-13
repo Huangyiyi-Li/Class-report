@@ -78,6 +78,8 @@ test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   assert.match(workflow, /electron-builder --win nsis portable --x64/);
   assert.match(workflow, /Run packaged application smoke test/);
   assert.match(workflow, /ELECTRON_SMOKE_TEST/);
+  assert.match(workflow, /RedirectStandardOutput/);
+  assert.match(workflow, /RedirectStandardError/);
   assert.match(workflow, /FFMPEG_EXE/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /gh release create/);
