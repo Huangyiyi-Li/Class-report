@@ -45,6 +45,7 @@
       "src/single-instance.js",
       "src/worker-bootstrap.js",
       "src/worker-settings.js",
+      "src/settings.js",
       "src/backend.js",
       "src/preload.cjs",
       "package.json"

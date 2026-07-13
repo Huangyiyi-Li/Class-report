@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from worker.audio_journal import AudioJournal, recover_journals
-from worker.config import StartupGate, WorkerConfig, evaluate_startup_gate
+from worker.config import StartupGate, WorkerConfig, evaluate_startup_gate, validate_settings_patch
 from worker.control_server import ControlServer, InstanceLock, ServerAlreadyRunning
 from worker.protocol import event
 from worker.queue_store import QueueStore, migrate_json_queue
@@ -478,14 +478,10 @@ class RecorderWorker:
                 pass
 
     def _update_settings(self, payload: dict) -> None:
-        requested_root = payload.get("dataRoot")
+        changes = validate_settings_patch(payload)
+        requested_root = changes.pop("data_root", None)
         if requested_root and requested_root != self.config.data_root:
             raise CommandRejected("录音数据目录首次部署后不可修改，需重新部署")
-        mapping = {
-            "autoRecordEnabled": "auto_record_enabled",
-            "inputDevice": "input_device",
-        }
-        changes = {mapping[key]: value for key, value in payload.items() if key in mapping}
         candidate = replace(self.config, **changes)
         if candidate.data_root != self.config.data_root:
             self._rebind_storage(candidate)

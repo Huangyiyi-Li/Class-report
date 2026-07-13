@@ -91,7 +91,7 @@ function FloatingBall({ recording }) {
 
 function SettingsModal({ snapshot, runtime, onClose }) {
   const initial = snapshot.settings || {};
-  const [form, setForm] = useState({ autoLaunch: initial.autoLaunch !== false, autoRecordEnabled: Boolean(initial.autoRecordEnabled), inputDevice: initial.inputDevice || "default", dataRoot: initial.dataRoot || snapshot.dataRoot || "" });
+  const [form, setForm] = useState({ autoLaunch: initial.autoLaunch === true, autoRecordEnabled: Boolean(initial.autoRecordEnabled), inputDevice: initial.inputDevice || "default", dataRoot: initial.dataRoot || snapshot.dataRoot || "" });
   const [saveError, setSaveError] = useState("");
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const save = async () => {
@@ -110,7 +110,8 @@ function SettingsModal({ snapshot, runtime, onClose }) {
         <Toggle title="开机自启动" checked={form.autoLaunch} onChange={(value) => update("autoLaunch", value)} />
         <Toggle title="自动录音" checked={form.autoRecordEnabled} onChange={(value) => update("autoRecordEnabled", value)} />
         <label><span>麦克风设备 ID</span><input value={form.inputDevice} onChange={(event) => update("inputDevice", event.target.value)} /></label>
-        <label><span>录音数据目录</span><input value={form.dataRoot} onChange={(event) => update("dataRoot", event.target.value)} /></label>
+        <label><span>录音数据目录</span><input value={form.dataRoot} disabled={snapshot.dataRootLocked} onChange={(event) => update("dataRoot", event.target.value)} />{snapshot.dataRootLocked ? <small>如需修改请重新部署</small> : null}</label>
+        <SettingRow title="开机自启状态" value={formatAutoLaunchStatus(snapshot.autoLaunchStatus)} />
         <SettingRow title="位置" value={formatLocation(runtime.location)} /><SettingRow title="当前版本" value={`v${snapshot.appVersion || "--"}`} />
       </section>
       <section className="settings-section"><h3><HardDrive size={21} />运行诊断</h3>
@@ -130,5 +131,6 @@ function StatusPill({ icon, label, tone }) { return <div className={`status-pill
 function InfoTile({ icon, title, value, tone }) { return <div className={`info-tile ${tone}`}>{React.cloneElement(icon, { size: 25 })}<span>{title}</span><strong>{value}</strong></div>; }
 function formatLocation(location) { if (!location) return "位置未配置"; if (typeof location === "string") return location; return [location.school_name || location.schoolName, location.location_name || location.locationName || location.class_name].filter(Boolean).join(" · ") || "位置未配置"; }
 function formatBytes(bytes) { const value = Number(bytes); if (!Number.isFinite(value)) return "--"; return `${(value / 1024 ** 3).toFixed(1)} GB`; }
+function formatAutoLaunchStatus(value) { if (!value) return "未验证"; if (value.status === "verified") return "已验证"; if (value.status === "failed") return `失败：${value.error || "未知错误"}`; return value.actual === null ? (value.error || "未验证") : `未验证（实际${value.actual ? "已开启" : "未开启"}）`; }
 
 createRoot(document.getElementById("root")).render(<App />);

@@ -42,3 +42,15 @@ test("recording rejection and disconnection leave Electron settings unchanged", 
     assert.deepEqual(original, { dataRoot: "/data/one", inputDevice: "old" });
   }
 });
+
+test("worker settings boundary rejects binding identities and invalid types before side effects", async () => {
+  for (const patch of [{ deviceNo: "attacker" }, { schoolId: 9 }, { autoRecordEnabled: "true" }, { inputDevice: {} }]) {
+    let sent = 0;
+    await assert.rejects(applyWorkerSettings({
+      settings: { dataRoot: "/data/one", inputDevice: "old" }, patch,
+      workerLocation: { dataRoot: "/data/one" }, persistBootstrap() { throw new Error("must not persist"); }, attach() {},
+      supervisor: { socket: {}, async sendCommand() { sent += 1; } },
+    }));
+    assert.equal(sent, 0);
+  }
+});

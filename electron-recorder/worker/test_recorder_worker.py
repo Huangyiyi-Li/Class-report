@@ -341,12 +341,13 @@ def test_flush_queue_runs_until_no_immediately_claimable_item(tmp_path: Path):
     assert events[-1][0] == "snapshot"
 
 
-def test_update_settings_whitelists_and_persists_when_idle(tmp_path: Path):
+def test_update_settings_rejects_unknown_fields_without_persisting_partial_changes(tmp_path: Path):
     config_path = tmp_path / "worker-config.json"
+    events = []
     worker = RecorderWorker(
         WorkerConfig(data_root=str(tmp_path)),
         config_path=config_path,
-        emit_event=lambda name, payload: None,
+        emit_event=lambda name, payload: events.append((name, payload)),
         recover=lambda root, on_error: [],
         startup_gate=allow_startup,
     )
@@ -359,10 +360,10 @@ def test_update_settings_whitelists_and_persists_when_idle(tmp_path: Path):
     }))
 
     saved = WorkerConfig.load(config_path)
-    assert saved.auto_record_enabled is True
-    assert saved.input_device == "mic-2"
-    assert saved.data_root == str(tmp_path)
+    assert saved.auto_record_enabled is False
+    assert saved.input_device == ""
     assert saved.base_url == "https://rest.xxt.cn"
+    assert any(name == "error" and "forbidden field" in payload["message"] for name, payload in events)
 
 
 def test_update_settings_is_rejected_while_recording(tmp_path: Path):

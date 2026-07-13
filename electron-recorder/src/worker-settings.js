@@ -1,6 +1,8 @@
+import { validateSettingsPatch } from "./settings.js";
+
 export async function applyWorkerSettings({ settings, patch, workerLocation, persistBootstrap, attach, supervisor }) {
-  const allowed = ["autoRecordEnabled", "inputDevice", "dataRoot"];
-  const candidate = { ...settings, ...Object.fromEntries(Object.entries(patch || {}).filter(([key]) => allowed.includes(key))) };
+  const validatedPatch = validateSettingsPatch(patch);
+  const candidate = { ...settings, ...validatedPatch };
   if (!workerLocation) {
     const location = persistBootstrap(candidate);
     const nextSettings = { ...candidate, dataRoot: location.dataRoot };

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from worker.config import WorkerConfig, evaluate_startup_gate, validate_data_root
+from worker.config import WorkerConfig, evaluate_startup_gate, validate_data_root, validate_settings_patch
 
 
 def bound_config(data_root="D:/ClassroomRecorderData"):
@@ -61,6 +61,23 @@ def test_save_atomic_persists_worker_settings(tmp_path: Path):
 
     assert WorkerConfig.load(path) == config
     assert not path.with_suffix(".json.tmp").exists()
+
+
+def test_worker_validates_core_settings_patch_strictly():
+    assert validate_settings_patch({"autoRecordEnabled": True, "inputDevice": " mic-2 "}) == {
+        "auto_record_enabled": True,
+        "input_device": "mic-2",
+    }
+
+
+@pytest.mark.parametrize("patch", [
+    None, [], {"autoRecordEnabled": "true"}, {"inputDevice": {}},
+    {"inputDevice": "x" * 257}, {"deviceNo": "attacker"},
+    {"schoolId": 1}, {"locationId": "other"}, {"baseUrl": "https://evil.invalid"},
+])
+def test_worker_rejects_invalid_or_binding_settings_patch(patch):
+    with pytest.raises(ValueError):
+        validate_settings_patch(patch)
 
 
 @pytest.mark.parametrize("data_root", ["", "ClassroomRecorderData", "C:/Recorder"])

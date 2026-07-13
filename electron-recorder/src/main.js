@@ -8,6 +8,7 @@ import { bootstrapWorkerConfig, loadWorkerLocator } from "./worker-bootstrap.js"
 import { applyWorkerSettings } from "./worker-settings.js";
 import { createRuntimeState } from "./runtime-state.js";
 import { configureSingleInstance } from "./single-instance.js";
+import { applyAutoLaunch, loadSettings, loadWorkerCoreSettings, saveSettings as persistSettings, validateAutoLaunchValue, validateSettingsPatch } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -22,7 +23,8 @@ let pendingFloatingShow = false;
 let recordingPowerBlockerId = null;
 let supervisor;
 let workerSnapshot = { recording: "idle", upload: "clear", health: "healthy", pending: 0 };
-let settings = { autoLaunch: true, autoRecordEnabled: false, inputDevice: "default", dataRoot: "" };
+let settings = { autoLaunch: false, autoRecordEnabled: false, inputDevice: "default", dataRoot: "" };
+let autoLaunchStatus = { desired: false, actual: null, status: "unverified", error: null };
 let workerLocation = null;
 const hasSingleInstanceLock = configureSingleInstance(app, () => {
   showMainWindow();
@@ -287,19 +289,6 @@ function releaseRecordingAwake() {
   recordingPowerBlockerId = null;
 }
 
-function applyAutoLaunchPreference(enabled) {
-  if (!app.isPackaged) {
-    return { enabled, applied: false };
-  }
-  app.setLoginItemSettings({
-    openAtLogin: Boolean(enabled),
-    openAsHidden: true,
-    path: process.execPath,
-  });
-  const current = app.getLoginItemSettings();
-  return { enabled: current.openAtLogin, applied: true };
-}
-
 function spawnRecorderWorker() {
   if (!workerLocation?.configPath) throw new Error("worker configuration is not bootstrapped");
   const configPath = workerLocation.configPath;
@@ -329,7 +318,7 @@ function publishSnapshot(snapshot) {
   if (workerSnapshot.recording === "recording") keepRecordingAwake();
   else releaseRecordingAwake();
   updateTray();
-  broadcast("recorder:snapshot", { ...workerSnapshot, runtime, settings, appVersion: app.getVersion() });
+  broadcast("recorder:snapshot", { ...workerSnapshot, runtime, settings, autoLaunchStatus, dataRootLocked: Boolean(workerLocation), appVersion: app.getVersion() });
 }
 
 function waitForWindowLoad(win) {
@@ -450,8 +439,13 @@ async function runSmokeTest() {
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(() => {
+  const userDataDir = app.getPath("userData");
   workerLocation = loadWorkerLocator(app.getPath("userData"));
-  settings = { ...settings, dataRoot: workerLocation?.dataRoot || "" };
+  settings = {
+    ...loadSettings(userDataDir),
+    ...(workerLocation ? loadWorkerCoreSettings(workerLocation.configPath) : {}),
+    dataRoot: workerLocation?.dataRoot || "",
+  };
 
   const attachWorkerClient = (client) => {
     supervisor?.disconnect();
@@ -488,7 +482,7 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         launchWorker: spawnRecorderWorker,
       }));
   }
-  applyAutoLaunchPreference(settings.autoLaunch);
+  autoLaunchStatus = applyAutoLaunch({ desired: settings.autoLaunch, app });
 
   createMainWindow();
   createFloatingBallWindow();
@@ -498,14 +492,15 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
 
   if (!supervisor) publishSnapshot({ health: "blocked", latestError: "请先选择非系统盘录音目录" });
 
-  ipcMain.handle("recorder:get-snapshot", () => ({ ...workerSnapshot, runtime: createRuntimeState(workerSnapshot), settings, appVersion: app.getVersion() }));
+  ipcMain.handle("recorder:get-snapshot", () => ({ ...workerSnapshot, runtime: createRuntimeState(workerSnapshot), settings, autoLaunchStatus, dataRootLocked: Boolean(workerLocation), appVersion: app.getVersion() }));
   ipcMain.handle("recorder:start", () => supervisor?.send("start") ?? false);
   ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
   ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);
   ipcMain.handle("recorder:flush", () => supervisor?.send("flush_queue") ?? false);
   ipcMain.handle("recorder:update-settings", async (_event, patch) => {
+    const validatedPatch = validateSettingsPatch(patch);
     const result = await applyWorkerSettings({
-      settings, patch, workerLocation, supervisor,
+      settings, patch: validatedPatch, workerLocation, supervisor,
       persistBootstrap: (candidate) => bootstrapWorkerConfig({ userDataDir: app.getPath("userData"), patch: candidate }),
       attach: (location) => {
         workerLocation = location;
@@ -514,13 +509,25 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     });
     settings = result.settings;
     workerLocation = result.workerLocation;
+    persistSettings(userDataDir, {
+      autoLaunch: settings.autoLaunch,
+      autoRecordEnabled: settings.autoRecordEnabled,
+      inputDevice: settings.inputDevice,
+    });
     publishSnapshot({});
     return settings;
   });
   ipcMain.handle("app:set-auto-launch", async (_event, enabled) => {
-    settings = { ...settings, autoLaunch: Boolean(enabled) };
-    const result = applyAutoLaunchPreference(Boolean(enabled));
-    return result;
+    const desired = validateAutoLaunchValue(enabled);
+    settings = { ...settings, autoLaunch: desired };
+    persistSettings(userDataDir, {
+      autoLaunch: desired,
+      autoRecordEnabled: settings.autoRecordEnabled,
+      inputDevice: settings.inputDevice,
+    });
+    autoLaunchStatus = applyAutoLaunch({ desired, app });
+    publishSnapshot({});
+    return autoLaunchStatus;
   });
   ipcMain.handle("recorder:open-data-dir", () => {
     const dataDir = workerSnapshot.dataRoot || settings.dataRoot;

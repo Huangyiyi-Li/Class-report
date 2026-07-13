@@ -9,6 +9,7 @@ from pathlib import Path, PureWindowsPath
 
 
 LOW_SPACE_BYTES = 5 * 1024**3
+RUNTIME_SETTING_KEYS = {"autoRecordEnabled", "inputDevice", "dataRoot"}
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,37 @@ class WorkerConfig:
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+
+
+def validate_settings_patch(patch: object) -> dict:
+    if not isinstance(patch, dict):
+        raise ValueError("settings patch must be an object")
+    unknown = set(patch) - RUNTIME_SETTING_KEYS
+    if unknown:
+        raise ValueError(f"settings patch contains forbidden field: {sorted(unknown)[0]}")
+    changes = {}
+    if "autoRecordEnabled" in patch:
+        value = patch["autoRecordEnabled"]
+        if type(value) is not bool:
+            raise ValueError("autoRecordEnabled must be boolean")
+        changes["auto_record_enabled"] = value
+    if "inputDevice" in patch:
+        value = patch["inputDevice"]
+        if not isinstance(value, str):
+            raise ValueError("inputDevice must be a string")
+        value = value.strip()
+        if not value or len(value) > 256 or "\0" in value or "\n" in value or "\r" in value:
+            raise ValueError("inputDevice is invalid")
+        changes["input_device"] = value
+    if "dataRoot" in patch:
+        value = patch["dataRoot"]
+        if not isinstance(value, str):
+            raise ValueError("dataRoot must be a string")
+        value = value.strip()
+        if not value or len(value) > 1024 or "\0" in value or "\n" in value or "\r" in value:
+            raise ValueError("dataRoot is invalid")
+        changes["data_root"] = value
+    return changes
 
 
 def validate_data_root(path: Path, system_drive: str) -> None:
