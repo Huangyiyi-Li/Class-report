@@ -192,3 +192,11 @@ Task 4 still owns binding UX/config completeness and disabling the root field wi
 ### Remaining scope
 
 Task 4 retains the disabled-root/redeployment UI copy and binding validation. Task 5 retains Windows-host lock validation.
+
+## Scope convergence decision
+
+The first production version intentionally stops short of distributed-transaction semantics for the low-probability case where the worker successfully executes and persists a settings command but its ACK is lost before Electron receives it.
+
+In that case the product message is: **“保存结果未确认，请重新打开设置核对。”** The user can reopen settings and retry after confirming the current state. We do not add command deadlines, persistent result logs, automatic reconciliation, or replay because those mechanisms materially expand the protocol and failure-state surface beyond the core recorder lifecycle.
+
+This is recorded as a known low-probability risk, not as a claim that disk state is unchanged after an ACK timeout. The retained core guarantees are single-instance worker startup, detached Electron/worker lifecycles, authenticated loopback control, reconnectable clients, first-run bootstrap, immutable data root, worker-owned settings persistence with command ACKs, and real disconnect-continuity coverage.
