@@ -16,6 +16,7 @@
 - Electron keeps `contextIsolation: true` and `nodeIntegration: false`.
 - Use TDD: every behavioral change begins with a focused failing test.
 - Do not commit `node_modules`, generated renderer bundles, installers, recordings, queues, secrets, or generated worker executables.
+- Keep the local control protocol maintainable: an ACK lost after successful execution is reported as an unconfirmed result and manually rechecked; do not add distributed transaction logs, two-phase commit, or durable command-result reconciliation in the first release.
 
 ---
 
