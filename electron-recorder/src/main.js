@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
 import { WorkerClient } from "./worker-client.js";
 import { bootstrapWorkerConfig, loadWorkerLocator } from "./worker-bootstrap.js";
+import { applyWorkerSettings } from "./worker-settings.js";
 import { createRuntimeState } from "./runtime-state.js";
 import { configureSingleInstance } from "./single-instance.js";
 
@@ -318,6 +319,7 @@ function spawnRecorderWorker() {
     });
   }
   child.unref();
+  return child;
 }
 
 function publishSnapshot(snapshot) {
@@ -502,15 +504,16 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);
   ipcMain.handle("recorder:flush", () => supervisor?.send("flush_queue") ?? false);
   ipcMain.handle("recorder:update-settings", (_event, patch) => {
-    const allowed = ["autoRecordEnabled", "inputDevice", "dataRoot"];
-    settings = { ...settings, ...Object.fromEntries(Object.entries(patch || {}).filter(([key]) => allowed.includes(key))) };
-    const previousLocation = workerLocation;
-    workerLocation = bootstrapWorkerConfig({ userDataDir: app.getPath("userData"), patch: settings });
-    if (!previousLocation || workerLocation.dataRoot !== previousLocation.dataRoot) {
-      attachWorkerClient(new WorkerClient({ runtimeDir: workerLocation.runtimeDir, launchWorker: spawnRecorderWorker }));
-    } else if (supervisor?.socket) {
-      supervisor.send("update_settings", settings);
-    }
+    const result = applyWorkerSettings({
+      settings, patch, workerLocation, supervisor,
+      persist: (candidate) => bootstrapWorkerConfig({ userDataDir: app.getPath("userData"), patch: candidate }),
+      attach: (location) => {
+        workerLocation = location;
+        attachWorkerClient(new WorkerClient({ runtimeDir: location.runtimeDir, launchWorker: spawnRecorderWorker }));
+      },
+    });
+    settings = result.settings;
+    workerLocation = result.workerLocation;
     publishSnapshot({});
     return settings;
   });

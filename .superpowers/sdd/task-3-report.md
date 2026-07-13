@@ -106,14 +106,14 @@ Windows `msvcrt.locking` remains a Task 5 Windows-host gate as directed. No Wind
 
 - Added a minimal bootstrap module. The first valid settings patch atomically writes a complete worker config to `<dataRoot>/.classroom-recorder/worker-config.json`; `userData` contains only `worker-config-locator.json` with the config path and no credentials.
 - Startup resolves config and runtime paths through that locator. Electron no longer reads or writes a formal worker config under `app.getPath("userData")`.
-- Settings bootstrap is independent of worker connectivity. It persists first, rebuilds `WorkerClient` for the selected data root, and launches the detached worker. Later settings also persist when the worker socket is unavailable.
+- Settings bootstrap is independent of worker connectivity. It persists first and launches the detached worker for the initially selected data root. Later non-root settings persist even when the worker socket is unavailable.
 - Windows bootstrap performs the current minimal absolute/non-system-drive validation. Binding fields remain Task 4 scope; a config lacking binding still starts the worker control plane and reports the existing `binding_required` gate.
 - Replaced connection flags with a generation-based cancellation model. `disconnect()` advances the generation, cancels retry sleeps, destroys pending-auth sockets, closes the active socket, and cannot be undone by late awaits or frames.
 - `connect()` never clears terminal state. `start()`/`resume()` are the explicit transitions into a new active generation.
 - Recovery now loops indefinitely in bounded attempt cycles and capped backoff until explicit disconnect. There is no Electron outer reconnect timer.
 - Launching uses cooldown state, not a permanent latch. A successful authenticated connection resets launch eligibility, so a later real worker crash can launch again; one shared recovery promise prevents concurrent duplicate launches.
 - Authentication listeners and parser are removed after ACK. Runtime event parsing is attached separately only after generation validation.
-- Added a real cross-language test in which Node `WorkerClient` reads Python-generated endpoint/token files, authenticates `ControlServer`, starts recording, loses the Python server, reconnects after server restoration, and observes the persisted recording snapshot.
+- Added a real cross-language test in which Node `WorkerClient` reads Python-generated endpoint/token files and authenticates `ControlServer`. This test was superseded and corrected in the third remediation below to prove Electron disconnect continuity without pretending worker-process restart preserves recording state.
 
 ### Verification
 
@@ -126,3 +126,36 @@ Windows `msvcrt.locking` remains a Task 5 Windows-host gate as directed. No Wind
 ### Remaining scope note
 
 Bootstrap intentionally performs only the minimum path validation requested here. Binding completeness and stronger configuration validation remain Task 4; Windows lock behavior remains Task 5.
+
+## Third remediation: immutable root and corrected continuity proof
+
+### RED evidence
+
+- Idle and recording-state migration tests showed bootstrap accepted a second data root and created a second formal config.
+- Locator tests showed UNC roots and config/data-root mismatches were accepted; the old locator lacked enough trusted structure to reject an escaped config path before reading it.
+- An asynchronous child `error` with `ENOENT` was unhandled after `spawn()`, producing a Node uncaught exception after the test ended.
+- The earlier cross-language test killed Python and reconstructed a string-backed state harness. Review correctly identified that this did not prove detached Electron continuity and overstated worker-crash behavior.
+- Main settings orchestration initially had no isolated proof that a rejected root patch leaves the existing client attached in both idle and recording states.
+
+### GREEN changes
+
+- Data root is now immutable after the first valid locator/config bootstrap. Any differing root patch throws an explicit “首次部署后不可修改，需重新部署” error before settings mutation, client disconnect, config creation, or worker attachment.
+- Added orchestration tests for idle and recording states proving a rejected root change never calls the client attachment path. The original worker/client remains the only instance.
+- Same-root settings updates preserve the complete existing config, including binding and credential fields; runtime-root migration code is absent.
+- Locator now contains only canonical `dataRoot` and `configPath`, still no secrets. Loading revalidates absolute/local/non-system root policy, rejects UNC and relative roots, requires configPath to equal canonical `<data_root>/.classroom-recorder/worker-config.json`, resolves filesystem canonical paths before reading config, and requires config `data_root` to match.
+- Malformed, escaped, mismatched, system-drive, and UNC locators return no location; Electron therefore publishes its blocked bootstrap snapshot and does not read or overwrite an arbitrary target.
+- Atomic JSON writes use a cryptographically random temporary name opened with `wx`/exclusive creation, remove the temporary on every failure, and best-effort fsync the parent directory on POSIX after rename.
+- Detached spawn returns the child to `WorkerClient`, which installs an `error` listener immediately. Asynchronous `ENOENT` is emitted through the existing client/main error path while the bounded long-term recovery loop continues.
+- Replaced the persistence harness with a real `RecorderWorker` configured with an injected microphone-free `FakeSession`. One Python process and one `ControlServer` stay alive: Node client A authenticates and starts recording, explicitly disconnects, Python remains running and recording, and Node client B reconnects to the same endpoint and receives `recording` in the live worker snapshot.
+- Worker-process crash is no longer claimed to preserve an active recording state. That path only retains the existing journal-recovery guarantees.
+
+### Verification
+
+- Full Python worker suite: 97 passed.
+- Full Node suite: 43 passed.
+- Vite production build and Electron UI smoke: passed.
+- Node syntax checks and `git diff --check`: passed.
+
+### Remaining scope
+
+Task 4 still owns binding UX/config completeness and disabling the root field with redeployment guidance. Task 5 still owns Windows-host lock validation.

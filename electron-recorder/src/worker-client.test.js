@@ -227,3 +227,28 @@ test("resume starts a new generation after explicit disconnect", async () => {
   assert.equal(client.socket, second);
   client.disconnect();
 });
+
+test("asynchronous spawn ENOENT is reported and long recovery continues", async () => {
+  const child = new EventEmitter();
+  const socket = new FakeSocket();
+  const errors = [];
+  let attempts = 0;
+  const client = new WorkerClient({
+    readEndpoint: async () => endpoint,
+    openSocket: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("offline");
+      return socket;
+    },
+    launchWorker() {
+      queueMicrotask(() => child.emit("error", Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" })));
+      return child;
+    },
+    retryDelayMs: 1,
+  });
+  client.on("error", (error) => errors.push(error));
+  await client.connect();
+  assert.equal(errors.some((error) => error.code === "ENOENT"), true);
+  assert.equal(client.socket, socket);
+  client.disconnect();
+});

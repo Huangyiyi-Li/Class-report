@@ -1,45 +1,49 @@
 from __future__ import annotations
 
-import json
 import signal
 import sys
 import threading
 from pathlib import Path
 
+from worker.config import StartupGate, WorkerConfig
 from worker.control_server import ControlServer
+from worker.recorder_worker import RecorderWorker
 
 
-class PersistentHarnessWorker:
-    def __init__(self, runtime_dir: Path):
-        self.state_path = runtime_dir / "harness-state.json"
-        self.emit_event = lambda _name, _payload: None
-        try:
-            self.state = json.loads(self.state_path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError):
-            self.state = {"recording": "idle", "upload": "clear", "health": "healthy"}
+class FakeSession:
+    def __init__(self, **_kwargs):
+        self.running = False
 
-    def snapshot(self):
-        return dict(self.state)
+    def start(self):
+        self.running = True
 
-    def handle(self, command):
-        if command.command == "start":
-            self.state["recording"] = "recording"
-        elif command.command == "pause":
-            self.state["recording"] = "paused"
-        elif command.command == "stop":
-            self.state["recording"] = "idle"
-        self.state_path.write_text(json.dumps(self.state), encoding="utf-8")
-        self.emit_event("snapshot", self.snapshot())
-        return True
+    def stop(self):
+        self.running = False
 
 
 def main() -> int:
     runtime_dir = Path(sys.argv[1])
+    data_root = runtime_dir / "data"
+    config = WorkerConfig(
+        data_root=str(data_root), device_no="harness-device", school_id=1,
+        location_id="room-1", location_name="Harness Room",
+    )
+    worker = RecorderWorker(
+        config,
+        emit_event=lambda _name, _payload: None,
+        session_factory=FakeSession,
+        recover=lambda _root, _on_error: [],
+        startup_gate=lambda _config, _drive: StartupGate(True, "healthy"),
+    )
+    worker.startup()
     stopped = threading.Event()
     for signal_name in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signal_name, lambda *_args: stopped.set())
-    with ControlServer(PersistentHarnessWorker(runtime_dir), runtime_dir):
-        stopped.wait()
+    try:
+        with ControlServer(worker, runtime_dir):
+            stopped.wait()
+    finally:
+        worker.shutdown()
     return 0
 
 

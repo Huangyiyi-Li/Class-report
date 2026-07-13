@@ -24,7 +24,7 @@ function startHarness(runtimeDir) {
   });
 }
 
-test("Node client authenticates Python server and recovers the same snapshot", { timeout: 10000 }, async () => {
+test("Electron disconnect leaves real Python RecorderWorker capturing for the next client", { timeout: 10000 }, async () => {
   const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-control-"));
   let server = startHarness(runtimeDir);
   await waitForFile(path.join(runtimeDir, "worker-endpoint.json"));
@@ -35,20 +35,20 @@ test("Node client authenticates Python server and recovers the same snapshot", {
   assert.equal(token.length >= 32, true);
 
   const snapshots = [];
-  const client = new WorkerClient({ runtimeDir, launchWorker() {}, retryDelayMs: 10, maxRetryDelayMs: 30, maxAttempts: 2, authenticationTimeoutMs: 200 });
-  client.on("ready", (snapshot) => snapshots.push(snapshot));
-  client.on("snapshot", (snapshot) => snapshots.push(snapshot));
-  await client.connect();
-  client.send("start");
+  const clientA = new WorkerClient({ runtimeDir, launchWorker() {}, authenticationTimeoutMs: 200 });
+  clientA.on("ready", (snapshot) => snapshots.push(snapshot));
+  clientA.on("snapshot", (snapshot) => snapshots.push(snapshot));
+  await clientA.connect();
+  clientA.send("start");
   while (!snapshots.some((item) => item.recording === "recording")) await wait(10);
+  clientA.disconnect();
+  assert.equal(server.exitCode, null);
 
-  server.kill("SIGTERM");
-  await new Promise((resolve) => server.once("exit", resolve));
-  server = startHarness(runtimeDir);
-  await waitForFile(path.join(runtimeDir, "worker-endpoint.json"));
-  for (let index = 0; index < 200 && client.socket === null; index += 1) await wait(10);
-  assert.equal(client.socket !== null, true);
-  assert.equal(snapshots.at(-1).recording, "recording");
-  client.disconnect();
+  let reconnectedSnapshot;
+  const clientB = new WorkerClient({ runtimeDir, launchWorker() {}, authenticationTimeoutMs: 200 });
+  clientB.on("ready", (snapshot) => { reconnectedSnapshot = snapshot; });
+  await clientB.connect();
+  assert.equal(reconnectedSnapshot.recording, "recording");
+  clientB.disconnect();
   server.kill("SIGTERM");
 });

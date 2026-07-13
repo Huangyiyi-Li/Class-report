@@ -97,7 +97,8 @@ export class WorkerClient extends EventEmitter {
           this._assertActive(generation);
           const now = Date.now();
           if (now >= this.nextLaunchAt) {
-            this.launchWorker({ detached: true, stdio: "ignore" });
+            const child = this.launchWorker({ detached: true, stdio: "ignore" });
+            child?.once?.("error", (launchError) => this.emit("error", launchError));
             this.nextLaunchAt = now + this.launchCooldownMs;
           }
           await this._sleep(Math.min(this.retryDelayMs * (attempt + 1), this.maxRetryDelayMs), generation);
