@@ -175,7 +175,7 @@ Task 4 still owns binding UX/config completeness and disabling the root field wi
 - Added `command_result` frames containing the original command ID plus `success` or `error`. The server serializes `execute_command`, completes worker handling and atomic config save, then ACKs only that authenticated client.
 - Added `WorkerClient.sendCommand()`. It tracks independent command IDs, resolves only matching successful ACKs, rejects worker errors, rejects all pending commands on disconnect, and removes timeout state without caching or replaying commands.
 - Existing `send()` delegates to the ACK path so start/pause/stop remain compatible while IPC callers can await completion.
-- For an established formal config, Electron never writes settings first. It sends `update_settings` to the online worker and mutates Electron memory only after ACK. Recording rejection, disconnection, save failure, and timeout leave Electron and disk unchanged and tell the caller to retry later.
+- For an established formal config, Electron never writes settings first. It sends `update_settings` to the online worker and mutates Electron memory only after ACK. Recording rejection before execution and disconnection before send leave disk unchanged; an ACK timeout is explicitly treated as unconfirmed because the worker may already have persisted the change.
 - First bootstrap remains the sole Electron-owned config write. Runtime data-root changes are also rejected inside the worker protocol.
 - Idle worker settings tests prove memory and disk converge after save; recording tests prove both remain unchanged on rejection. Node tests prove disconnected commands do not write or silently resend.
 - Command ACK tests cover out-of-order concurrent IDs, error rejection, timeout cleanup, and disconnect cleanup.
@@ -200,3 +200,5 @@ The first production version intentionally stops short of distributed-transactio
 In that case the product message is: **“保存结果未确认，请重新打开设置核对。”** The user can reopen settings and retry after confirming the current state. We do not add command deadlines, persistent result logs, automatic reconciliation, or replay because those mechanisms materially expand the protocol and failure-state surface beyond the core recorder lifecycle.
 
 This is recorded as a known low-probability risk, not as a claim that disk state is unchanged after an ACK timeout. The retained core guarantees are single-instance worker startup, detached Electron/worker lifecycles, authenticated loopback control, reconnectable clients, first-run bootstrap, immutable data root, worker-owned settings persistence with command ACKs, and real disconnect-continuity coverage.
+
+The settings modal now catches update, auto-launch, timeout, disconnect, and IPC rejections. It remains open, allows retry, and displays the fixed message “保存结果未确认，请重新打开设置核对”; only a fully successful save closes it.

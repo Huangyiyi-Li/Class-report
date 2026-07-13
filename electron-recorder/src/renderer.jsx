@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { AlertTriangle, Check, ChevronUp, Cloud, FolderOpen, HardDrive, Mic, Pause, Play, Power, RefreshCcw, Settings, UploadCloud, WifiOff, X } from "lucide-react";
 import { createRuntimeState } from "./runtime-state.js";
 import { getHealthMeta, getRecordingMeta, getUploadMeta } from "./state.js";
+import { saveSettings } from "./settings-save.js";
 import "./styles.css";
 
 const shell = window.recorderShell;
@@ -91,8 +92,17 @@ function FloatingBall({ recording }) {
 function SettingsModal({ snapshot, runtime, onClose }) {
   const initial = snapshot.settings || {};
   const [form, setForm] = useState({ autoLaunch: initial.autoLaunch !== false, autoRecordEnabled: Boolean(initial.autoRecordEnabled), inputDevice: initial.inputDevice || "default", dataRoot: initial.dataRoot || snapshot.dataRoot || "" });
+  const [saveError, setSaveError] = useState("");
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
-  const save = async () => { const { autoLaunch, ...workerSettings } = form; await shell?.updateSettings?.(workerSettings); await shell?.setAutoLaunch?.(autoLaunch); onClose(); };
+  const save = async () => {
+    setSaveError("");
+    const { autoLaunch, ...workerSettings } = form;
+    await saveSettings({
+      updateSettings: (value) => shell.updateSettings(value),
+      setAutoLaunch: (value) => shell.setAutoLaunch(value),
+      workerSettings, autoLaunch, onClose, onUnconfirmed: setSaveError,
+    });
+  };
   return <div className="modal-backdrop" role="presentation"><section className="settings-modal" role="dialog" aria-modal="true" aria-label="维护设置">
     <header className="modal-header"><div><p className="eyebrow">维护设置</p><h2>运行设置与诊断</h2></div><button className="icon-button" aria-label="关闭设置" onClick={onClose}><X size={22} /></button></header>
     <div className="settings-scroll"><div className="settings-grid">
@@ -110,7 +120,7 @@ function SettingsModal({ snapshot, runtime, onClose }) {
         <button className="quiet-action compact" onClick={() => shell?.exportDiagnostics?.()}>导出诊断信息</button>
       </section>
     </div><details className="diagnostics-panel"><summary>技术诊断日志</summary><p>录音：{runtime.recording}</p><p>上传：{runtime.upload}</p><p>健康：{runtime.health}</p></details></div>
-    <footer className="modal-footer"><button className="quiet-action" onClick={() => shell?.showFloat?.()}>显示悬浮窗</button><button className="secondary-action compact" onClick={save}>保存设置</button></footer>
+    <footer className="modal-footer">{saveError && <p role="alert" className="settings-save-error">{saveError}</p>}<button className="quiet-action" onClick={() => shell?.showFloat?.()}>显示悬浮窗</button><button className="secondary-action compact" onClick={save}>保存设置</button></footer>
   </section></div>;
 }
 
