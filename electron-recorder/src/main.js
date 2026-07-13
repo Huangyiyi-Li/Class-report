@@ -10,6 +10,7 @@ import { createRuntimeState } from "./runtime-state.js";
 import { configureSingleInstance } from "./single-instance.js";
 import { writeDiagnosticFile } from "./diagnostics.js";
 import { applyAutoLaunch, loadSettings, loadWorkerCoreSettings, saveSettings as persistSettings, validateAutoLaunchValue, validateSettingsPatch } from "./settings.js";
+import { setAutoLaunchAfterBootstrap } from "./settings-save.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -484,7 +485,10 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
         launchWorker: spawnRecorderWorker,
       }));
   }
-  autoLaunchStatus = applyAutoLaunch({ desired: settings.autoLaunch, app });
+  autoLaunchStatus = setAutoLaunchAfterBootstrap({
+    workerLocation, desired: settings.autoLaunch,
+    apply: (desired) => applyAutoLaunch({ desired, app }),
+  });
 
   createMainWindow();
   createFloatingBallWindow();
@@ -521,13 +525,18 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   });
   ipcMain.handle("app:set-auto-launch", async (_event, enabled) => {
     const desired = validateAutoLaunchValue(enabled);
+    const guarded = setAutoLaunchAfterBootstrap({
+      workerLocation, desired,
+      apply: (value) => applyAutoLaunch({ desired: value, app }),
+    });
+    if (guarded.status === "failed" && !workerLocation) return guarded;
     settings = { ...settings, autoLaunch: desired };
     persistSettings(workerLocation.configPath, {
       autoLaunch: desired,
       autoRecordEnabled: settings.autoRecordEnabled,
       inputDevice: settings.inputDevice,
     });
-    autoLaunchStatus = applyAutoLaunch({ desired, app });
+    autoLaunchStatus = guarded;
     publishSnapshot({});
     return autoLaunchStatus;
   });

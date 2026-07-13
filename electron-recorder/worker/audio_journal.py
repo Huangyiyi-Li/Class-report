@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import wave
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -35,14 +35,13 @@ class AudioJournal:
         self.school_id = school_id
         self.location_id = location_id
         self.file = self.part_path.open("ab", buffering=0)
-        _write_metadata(
-            self.meta_path,
-            {
+        self._metadata = {
                 "rate": rate, "channels": channels, "sampleWidth": sample_width,
                 "deviceId": device_id, "schoolId": school_id,
                 "locationId": location_id, "startedAt": started_at.isoformat(),
-            },
-        )
+                "durableFrames": 0,
+            }
+        _write_metadata(self.meta_path, self._metadata)
 
     def append(self, pcm: bytes) -> None:
         self.file.write(pcm)
@@ -50,6 +49,10 @@ class AudioJournal:
     def checkpoint(self) -> None:
         self.file.flush()
         os.fsync(self.file.fileno())
+        self._metadata["durableFrames"] = (
+            self.file.tell() // (self.sample_width * self.channels)
+        )
+        _write_metadata(self.meta_path, self._metadata)
 
     def finalize(self, end_time: datetime | None = None) -> Path:
         self.checkpoint()
@@ -99,13 +102,13 @@ def recover_journals(
                 meta["sampleWidth"],
             )
             if queue_store is not None:
-                ended_at = datetime.fromtimestamp(target.stat().st_mtime).astimezone()
+                started_at = datetime.fromisoformat(meta["startedAt"])
+                ended_at = started_at + timedelta(
+                    seconds=meta["durableFrames"] / meta["rate"]
+                )
                 device_id = meta["deviceId"]
-                queue_store.enqueue({
+                segment = {
                     "local_path": str(target),
-                    "segment_index": queue_store.next_segment_index(
-                        device_id, ended_at.date().isoformat()
-                    ),
                     "code": device_id, "device_no": device_id,
                     "school_id": meta.get("schoolId"),
                     "location_id": meta.get("locationId", ""),
@@ -113,7 +116,10 @@ def recover_journals(
                     "rate": meta["rate"], "bits": meta["sampleWidth"] * 8,
                     "channel": meta["channels"], "audio_type": 1,
                     "audio_format": "wav",
-                })
+                }
+                queue_store.enqueue_recovered(
+                    segment, device_id, started_at.date().isoformat()
+                )
             part.unlink(missing_ok=True)
             meta_path.unlink(missing_ok=True)
             _fsync_directory(root)

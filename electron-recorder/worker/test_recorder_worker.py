@@ -24,6 +24,9 @@ class FakeSession:
     def stop(self):
         self.stopped += 1
 
+    def wait_until_ready(self, timeout):
+        return True
+
 
 def allow_startup(config, system_drive):
     return StartupGate(True, "healthy")
@@ -147,22 +150,46 @@ def test_recording_is_published_only_after_session_reports_durable_write(tmp_pat
     )
     worker.startup()
     worker.handle(command("start"))
-    assert worker.state["recording"] != "recording"
-    captured["on_ready"]()
     assert worker.state["recording"] == "recording"
+
+
+def test_open_stream_without_audio_times_out_as_microphone_unavailable(tmp_path: Path):
+    class SilentSession(FakeSession):
+        def wait_until_ready(self, timeout): return False
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        session_factory=lambda **_: SilentSession(), recover=lambda *_: [],
+        startup_gate=allow_startup, emit_event=lambda *_: None,
+        session_ready_timeout=0.01, capture_retry_delays=(1,),
+    )
+    worker.startup()
+    worker.handle(command("start"))
+    assert worker.session is None
+    assert worker.state["recording"] == "microphone_unavailable"
+    assert "durable audio" in worker.state["latestError"]
+    worker.handle(command("stop"))
 
 
 def test_missing_microphone_maps_to_microphone_unavailable(tmp_path: Path):
     class MissingMicrophone(FakeSession):
-        def start(self): raise OSError("No input device")
+        def start(self): raise RuntimeError("No input device")
+    sessions = []
+    def session_factory(**_):
+        session = MissingMicrophone()
+        sessions.append(session)
+        return session
     worker = RecorderWorker(
         WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
-        session_factory=lambda **_: MissingMicrophone(), recover=lambda *_: [],
+        session_factory=session_factory, recover=lambda *_: [],
         startup_gate=allow_startup, emit_event=lambda *_: None,
     )
     worker.startup()
     worker.handle(command("start"))
+    assert worker.session is None
     assert worker.state["recording"] == "microphone_unavailable"
+    assert "No input device" in worker.state["latestError"]
+    assert sessions[0].stopped == 1
+    worker.handle(command("stop"))
 
 
 def test_unexpected_capture_failure_retries_and_stop_cancels_future_retry(tmp_path: Path):
@@ -188,6 +215,33 @@ def test_unexpected_capture_failure_retries_and_stop_cancels_future_retry(tmp_pa
     worker.handle(command("stop"))
     time.sleep(0.05)
     assert len(sessions) == 2
+
+
+def test_stop_waits_for_inflight_retry_start_and_leaves_no_session_or_timer(tmp_path: Path):
+    entered, release = threading.Event(), threading.Event()
+    sessions = []
+    class BarrierSession(FakeSession):
+        def start(self):
+            entered.set()
+            release.wait(1)
+            super().start()
+    def factory(**_):
+        session = BarrierSession() if sessions else FakeSession()
+        sessions.append(session)
+        return session
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        session_factory=factory, recover=lambda *_: [], startup_gate=allow_startup,
+        emit_event=lambda *_: None, capture_retry_delays=(0.01,),
+    )
+    worker.startup(); worker.handle(command("start"))
+    worker._capture_error(OSError("disconnect"))
+    assert entered.wait(1)
+    stopper = threading.Thread(target=lambda: worker.handle(command("stop")))
+    stopper.start(); time.sleep(0.02); release.set(); stopper.join(1)
+    assert not stopper.is_alive()
+    assert worker.session is None
+    assert worker._capture_retry_timer is None
 
 
 def test_main_lifetime_is_not_tied_to_stdin_eof(monkeypatch, tmp_path):

@@ -75,6 +75,19 @@ def test_first_durable_write_notifies_capture_ready_once(tmp_path: Path):
 
     assert journal.checkpoints == 1
     assert ready == [True]
+    assert session.wait_until_ready(0) is True
+
+
+def test_recovery_end_time_uses_durable_pcm_frames_not_file_mtime(tmp_path: Path):
+    started = datetime(2026, 7, 12, 23, 59, tzinfo=timezone.utc)
+    journal = AudioJournal(tmp_path, "device", started, 10, 2, 2)
+    journal.append(b"\x00" * 80)  # 20 frames = 2 seconds at 10 Hz
+    journal.checkpoint()
+    journal.part_path.touch()
+    store = QueueStore(tmp_path / "queue.db")
+    recover_journals(tmp_path, queue_store=store)
+    item = store.claim_next(datetime.now(timezone.utc))
+    assert item.end_time == (started + __import__("datetime").timedelta(seconds=2)).isoformat()
 
 
 def test_recovery_isolates_corrupt_metadata_and_keeps_its_pcm(tmp_path: Path):

@@ -13,14 +13,15 @@ from worker.recorder_worker import RecorderWorker
 class FakeSession:
     def __init__(self, **kwargs):
         self.running = False
-        self.on_ready = kwargs["on_ready"]
 
     def start(self):
         self.running = True
-        self.on_ready()
 
     def stop(self):
         self.running = False
+
+    def wait_until_ready(self, _timeout):
+        return True
 
 
 def main() -> int:

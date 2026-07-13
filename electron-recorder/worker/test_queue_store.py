@@ -193,6 +193,20 @@ def test_database_uses_wal_journal_mode(tmp_path: Path):
         assert columns["retry_at"] == "INTEGER"
 
 
+def test_enqueue_recovered_is_idempotent_without_consuming_another_index(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    segment = {
+        "local_path": str(tmp_path / "recovered.wav"), "code": "device-1",
+        "device_no": "device-1", "school_id": 1, "location_id": "room",
+        "start_time": "2026-07-12T23:59:00+00:00", "end_time": "2026-07-13T00:00:00+00:00",
+        "rate": 16000, "bits": 16, "channel": 1, "audio_type": 1, "audio_format": "wav",
+    }
+    first = store.enqueue_recovered(segment, "device-1", "2026-07-12")
+    second = store.enqueue_recovered(segment, "device-1", "2026-07-12")
+    assert first == second
+    assert store.next_segment_index("device-1", "2026-07-12") == 2
+
+
 def test_finalized_encoded_path_is_persisted_in_queue(tmp_path: Path):
     class Journal:
         rate = 16000

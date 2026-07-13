@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SETTINGS_SAVE_UNCONFIRMED, saveSettings } from "./settings-save.js";
+import { SETTINGS_SAVE_UNCONFIRMED, saveSettings, setAutoLaunchAfterBootstrap } from "./settings-save.js";
+
+test("auto-launch before bootstrap fails without mutation or registration", () => {
+  let applied = 0;
+  const result = setAutoLaunchAfterBootstrap({ workerLocation: null, desired: true, apply: () => { applied += 1; } });
+  assert.equal(result.status, "failed");
+  assert.match(result.error, /请先配置非系统盘数据目录/);
+  assert.equal(applied, 0);
+});
 
 test("failed settings save keeps modal open and shows fixed confirmation warning", async () => {
   let closed = 0;

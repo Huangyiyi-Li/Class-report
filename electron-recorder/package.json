@@ -51,6 +51,7 @@
       "src/worker-bootstrap.js",
       "src/worker-settings.js",
       "src/settings.js",
+      "src/settings-save.js",
       "src/backend.js",
       "src/diagnostics.js",
       "src/preload.cjs",

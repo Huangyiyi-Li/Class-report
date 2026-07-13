@@ -94,6 +94,33 @@ class QueueStore:
         with self._connect() as connection:
             return self._insert(connection, values)
 
+    def enqueue_recovered(self, segment: dict, device_id: str, day: str) -> int:
+        """Allocate an index and insert a recovered segment in one idempotent transaction."""
+        local_path = segment.get("local_path")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT id FROM segments WHERE local_path = ?", (local_path,)
+            ).fetchone()
+            if existing is not None:
+                connection.commit()
+                return int(existing["id"])
+            row = connection.execute(
+                "SELECT current_index FROM segment_counters WHERE device_id = ? AND day = ?",
+                (device_id, day),
+            ).fetchone()
+            index = 1 if row is None else int(row["current_index"]) + 1
+            connection.execute(
+                """INSERT INTO segment_counters(device_id, day, current_index)
+                   VALUES (?, ?, ?) ON CONFLICT(device_id, day)
+                   DO UPDATE SET current_index = excluded.current_index""",
+                (device_id, day, index),
+            )
+            values = _segment_values({**segment, "segment_index": index})
+            item_id = self._insert(connection, values)
+            connection.commit()
+            return item_id
+
     def claim_next(self, now: str | datetime) -> QueueItem | None:
         now_epoch = _to_epoch_ms(now)
         lease_until = now_epoch + 300_000

@@ -53,6 +53,7 @@ class CaptureSession:
         self.on_error = on_error
         self.on_ready = on_ready
         self._ready = False
+        self._ready_event = threading.Event()
         self.queue_store = queue_store
         self.pcm_queue: queue.Queue[bytes] = queue.Queue(maxsize=256)
         self.finalize_queue: queue.Queue = queue.Queue(maxsize=8)
@@ -116,6 +117,7 @@ class CaptureSession:
                     last_checkpoint = now
                     if not self._ready:
                         self._ready = True
+                        self._ready_event.set()
                         if self.on_ready is not None:
                             self.on_ready()
             self.finalize_queue.put(self.journal)
@@ -192,6 +194,9 @@ class CaptureSession:
         if self._failure is not None:
             raise RuntimeError(str(self._failure)) from self._failure
 
+    def wait_until_ready(self, timeout: float) -> bool:
+        return self._ready_event.wait(timeout)
+
     def start(self) -> None:
         self.stop_event.clear()
         self._monitor_thread = threading.Thread(target=self.monitor_loop, daemon=True)
@@ -267,6 +272,7 @@ class RecorderWorker:
         startup_gate: Callable[[WorkerConfig, str], StartupGate] = evaluate_startup_gate,
         system_drive: str | None = None,
         capture_retry_delays: tuple[float, ...] = (1.0, 2.0, 5.0, 10.0),
+        session_ready_timeout: float = 3.0,
     ):
         self.config = config
         self.emit_event = emit_event or emit
@@ -283,9 +289,12 @@ class RecorderWorker:
         self.startup_gate = startup_gate
         self.system_drive = system_drive or os.environ.get("SystemDrive", "C:")
         self.capture_retry_delays = capture_retry_delays
+        self.session_ready_timeout = session_ready_timeout
         self._capture_retry_attempt = 0
         self._capture_retry_timer: threading.Timer | None = None
         self._desired_recording = False
+        self._capture_generation = 0
+        self._capture_transition_lock = threading.RLock()
         self._upload_lock = threading.Lock()
         self._upload_stop = threading.Event()
         self._upload_thread: threading.Thread | None = None
@@ -351,23 +360,30 @@ class RecorderWorker:
 
     def execute_command(self, command) -> bool:
         if command.command == "shutdown":
-            self._cancel_capture_retry()
-            self._desired_recording = False
-            self._stop_session("idle")
+            with self._capture_transition_lock:
+                self._cancel_capture_retry()
+                self._desired_recording = False
+                self._capture_generation += 1
+                self._stop_session("idle")
             self.emit_event("snapshot", self.snapshot())
             return False
         if command.command == "start":
-            self._desired_recording = True
-            if not self._guarded_start():
-                raise CommandRejected(self.state["latestError"] or "recording start rejected")
+            with self._capture_transition_lock:
+                self._desired_recording = True
+                if not self._guarded_start():
+                    raise CommandRejected(self.state["latestError"] or "recording start rejected")
         elif command.command == "pause":
-            self._desired_recording = False
-            self._cancel_capture_retry()
-            self._stop_session("paused")
+            with self._capture_transition_lock:
+                self._desired_recording = False
+                self._capture_generation += 1
+                self._cancel_capture_retry()
+                self._stop_session("paused")
         elif command.command == "stop":
-            self._desired_recording = False
-            self._cancel_capture_retry()
-            self._stop_session("idle")
+            with self._capture_transition_lock:
+                self._desired_recording = False
+                self._capture_generation += 1
+                self._cancel_capture_retry()
+                self._stop_session("idle")
         elif command.command == "flush_queue":
             self._flush_queue()
         elif command.command == "update_settings":
@@ -389,8 +405,9 @@ class RecorderWorker:
 
     def maybe_auto_start(self) -> None:
         if self.config.auto_record_enabled:
-            self._desired_recording = True
-            self._guarded_start()
+            with self._capture_transition_lock:
+                self._desired_recording = True
+                self._guarded_start()
 
     def _guarded_start(self) -> bool:
         gate = self._evaluate_startup_gate()
@@ -400,6 +417,8 @@ class RecorderWorker:
         if self.queue_store is None:
             self._bind_storage(self.config)
         if self.session is None:
+            self._capture_generation += 1
+            generation = self._capture_generation
             journal = AudioJournal(
                 self.recordings_dir,
                 self.config.device_no,
@@ -414,20 +433,35 @@ class RecorderWorker:
                 config=self.config,
                 journal=journal,
                 ffmpeg_path=self.ffmpeg_path,
-                on_error=self._capture_error,
-                on_ready=self._capture_ready,
+                on_error=lambda exc: self._capture_error(exc, generation),
                 queue_store=self.queue_store,
             )
+            candidate = self.session
             self.state["recording"] = "starting"
             try:
-                self.session.start()
-            except OSError as exc:
+                candidate.start()
+            except Exception as exc:
                 self.session = None
+                self._cleanup_failed_session(candidate)
                 self.state["recording"] = "microphone_unavailable"
                 self.state["health"] = "microphone_unavailable"
                 self.state["latestError"] = str(exc)
                 self._schedule_capture_retry()
                 return False
+            ready = candidate.wait_until_ready(self.session_ready_timeout)
+            if self.session is not candidate:
+                return False
+            if not ready:
+                failed_session = candidate
+                self.session = None
+                failed_session.stop()
+                message = "microphone produced no durable audio before readiness timeout"
+                self.state["recording"] = "microphone_unavailable"
+                self.state["health"] = "microphone_unavailable"
+                self.state["latestError"] = message
+                self._schedule_capture_retry()
+                return False
+            self._capture_ready()
         return True
 
     def _capture_ready(self) -> None:
@@ -463,8 +497,10 @@ class RecorderWorker:
             session.stop()
         self.state["recording"] = next_state
 
-    def _capture_error(self, exc: Exception) -> None:
+    def _capture_error(self, exc: Exception, generation: int | None = None) -> None:
         with self._state_lock:
+            if generation is not None and generation != self._capture_generation:
+                return
             self.state["recording"] = "error"
             self.state["health"] = "error"
             self.state["latestError"] = str(exc)
@@ -492,11 +528,12 @@ class RecorderWorker:
             timer.start()
 
     def _retry_capture(self) -> None:
-        with self._state_lock:
-            self._capture_retry_timer = None
-            desired = self._desired_recording
-        if desired:
-            self._guarded_start()
+        with self._capture_transition_lock:
+            with self._state_lock:
+                self._capture_retry_timer = None
+                desired = self._desired_recording
+            if desired:
+                self._guarded_start()
 
     def _cancel_capture_retry(self) -> None:
         with self._state_lock:
