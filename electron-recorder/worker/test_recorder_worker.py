@@ -4,6 +4,8 @@ import io
 import time
 import threading
 
+import pytest
+
 from worker.config import StartupGate, WorkerConfig
 from worker.recorder_worker import RecorderWorker, main
 
@@ -276,6 +278,7 @@ def test_update_settings_whitelists_and_persists_when_idle(tmp_path: Path):
         config_path=config_path,
         emit_event=lambda name, payload: None,
         recover=lambda root, on_error: [],
+        startup_gate=allow_startup,
     )
 
     worker.handle(command("update_settings", {
@@ -376,3 +379,83 @@ def test_empty_data_root_does_not_initialize_storage_in_current_directory(monkey
 
     assert initialized == []
     assert worker.recordings_dir is None
+
+
+@pytest.mark.parametrize("data_root", ["relative-data", "C:/system-data"])
+def test_invalid_data_root_never_creates_storage_before_or_during_startup(
+    tmp_path: Path, monkeypatch, data_root
+):
+    monkeypatch.chdir(tmp_path)
+    worker = RecorderWorker(
+        WorkerConfig(
+            data_root=data_root,
+            device_no="device-1",
+            school_id=7,
+            location_id="room-101",
+            location_name="一班",
+        ),
+        system_drive="C:",
+    )
+
+    worker.startup()
+
+    assert not (tmp_path / data_root).exists()
+    assert worker.queue_store is None
+
+
+def test_data_root_update_atomically_rebinds_all_storage_paths(tmp_path: Path):
+    old_root = tmp_path / "old"
+    new_root = tmp_path / "new"
+    captured = {}
+
+    def session_factory(**kwargs):
+        captured.update(kwargs)
+        return FakeSession()
+
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(old_root), device_no="device-1"),
+        emit_event=lambda name, payload: None,
+        session_factory=session_factory,
+        recover=lambda root, on_error: [],
+        startup_gate=allow_startup,
+    )
+    worker.startup()
+    old_database = worker.queue_store.database_path
+
+    worker.handle(command("update_settings", {"dataRoot": str(new_root)}))
+    worker.handle(command("start"))
+
+    assert worker.config.data_root == str(new_root)
+    assert worker.recordings_dir == new_root / "recordings"
+    assert worker.queue_store.database_path == new_root / "queue.db"
+    assert worker.legacy_queue_path == new_root / "queue.json"
+    assert captured["journal"].root == new_root / "recordings"
+    assert captured["queue_store"] is worker.queue_store
+    assert old_database == old_root / "queue.db"
+    assert list((old_root / "recordings").iterdir()) == []
+
+
+def test_failed_data_root_switch_preserves_old_configuration_and_resources(tmp_path: Path):
+    old_root = tmp_path / "old"
+
+    def gate(config, system_drive):
+        allowed = config.data_root == str(old_root)
+        return StartupGate(allowed, "healthy" if allowed else "storage_unavailable")
+
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(old_root), device_no="device-1"),
+        emit_event=lambda name, payload: None,
+        recover=lambda root, on_error: [],
+        startup_gate=gate,
+    )
+    worker.startup()
+    old_store = worker.queue_store
+    old_recordings = worker.recordings_dir
+    old_legacy = worker.legacy_queue_path
+
+    worker.handle(command("update_settings", {"dataRoot": str(tmp_path / "bad")}))
+
+    assert worker.config.data_root == str(old_root)
+    assert worker.queue_store is old_store
+    assert worker.recordings_dir == old_recordings
+    assert worker.legacy_queue_path == old_legacy

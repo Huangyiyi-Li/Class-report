@@ -258,11 +258,9 @@ class RecorderWorker:
         self.session_factory = session_factory or CaptureSession
         self.recover = recover
         self.ffmpeg_path = ffmpeg_path
-        root = Path(config.data_root) if config.data_root else None
-        self.recordings_dir = root / "recordings" if root is not None else None
-        self.queue_store = queue_store or (
-            QueueStore(root / "queue.db") if root is not None else None
-        )
+        self.recordings_dir: Path | None = None
+        self.queue_store = queue_store
+        self._provided_queue_store = queue_store
         self.upload_service = upload_service
         self.upload_poll_seconds = upload_poll_seconds
         self.shutdown_join_seconds = shutdown_join_seconds
@@ -272,7 +270,7 @@ class RecorderWorker:
         self._upload_lock = threading.Lock()
         self._upload_stop = threading.Event()
         self._upload_thread: threading.Thread | None = None
-        self.legacy_queue_path = root / "queue.json" if root is not None else None
+        self.legacy_queue_path: Path | None = None
         self.state = {
             "recording": "idle",
             "upload": "clear",
@@ -287,6 +285,7 @@ class RecorderWorker:
         gate = self._evaluate_startup_gate()
         if not gate.allowed:
             return
+        self._bind_storage(self.config)
         assert self.recordings_dir is not None
         assert self.queue_store is not None
         assert self.legacy_queue_path is not None
@@ -296,13 +295,16 @@ class RecorderWorker:
         self.state["recovered"] = len(recovered)
         for path in recovered:
             self.emit_event("recovered", {"path": str(path)})
+        self.start_uploading()
+        self.maybe_auto_start()
+
+    def start_uploading(self) -> None:
         if self.upload_service is not None and self._upload_thread is None:
             self._upload_stop.clear()
             self._upload_thread = threading.Thread(
                 target=self._upload_loop, daemon=True
             )
             self._upload_thread.start()
-        self.maybe_auto_start()
 
     def _upload_loop(self) -> None:
         while not self._upload_stop.is_set():
@@ -355,6 +357,8 @@ class RecorderWorker:
         if not gate.allowed:
             self._command_error(f"recording blocked: {gate.health}")
             return False
+        if self.queue_store is None:
+            self._bind_storage(self.config)
         if self.session is None:
             journal = AudioJournal(
                 self.recordings_dir,
@@ -381,6 +385,16 @@ class RecorderWorker:
         if not gate.allowed:
             self.state["recording"] = "error"
         return gate
+
+    def _bind_storage(self, config: WorkerConfig) -> None:
+        root = Path(config.data_root)
+        recordings_dir = root / "recordings"
+        legacy_queue_path = root / "queue.json"
+        queue_store = self._provided_queue_store or QueueStore(root / "queue.db")
+        recordings_dir.mkdir(parents=True, exist_ok=True)
+        self.recordings_dir = recordings_dir
+        self.queue_store = queue_store
+        self.legacy_queue_path = legacy_queue_path
 
     def _stop_session(self, next_state: str) -> None:
         session = self.session
@@ -459,9 +473,38 @@ class RecorderWorker:
             "dataRoot": "data_root",
         }
         changes = {mapping[key]: value for key, value in payload.items() if key in mapping}
-        self.config = replace(self.config, **changes)
+        candidate = replace(self.config, **changes)
+        if candidate.data_root != self.config.data_root:
+            self._rebind_storage(candidate)
+        else:
+            if self.config_path is not None:
+                candidate.save_atomic(self.config_path)
+            self.config = candidate
+
+    def _rebind_storage(self, candidate: WorkerConfig) -> None:
+        gate = self.startup_gate(candidate, self.system_drive)
+        if not gate.allowed:
+            raise ValueError(f"storage switch blocked: {gate.health}")
+        if self._provided_queue_store is not None:
+            raise ValueError("cannot switch data root with an externally managed queue")
+        if self.queue_store is not None:
+            counts = self.queue_store.counts()
+            pending = sum(count for status, count in counts.items() if status != "completed")
+            if pending:
+                raise ValueError("待上传队列未清空，不允许切换数据目录")
+        root = Path(candidate.data_root)
+        new_recordings = root / "recordings"
+        new_store = QueueStore(root / "queue.db")
+        new_recordings.mkdir(parents=True, exist_ok=True)
         if self.config_path is not None:
-            self.config.save_atomic(self.config_path)
+            candidate.save_atomic(self.config_path)
+        with self._upload_lock:
+            self.config = candidate
+            self.recordings_dir = new_recordings
+            self.queue_store = new_store
+            self.legacy_queue_path = root / "queue.json"
+            if self.upload_service is not None and hasattr(self.upload_service, "store"):
+                self.upload_service.store = new_store
 
     def _command_error(self, message: str) -> None:
         self.state["latestError"] = message
@@ -519,9 +562,10 @@ def main() -> int:
     config_path = Path(os.environ.get("RECORDER_CONFIG_PATH", "worker-config.json"))
     config = WorkerConfig.load(config_path)
     worker = RecorderWorker(config, config_path=config_path)
-    if config.device_no:
-        worker.upload_service = create_upload_service(config, worker.queue_store)
     worker.startup()
+    if config.device_no and worker.queue_store is not None:
+        worker.upload_service = create_upload_service(config, worker.queue_store)
+        worker.start_uploading()
     emit("ready", worker.snapshot())
     try:
         for line in sys.stdin:
