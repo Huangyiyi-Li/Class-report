@@ -126,6 +126,29 @@
 - [ ] Run Python, Node, build and Electron smoke tests; on Windows run `npm run dist:win` and inspect packaged resources.
 - [ ] Commit with `build(recorder): package worker and document validation`.
 
+### Task 6: Core Capture Recovery Completion
+
+**Files:**
+- Modify: `electron-recorder/worker/audio_journal.py`
+- Modify: `electron-recorder/worker/recorder_worker.py`
+- Modify: worker recovery and lifecycle tests
+- Modify: `electron-recorder/src/settings.js`
+- Modify: `electron-recorder/src/main.js`
+- Modify: relevant Node settings tests
+- Modify: `electron-recorder/docs/TESTING.md`
+
+**Interfaces:**
+- Produces: recovered journals that enter the durable upload queue exactly once; capture readiness after the first durable write; bounded microphone reopen after an unexpected capture failure; Electron settings persisted beside the non-system worker configuration.
+
+- [ ] Add failing tests proving recovered audio is enqueued once with journal-time device/location metadata and remains retryable.
+- [ ] Add failing tests proving `recording` is published only after the first durable audio write and a missing microphone maps to `microphone_unavailable`.
+- [ ] Add failing tests proving an unexpected microphone/capture failure retries while recording is desired, and an explicit user stop cancels retry.
+- [ ] Add failing Node tests proving Electron preferences default safely before bootstrap and persist beside the located non-system worker config after bootstrap, not under `userData`.
+- [ ] Implement the minimum behavior without adding remote policy, Windows services, or a new binding mechanism.
+- [ ] Run all Python/Node/build/smoke checks and commit with `fix(recorder): complete capture recovery lifecycle`.
+
+**Scope boundary:** Self-service QR binding remains a separate external integration because the mini-program and binding-service repositories are absent. Windows technical validation may use a controlled pre-provisioned binding fixture; this is not a production user binding flow and must not be presented as one.
+
 ## Exit Criteria
 
 1. A clean checkout contains every source/build input and excludes generated dependencies and artifacts.
@@ -136,3 +159,4 @@
 6. Renderer IPC rejects malformed settings and cannot mutate binding identity.
 7. The installer definition includes the worker and Windows FFmpeg.
 8. All automated checks pass; true Windows/ice-point/72-hour checks remain explicit release gates until executed.
+9. Recovered journals re-enter the upload queue, capture state follows a durable first write, and transient microphone failures retry without overriding an explicit stop.
