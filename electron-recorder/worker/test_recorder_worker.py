@@ -511,6 +511,19 @@ def test_data_root_update_is_rejected_without_rebinding_storage(tmp_path: Path):
     assert not new_root.exists()
 
 
+def test_same_unsafe_data_root_is_validated_before_equality_check():
+    events = []
+    worker = RecorderWorker(
+        WorkerConfig(data_root="C:/Recorder"), system_drive="C:",
+        emit_event=lambda name, payload: events.append((name, payload)),
+    )
+
+    worker.handle(command("update_settings", {"dataRoot": "C:/Recorder", "inputDevice": "mic-2"}))
+
+    assert worker.config.input_device == ""
+    assert any(name == "error" and "非系统盘" in payload["message"] for name, payload in events)
+
+
 def test_failed_data_root_switch_preserves_old_configuration_and_resources(tmp_path: Path):
     old_root = tmp_path / "old"
 

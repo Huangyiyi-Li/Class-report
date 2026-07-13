@@ -31,7 +31,7 @@ def test_rejects_system_drive_data_root(tmp_path: Path):
 
 
 def test_rejects_data_root_without_drive():
-    with pytest.raises(ValueError, match="非系统盘"):
+    with pytest.raises(ValueError, match="本地绝对路径"):
         validate_data_root(Path("ClassroomRecorderData"), "C:")
 
 
@@ -68,6 +68,18 @@ def test_worker_validates_core_settings_patch_strictly():
         "auto_record_enabled": True,
         "input_device": "mic-2",
     }
+
+
+def test_worker_validates_safe_windows_data_root_in_patch():
+    assert validate_settings_patch({"dataRoot": "D:/Recorder"}, system_drive="C:") == {
+        "data_root": "D:/Recorder",
+    }
+
+
+@pytest.mark.parametrize("data_root", ["relative", "C:/Recorder", "c:\\Recorder", "\\\\server\\share\\Recorder"])
+def test_worker_rejects_unsafe_windows_data_root_in_patch(data_root):
+    with pytest.raises(ValueError):
+        validate_settings_patch({"dataRoot": data_root}, system_drive="C:")
 
 
 @pytest.mark.parametrize("patch", [

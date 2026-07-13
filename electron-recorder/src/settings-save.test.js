@@ -18,9 +18,27 @@ test("failed settings save keeps modal open and shows fixed confirmation warning
 test("successful settings save closes modal", async () => {
   let closed = 0;
   const saved = await saveSettings({
-    updateSettings: async () => {}, setAutoLaunch: async () => {}, workerSettings: {}, autoLaunch: true,
+    updateSettings: async () => {}, setAutoLaunch: async () => ({ status: "verified", desired: true, actual: true, error: null }), workerSettings: {}, autoLaunch: true,
     onClose: () => { closed += 1; }, onUnconfirmed: () => {},
   });
   assert.equal(saved, true);
   assert.equal(closed, 1);
 });
+
+for (const result of [
+  { status: "failed", error: "Windows 开机自启设置失败：注册表被拒绝" },
+  { status: "unverified", error: "仅支持在 Windows 上验证开机自启状态" },
+  { status: "unverified", error: null },
+]) {
+  test(`auto-launch ${result.status} keeps modal open and reports a concrete reason`, async () => {
+    let closed = 0;
+    let warning = "";
+    const saved = await saveSettings({
+      updateSettings: async () => {}, setAutoLaunch: async () => result, workerSettings: {}, autoLaunch: true,
+      onClose: () => { closed += 1; }, onUnconfirmed: (message) => { warning = message; },
+    });
+    assert.equal(saved, false);
+    assert.equal(closed, 0);
+    assert.equal(warning, result.error || "开机自启状态未验证，请重试");
+  });
+}

@@ -478,7 +478,7 @@ class RecorderWorker:
                 pass
 
     def _update_settings(self, payload: dict) -> None:
-        changes = validate_settings_patch(payload)
+        changes = validate_settings_patch(payload, self.system_drive)
         requested_root = changes.pop("data_root", None)
         if requested_root and requested_root != self.config.data_root:
             raise CommandRejected("录音数据目录首次部署后不可修改，需重新部署")

@@ -29,6 +29,18 @@ test("existing idle config is persisted only by acknowledged worker command", as
   assert.equal(persisted, 0);
 });
 
+test("complete Electron settings never send autoLaunch to the worker", async () => {
+  let payload;
+  const result = await applyWorkerSettings({
+    settings: { autoLaunch: true, autoRecordEnabled: false, inputDevice: "old", dataRoot: "/data/one" },
+    patch: { autoRecordEnabled: true, inputDevice: "new", dataRoot: "/data/one" },
+    workerLocation: { dataRoot: "/data/one" }, persistBootstrap() { throw new Error("must not persist"); }, attach() {},
+    supervisor: { socket: {}, async sendCommand(command, value) { assert.equal(command, "update_settings"); payload = value; } },
+  });
+  assert.deepEqual(payload, { autoRecordEnabled: true, inputDevice: "new", dataRoot: "/data/one" });
+  assert.equal(result.settings.autoLaunch, true);
+});
+
 test("recording rejection and disconnection leave Electron settings unchanged", async () => {
   const original = { dataRoot: "/data/one", inputDevice: "old" };
   for (const supervisor of [

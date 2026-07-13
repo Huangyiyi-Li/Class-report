@@ -52,7 +52,7 @@ class WorkerConfig:
         os.replace(temporary, path)
 
 
-def validate_settings_patch(patch: object) -> dict:
+def validate_settings_patch(patch: object, system_drive: str = "C:") -> dict:
     if not isinstance(patch, dict):
         raise ValueError("settings patch must be an object")
     unknown = set(patch) - RUNTIME_SETTING_KEYS
@@ -79,13 +79,17 @@ def validate_settings_patch(patch: object) -> dict:
         value = value.strip()
         if not value or len(value) > 1024 or "\0" in value or "\n" in value or "\r" in value:
             raise ValueError("dataRoot is invalid")
+        validate_data_root(value, system_drive)
         changes["data_root"] = value
     return changes
 
 
-def validate_data_root(path: Path, system_drive: str) -> None:
-    drive = PureWindowsPath(str(path)).drive.upper().rstrip("\\/")
-    protected = system_drive.upper().rstrip("\\/")
+def validate_data_root(path: Path | str, system_drive: str) -> None:
+    windows_path = PureWindowsPath(str(path))
+    drive = windows_path.drive.upper().rstrip("\\/")
+    protected = PureWindowsPath(system_drive).drive.upper().rstrip("\\/")
+    if not windows_path.is_absolute() or drive.startswith("\\\\"):
+        raise ValueError("录音数据目录必须是 Windows 本地绝对路径")
     if not drive or drive == protected:
         raise ValueError("录音数据必须保存到非系统盘")
 
