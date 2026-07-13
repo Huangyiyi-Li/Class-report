@@ -13,7 +13,7 @@ from typing import Callable
 
 from worker.audio_journal import AudioJournal, recover_journals
 from worker.config import StartupGate, WorkerConfig, evaluate_startup_gate
-from worker.control_server import ControlServer
+from worker.control_server import ControlServer, InstanceLock, ServerAlreadyRunning
 from worker.protocol import event
 from worker.queue_store import QueueStore, migrate_json_queue
 from worker.retention import cleanup_completed, disk_health
@@ -559,30 +559,40 @@ def create_upload_service(config: WorkerConfig, store: QueueStore):
     return UploadService(store, adapter, adapter)
 
 
-def main() -> int:
-    config_path = Path(os.environ.get("RECORDER_CONFIG_PATH", "worker-config.json"))
+def run_worker(config_path: Path, stopped: threading.Event, worker_factory=None) -> int:
+    worker_factory = worker_factory or RecorderWorker
     config = WorkerConfig.load(config_path)
-    worker = RecorderWorker(config, config_path=config_path)
-    worker.startup()
-    if config.device_no and worker.queue_store is not None:
-        worker.upload_service = create_upload_service(config, worker.queue_store)
-        worker.start_uploading()
     runtime_override = os.environ.get("RECORDER_RUNTIME_DIR")
     if not runtime_override and not config.data_root:
         raise ValueError("data root is required for the worker runtime directory")
     runtime_dir = Path(runtime_override or config.data_root) / (
         "" if runtime_override else "runtime"
     )
+    try:
+        instance_lock = InstanceLock(runtime_dir).acquire()
+    except ServerAlreadyRunning:
+        return 2
+    with instance_lock:
+        worker = worker_factory(config, config_path=config_path)
+        try:
+            worker.startup()
+            if config.device_no and worker.queue_store is not None:
+                worker.upload_service = create_upload_service(config, worker.queue_store)
+                worker.start_uploading()
+            with ControlServer(worker, runtime_dir, instance_lock=instance_lock):
+                stopped.wait()
+            return 0
+        finally:
+            worker.shutdown()
+
+
+def main() -> int:
+    config_path = Path(os.environ.get("RECORDER_CONFIG_PATH", "worker-config.json"))
     stopped = threading.Event()
     for signal_name in ("SIGINT", "SIGTERM"):
         if hasattr(signal, signal_name):
             signal.signal(getattr(signal, signal_name), lambda *_args: stopped.set())
-    try:
-        with ControlServer(worker, runtime_dir):
-            stopped.wait()
-        return 0
-    finally:
-        worker.shutdown()
+    return run_worker(config_path, stopped)
 
 
 if __name__ == "__main__":

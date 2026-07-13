@@ -6,7 +6,7 @@ import threading
 import pytest
 
 from worker.config import StartupGate, WorkerConfig
-from worker.recorder_worker import RecorderWorker, main
+from worker.recorder_worker import RecorderWorker, main, run_worker
 
 
 def command(name: str, payload=None):
@@ -163,7 +163,7 @@ def test_main_lifetime_is_not_tied_to_stdin_eof(monkeypatch, tmp_path):
             self.session.stop()
 
     class FakeControlServer:
-        def __init__(self, worker, runtime_dir):
+        def __init__(self, worker, runtime_dir, **_kwargs):
             calls.append(("server", runtime_dir))
 
         def __enter__(self):
@@ -187,6 +187,58 @@ def test_main_lifetime_is_not_tied_to_stdin_eof(monkeypatch, tmp_path):
     assert main() == 0
     assert calls == ["startup", ("server", tmp_path), "wait", "shutdown"]
     assert finalized == [True]
+
+
+def test_competing_worker_main_loser_never_constructs_or_starts_worker(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    WorkerConfig(data_root=str(tmp_path)).save_atomic(config_path)
+    monkeypatch.setenv("RECORDER_RUNTIME_DIR", str(tmp_path / "runtime"))
+    stop = threading.Event()
+    constructed = []
+    started = []
+    results = []
+
+    class Worker:
+        queue_store = None
+        def __init__(self, *_args, **_kwargs): constructed.append(self)
+        def startup(self): started.append(self)
+        def snapshot(self): return {"recording": "idle"}
+        def shutdown(self): pass
+
+    threads = [threading.Thread(target=lambda: results.append(run_worker(config_path, stop, Worker))) for _ in range(2)]
+    for thread in threads: thread.start()
+    deadline = time.monotonic() + 1
+    while 2 not in results and time.monotonic() < deadline: time.sleep(0.01)
+    stop.set()
+    for thread in threads: thread.join()
+    assert sorted(results) == [0, 2]
+    assert len(constructed) == 1
+    assert len(started) == 1
+
+
+def test_competing_auto_start_loser_never_enters_capture_startup(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    WorkerConfig(data_root=str(tmp_path), auto_record_enabled=True).save_atomic(config_path)
+    monkeypatch.setenv("RECORDER_RUNTIME_DIR", str(tmp_path / "runtime"))
+    stop = threading.Event()
+    captures = []
+    results = []
+
+    class Worker:
+        queue_store = None
+        def __init__(self, *_args, **_kwargs): pass
+        def startup(self): captures.append("capture")
+        def snapshot(self): return {"recording": "recording"}
+        def shutdown(self): pass
+
+    threads = [threading.Thread(target=lambda: results.append(run_worker(config_path, stop, Worker))) for _ in range(2)]
+    for thread in threads: thread.start()
+    deadline = time.monotonic() + 1
+    while 2 not in results and time.monotonic() < deadline: time.sleep(0.01)
+    stop.set()
+    for thread in threads: thread.join()
+    assert sorted(results) == [0, 2]
+    assert captures == ["capture"]
 
 
 def test_worker_runs_upload_service_in_background_and_stops_it(tmp_path: Path):

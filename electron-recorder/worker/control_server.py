@@ -31,22 +31,37 @@ def _private_write(path: Path, content: str) -> None:
 class _ControlHandler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         server = self.server.control_server
+        self.request.settimeout(server.authentication_timeout)
         try:
-            authentication = json.loads(self.rfile.readline())
+            authentication_line = self.rfile.readline(server.max_line_bytes + 1)
+            if len(authentication_line) > server.max_line_bytes or not authentication_line.endswith(b"\n"):
+                return
+            authentication = json.loads(authentication_line)
+        except (TimeoutError, OSError):
+            return
         except (json.JSONDecodeError, UnicodeDecodeError):
             authentication = {}
         if not secrets.compare_digest(str(authentication.get("token", "")), server.token):
             self._send("error", {"message": "authentication failed"})
             return
         server._add_client(self)
+        self.request.settimeout(None)
         try:
             self._send("ready", server.worker.snapshot())
-            for raw_line in self.rfile:
+            while True:
+                raw_line = self.rfile.readline(server.max_line_bytes + 1)
+                if not raw_line:
+                    break
+                if len(raw_line) > server.max_line_bytes or not raw_line.endswith(b"\n"):
+                    break
                 try:
                     command = parse_command(raw_line.decode("utf-8"))
-                    server.worker.handle(command)
+                    with server.command_lock:
+                        server.worker.handle(command)
                 except Exception as exc:
                     self._send("error", {"message": str(exc)})
+        except (ConnectionResetError, OSError):
+            pass
         finally:
             server._remove_client(self)
 
@@ -60,24 +75,64 @@ class _ThreadingServer(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
+class InstanceLock:
+    def __init__(self, runtime_dir: Path):
+        self.runtime_dir = Path(runtime_dir)
+        self.path = self.runtime_dir / "worker.lock"
+        self.descriptor = None
+
+    def acquire(self):
+        self.runtime_dir.mkdir(parents=True, exist_ok=True)
+        descriptor = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            if os.name == "nt":
+                import msvcrt
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            os.close(descriptor)
+            raise ServerAlreadyRunning("recorder worker is already running") from exc
+        os.ftruncate(descriptor, 0)
+        os.write(descriptor, str(os.getpid()).encode("ascii"))
+        self.descriptor = descriptor
+        return self
+
+    def close(self):
+        if self.descriptor is not None:
+            os.close(self.descriptor)
+            self.descriptor = None
+
+    def __enter__(self):
+        return self if self.descriptor is not None else self.acquire()
+
+    def __exit__(self, *_args):
+        self.close()
+
+
 class ControlServer:
-    def __init__(self, worker, runtime_dir: Path):
+    def __init__(self, worker, runtime_dir: Path, *, instance_lock=None, authentication_timeout=2.0, max_line_bytes=65536):
         self.worker = worker
         self.runtime_dir = Path(runtime_dir)
         self.endpoint_path = self.runtime_dir / "worker-endpoint.json"
         self.token_path = self.runtime_dir / "worker-token"
-        self.lock_path = self.runtime_dir / "worker.lock"
         self.token = secrets.token_urlsafe(32)
         self.port = 0
-        self._lock_descriptor = None
+        self.instance_lock = instance_lock
+        self._owns_lock = instance_lock is None
         self._server = None
         self._thread = None
         self._clients = set()
         self._clients_lock = threading.Lock()
+        self.command_lock = threading.Lock()
+        self.authentication_timeout = authentication_timeout
+        self.max_line_bytes = max_line_bytes
 
     def start(self):
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
-        self._acquire_lock()
+        if self.instance_lock is None:
+            self.instance_lock = InstanceLock(self.runtime_dir).acquire()
         try:
             self._server = _ThreadingServer(("127.0.0.1", 0), _ControlHandler)
             self._server.control_server = self
@@ -112,22 +167,6 @@ class ControlServer:
         with self._clients_lock:
             self._clients.discard(client)
 
-    def _acquire_lock(self) -> None:
-        descriptor = os.open(self.lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-        try:
-            if os.name == "nt":
-                import msvcrt
-                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as exc:
-            os.close(descriptor)
-            raise ServerAlreadyRunning("recorder worker is already running") from exc
-        os.ftruncate(descriptor, 0)
-        os.write(descriptor, str(os.getpid()).encode("ascii"))
-        self._lock_descriptor = descriptor
-
     def close(self) -> None:
         if self._server is not None:
             self._server.shutdown()
@@ -141,9 +180,9 @@ class ControlServer:
                 path.unlink()
             except FileNotFoundError:
                 pass
-        if self._lock_descriptor is not None:
-            os.close(self._lock_descriptor)
-            self._lock_descriptor = None
+        if self._owns_lock and self.instance_lock is not None:
+            self.instance_lock.close()
+            self.instance_lock = None
 
     def __enter__(self):
         return self.start()

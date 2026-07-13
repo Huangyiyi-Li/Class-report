@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { WorkerClient } from "./worker-client.js";
 import { createRuntimeState } from "./runtime-state.js";
+import { configureSingleInstance } from "./single-instance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -20,6 +21,9 @@ let recordingPowerBlockerId = null;
 let supervisor;
 let workerSnapshot = { recording: "idle", upload: "clear", health: "healthy", pending: 0 };
 let settings = { autoLaunch: true, autoRecordEnabled: false, inputDevice: "default", dataRoot: "" };
+const hasSingleInstanceLock = configureSingleInstance(app, () => {
+  showMainWindow();
+});
 
 const STATE_LABELS = {
   idle: "未开始录音",
@@ -452,7 +456,7 @@ async function runSmokeTest() {
   }
 }
 
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) app.whenReady().then(() => {
   settings = { ...settings, dataRoot: loadConfiguredDataRoot() };
   supervisor = process.env.ELECTRON_SMOKE_TEST
     ? new WorkerClient({
@@ -477,7 +481,6 @@ app.whenReady().then(async () => {
     workerSnapshot = { ...workerSnapshot, latestError: error.message };
     publishSnapshot({});
   });
-  await supervisor.connect();
   applyAutoLaunchPreference(settings.autoLaunch);
 
   createMainWindow();
@@ -485,6 +488,16 @@ app.whenReady().then(async () => {
   createTray();
   showFloatingBallWindow();
   runSmokeTest();
+
+  publishSnapshot({ health: "blocked", latestError: "正在连接录音服务" });
+  const connectInBackground = () => {
+    supervisor.connect().catch((error) => {
+      workerSnapshot = { ...workerSnapshot, health: "blocked", latestError: error.message };
+      publishSnapshot({});
+      if (!app.isQuitting) setTimeout(connectInBackground, 2000);
+    });
+  };
+  connectInBackground();
 
   ipcMain.handle("recorder:get-snapshot", () => ({ ...workerSnapshot, runtime: createRuntimeState(workerSnapshot), settings, appVersion: app.getVersion() }));
   ipcMain.handle("recorder:start", () => supervisor.send("start"));

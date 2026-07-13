@@ -21,63 +21,111 @@ function defaultOpenSocket({ host, port }) {
 }
 
 export class WorkerClient extends EventEmitter {
-  constructor({
-    runtimeDir,
-    readEndpoint = () => defaultReadEndpoint(runtimeDir),
-    openSocket = defaultOpenSocket,
-    launchWorker,
-    retryDelayMs = 200,
-    maxAttempts = 25,
-  }) {
+  constructor({ runtimeDir, readEndpoint = () => defaultReadEndpoint(runtimeDir), openSocket = defaultOpenSocket,
+    launchWorker, retryDelayMs = 200, maxRetryDelayMs = 2000, maxAttempts = 25, authenticationTimeoutMs = 2000 }) {
     super();
     this.readEndpoint = readEndpoint;
     this.openSocket = openSocket;
     this.launchWorker = launchWorker;
     this.retryDelayMs = retryDelayMs;
+    this.maxRetryDelayMs = maxRetryDelayMs;
     this.maxAttempts = maxAttempts;
+    this.authenticationTimeoutMs = authenticationTimeoutMs;
     this.buffer = "";
     this.socket = null;
+    this.explicitlyDisconnected = false;
+    this.launchedWorker = false;
+    this.connectPromise = null;
     this.on("error", () => {});
   }
 
-  async connect() {
-    let launched = false;
+  connect() {
+    this.explicitlyDisconnected = false;
+    if (!this.connectPromise) {
+      this.connectPromise = this._connectLoop().finally(() => { this.connectPromise = null; });
+    }
+    return this.connectPromise;
+  }
+
+  async _connectLoop() {
     let lastError;
-    for (let attempt = 0; attempt < this.maxAttempts; attempt += 1) {
+    for (let attempt = 0; attempt < this.maxAttempts && !this.explicitlyDisconnected; attempt += 1) {
+      let socket;
       try {
         const endpoint = await this.readEndpoint();
-        this.socket = await this.openSocket(endpoint);
-        this._attachSocket(this.socket);
-        this.socket.write(`${JSON.stringify({ token: endpoint.token })}\n`);
+        socket = await this.openSocket(endpoint);
+        await this._authenticate(socket, endpoint.token);
+        this.socket = socket;
         return;
       } catch (error) {
         lastError = error;
-        if (!launched) {
+        socket?.destroy?.();
+        socket?.end?.();
+        if (!this.launchedWorker && !this.explicitlyDisconnected) {
           this.launchWorker({ detached: true, stdio: "ignore" });
-          launched = true;
+          this.launchedWorker = true;
         }
-        if (attempt + 1 < this.maxAttempts) await delay(this.retryDelayMs);
+        if (attempt + 1 < this.maxAttempts) {
+          await delay(Math.min(this.retryDelayMs * (attempt + 1), this.maxRetryDelayMs));
+        }
       }
     }
-    throw lastError;
+    if (!this.explicitlyDisconnected) throw lastError || new Error("worker connection stopped");
   }
 
-  _attachSocket(socket) {
-    socket.on("data", (chunk) => this._consume(chunk.toString("utf8")));
-    socket.on("error", (error) => this.emit("error", error));
-    socket.on("close", () => {
-      if (this.socket === socket) this.socket = null;
-      this.emit("disconnect");
+  _authenticate(socket, token) {
+    this.buffer = "";
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error) reject(error); else resolve();
+      };
+      const timer = setTimeout(() => finish(new Error("worker authentication timed out")), this.authenticationTimeoutMs);
+      const onData = (chunk) => this._consume(chunk.toString("utf8"), (message) => {
+        if (message.event === "ready") finish();
+        else if (message.event === "error") finish(new Error(message.payload?.message || "worker authentication failed"));
+      });
+      socket.on("data", onData);
+      socket.once("error", finish);
+      socket.once("close", () => finish(new Error("worker closed before authentication")));
+      socket.write(`${JSON.stringify({ token })}\n`);
+      this._attachRuntimeSocket(socket);
     });
   }
 
-  _consume(text) {
+  _attachRuntimeSocket(socket) {
+    socket.on("error", (error) => {
+      this.emit("error", error);
+      if (this.socket === socket) {
+        this.socket = null;
+        socket.destroy?.();
+        this._reconnectAfterLoss();
+      }
+    });
+    socket.on("close", () => {
+      if (this.socket === socket) {
+        this.socket = null;
+        this._reconnectAfterLoss();
+      }
+    });
+  }
+
+  _reconnectAfterLoss() {
+    this.emit("disconnect");
+    if (!this.explicitlyDisconnected) this.connect().catch((error) => this.emit("error", error));
+  }
+
+  _consume(text, observe = () => {}) {
     this.buffer += text;
     const lines = this.buffer.split("\n");
     this.buffer = lines.pop() || "";
     for (const line of lines.filter(Boolean)) {
       try {
         const message = JSON.parse(line);
+        observe(message);
         this.emit(message.event, message.payload);
       } catch (error) {
         this.emit("error", error);
@@ -91,6 +139,7 @@ export class WorkerClient extends EventEmitter {
   }
 
   disconnect() {
+    this.explicitlyDisconnected = true;
     const socket = this.socket;
     this.socket = null;
     socket?.end();

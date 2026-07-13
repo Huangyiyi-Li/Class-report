@@ -42,6 +42,7 @@
       "dist/renderer/**",
       "src/main.js",
       "src/worker-client.js",
+      "src/single-instance.js",
       "src/backend.js",
       "src/preload.cjs",
       "package.json"

@@ -54,3 +54,39 @@ The capture session is owned only by `RecorderWorker`. A control handler calls `
 - Task 2 delayed storage initialization remains intact: `RecorderWorker.__init__` still does not bind or create storage, and the full worker suite passes. The control runtime directory is created only after configuration loading and is rooted below the configured data root (or an explicit `RECORDER_RUNTIME_DIR` override).
 - A first-run installation without a configured data root cannot create a compliant non-system-drive endpoint. It exits rather than falling back to the system drive or current working directory. This is intentional for the storage/security requirement, but onboarding must ensure the worker config is established before normal connection.
 - Windows advisory locking uses `msvcrt.locking`; behavior is covered structurally but was not executed on this macOS verification host.
+
+## Remediation after review
+
+The initial submission was rejected after deeper lifecycle review. The following corrections were implemented with additional RED/GREEN cycles:
+
+- Moved `InstanceLock.acquire()` ahead of `RecorderWorker` construction, `startup()`, automatic capture, queue creation, upload-service creation, and upload-thread startup. Two concurrent `run_worker` race tests prove exactly one contender constructs/starts and the loser returns code 2 without entering capture startup.
+- Added Electron `app.requestSingleInstanceLock()` handling in a separately tested module. A secondary Electron process quits before startup; the primary receives `second-instance` and focuses its existing window.
+- Changed `WorkerClient.connect()` to resolve only after an authenticated `ready` frame. Authentication rejection, timeout, stale/failed endpoint, and close-before-ACK are failed attempts and enter the bounded retry path.
+- Added bounded linear backoff capped by `maxRetryDelayMs`. Worker launch is latched for the client lifetime, preventing repeated detached launches across initial retries and later reconnects.
+- Added automatic runtime reconnect on both socket `close` and `error`. Explicit `disconnect()` sets a terminal client flag before closing and therefore never reconnects or sends `shutdown`.
+- Serialized every authenticated client command through one server command lock. A three-client concurrent `start`/`stop`/`update_settings` test detects and rejects overlapping `worker.handle()` calls.
+- Added a two-second authentication deadline and a fixed 64 KiB maximum NDJSON line. Authentication silence and oversized authentication/command lines close the connection.
+- Made Electron UI startup independent of worker availability. Windows, tray, floating controls, IPC, and settings are created first; a blocked snapshot is published and connection continues in the background.
+- Expanded the real-socket Python loopback integration test: authenticate for a real ACK, start capture, disconnect, reconnect, and verify the same recording snapshot remains active. This is deliberately distinct from the Electron UI smoke, which is retained only as a UI/build smoke and is not claimed as detached-worker verification.
+
+### Remediation RED evidence
+
+- Concurrent client commands overlapped (`stop` and `update_settings` observed while another handler was active).
+- `ControlServer` rejected authentication timeout/line-limit constructor options because the defenses did not exist.
+- Authentication rejection incorrectly allowed `WorkerClient.connect()` to resolve after one socket attempt.
+- Unexpected socket close left `WorkerClient.socket` null instead of reconnecting.
+- Runtime `error` without an immediate `close` did not reconnect.
+- Electron single-instance tests initially failed with `ERR_MODULE_NOT_FOUND` for the not-yet-created lifecycle module.
+
+### Remediation verification
+
+- Focused lifecycle suites: 27 Python tests and 10 Node tests passed.
+- Full Python worker suite: 97 passed.
+- Full Node suite: 27 passed.
+- Vite production build: passed.
+- Electron UI smoke: passed; it is not used as evidence for detached lifecycle behavior.
+- `git diff --check` and Node syntax checks: passed.
+
+### Remaining concern
+
+Windows `msvcrt.locking` remains a Task 5 Windows-host gate as directed. No Windows correctness claim is made from the macOS run.

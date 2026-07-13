@@ -8,7 +8,11 @@ class FakeSocket extends EventEmitter {
     super();
     this.writes = [];
   }
-  write(value) { this.writes.push(JSON.parse(value)); }
+  write(value) {
+    const message = JSON.parse(value);
+    this.writes.push(message);
+    if (message.token) queueMicrotask(() => this.emit("data", Buffer.from('{"event":"ready","payload":{"recording":"idle"}}\n')));
+  }
   end() { this.emit("close"); }
 }
 
@@ -76,4 +80,73 @@ test("disconnect closes control socket without sending shutdown", async () => {
   client.disconnect();
   assert.equal(socket.writes.some((message) => message.command === "shutdown"), false);
   assert.equal(socket.writes.some((message) => message.command === "start"), true);
+});
+
+test("authentication rejection does not resolve connect and triggers retry", async () => {
+  const rejected = new FakeSocket();
+  rejected.write = function(value) {
+    this.writes.push(JSON.parse(value));
+    queueMicrotask(() => this.emit("data", Buffer.from('{"event":"error","payload":{"message":"authentication failed"}}\n')));
+  };
+  const accepted = new FakeSocket();
+  let attempts = 0;
+  const client = new WorkerClient({
+    readEndpoint: async () => endpoint,
+    openSocket: async () => (++attempts === 1 ? rejected : accepted),
+    launchWorker() {}, retryDelayMs: 1, authenticationTimeoutMs: 20,
+  });
+  await client.connect();
+  assert.equal(attempts, 2);
+});
+
+test("unexpected socket close reconnects without launching twice", async () => {
+  const first = new FakeSocket();
+  const second = new FakeSocket();
+  let attempts = 0;
+  let launches = 0;
+  const client = new WorkerClient({
+    readEndpoint: async () => endpoint,
+    openSocket: async () => (++attempts === 1 ? first : second),
+    launchWorker() { launches += 1; }, retryDelayMs: 1,
+  });
+  await client.connect();
+  first.emit("close");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(client.socket, second);
+  assert.equal(launches, 0);
+  client.disconnect();
+  second.emit("close");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(attempts, 2);
+});
+
+test("authentication timeout retries a stale endpoint", async () => {
+  const silent = new FakeSocket();
+  silent.write = function(value) { this.writes.push(JSON.parse(value)); };
+  const accepted = new FakeSocket();
+  let attempts = 0;
+  const client = new WorkerClient({
+    readEndpoint: async () => endpoint,
+    openSocket: async () => (++attempts === 1 ? silent : accepted),
+    launchWorker() {}, retryDelayMs: 1, authenticationTimeoutMs: 5,
+  });
+  await client.connect();
+  assert.equal(attempts, 2);
+  client.disconnect();
+});
+
+test("runtime socket error reconnects even before close", async () => {
+  const first = new FakeSocket();
+  const second = new FakeSocket();
+  let attempts = 0;
+  const client = new WorkerClient({
+    readEndpoint: async () => endpoint,
+    openSocket: async () => (++attempts === 1 ? first : second),
+    launchWorker() {}, retryDelayMs: 1,
+  });
+  await client.connect();
+  first.emit("error", new Error("reset"));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(client.socket, second);
+  client.disconnect();
 });
