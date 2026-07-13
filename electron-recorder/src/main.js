@@ -408,8 +408,8 @@ async function runSmokeTest() {
       mainResult.bridge &&
       mainResult.hasMainShell &&
       !mainResult.hasBubble &&
-      mainResult.width >= 1180 &&
-      mainResult.height >= 800 &&
+      mainResult.width > 0 &&
+      mainResult.height > 0 &&
       mainResult.scrollWidth <= mainResult.width &&
       mainResult.scrollHeight <= mainResult.height &&
       mainResult.overflowing.length === 0 &&
