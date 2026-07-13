@@ -4,7 +4,7 @@ import io
 import time
 import threading
 
-from worker.config import WorkerConfig
+from worker.config import StartupGate, WorkerConfig
 from worker.recorder_worker import RecorderWorker, main
 
 
@@ -22,6 +22,10 @@ class FakeSession:
 
     def stop(self):
         self.stopped += 1
+
+
+def allow_startup(config, system_drive):
+    return StartupGate(True, "healthy")
 
 
 def test_capture_session_uses_configured_input_device(tmp_path: Path):
@@ -70,6 +74,7 @@ def test_commands_control_real_capture_sessions(tmp_path: Path):
         emit_event=lambda name, payload: None,
         session_factory=session_factory,
         recover=lambda root, on_error: [],
+        startup_gate=allow_startup,
     )
     worker.startup()
 
@@ -90,6 +95,7 @@ def test_startup_reports_recovered_journals(tmp_path: Path):
         WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
         emit_event=lambda name, payload: events.append((name, payload)),
         recover=lambda root, on_error: [recovered],
+        startup_gate=allow_startup,
     )
 
     worker.startup()
@@ -112,6 +118,7 @@ def test_capture_error_changes_recording_and_health_state(tmp_path: Path):
         emit_event=lambda name, payload: events.append((name, payload)),
         session_factory=session_factory,
         recover=lambda root, on_error: [],
+        startup_gate=allow_startup,
     )
     worker.startup()
     worker.handle(command("start"))
@@ -177,6 +184,7 @@ def test_worker_runs_upload_service_in_background_and_stops_it(tmp_path: Path):
         recover=lambda root, on_error: [],
         upload_service=service,
         upload_poll_seconds=0.01,
+        startup_gate=allow_startup,
     )
     worker.startup()
     deadline = time.monotonic() + 1
@@ -206,6 +214,7 @@ def test_shutdown_is_bounded_when_upload_service_blocks(tmp_path: Path):
         upload_service=BlockingService(),
         upload_poll_seconds=0.01,
         shutdown_join_seconds=0.05,
+        startup_gate=allow_startup,
     )
     worker.startup()
     assert entered.wait(1)
@@ -223,6 +232,7 @@ def test_snapshot_reports_queue_location_disk_and_latest_error(tmp_path: Path):
         WorkerConfig(data_root=str(tmp_path), location_id="room-101", location_name="一班"),
         emit_event=lambda name, payload: events.append((name, payload)),
         recover=lambda root, on_error: [],
+        startup_gate=allow_startup,
     )
     worker.startup()
     worker._capture_error(OSError("microphone gone"))
@@ -296,3 +306,73 @@ def test_update_settings_is_rejected_while_recording(tmp_path: Path):
 
     assert any(name == "error" and "录音中" in payload["message"] for name, payload in events)
     assert worker.config.input_device == ""
+
+
+def test_auto_record_starts_exactly_once_after_recovery_and_queue_initialization(tmp_path: Path):
+    order = []
+    sessions = []
+
+    def recover(root, on_error):
+        order.append("recovery")
+        return []
+
+    def session_factory(**kwargs):
+        assert order == ["recovery"]
+        assert kwargs["journal"].device_id == "device-1"
+        session = FakeSession()
+        sessions.append(session)
+        return session
+
+    worker = RecorderWorker(
+        WorkerConfig(
+            data_root=str(tmp_path),
+            device_no="device-1",
+            school_id=7,
+            location_id="room-101",
+            location_name="一班",
+            auto_record_enabled=True,
+        ),
+        emit_event=lambda name, payload: None,
+        session_factory=session_factory,
+        recover=recover,
+        startup_gate=allow_startup,
+    )
+
+    worker.startup()
+    worker.maybe_auto_start()
+
+    assert len(sessions) == 1
+    assert sessions[0].started == 1
+
+
+def test_failed_gate_blocks_both_automatic_and_manual_recording(tmp_path: Path):
+    events = []
+    sessions = []
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), auto_record_enabled=True),
+        emit_event=lambda name, payload: events.append((name, payload)),
+        session_factory=lambda **kwargs: sessions.append(FakeSession()),
+        recover=lambda root, on_error: [],
+        startup_gate=lambda config, system_drive: StartupGate(False, "binding_required"),
+    )
+
+    worker.startup()
+    worker.handle(command("start"))
+
+    assert sessions == []
+    assert worker.state["health"] == "binding_required"
+    assert worker.state["recording"] != "recording"
+    assert any(name == "error" for name, payload in events)
+
+
+def test_empty_data_root_does_not_initialize_storage_in_current_directory(monkeypatch):
+    initialized = []
+    monkeypatch.setattr(
+        "worker.recorder_worker.QueueStore",
+        lambda path: initialized.append(path),
+    )
+
+    worker = RecorderWorker(WorkerConfig(data_root=""))
+
+    assert initialized == []
+    assert worker.recordings_dir is None

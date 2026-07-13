@@ -2,8 +2,19 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import tempfile
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path, PureWindowsPath
+
+
+LOW_SPACE_BYTES = 5 * 1024**3
+
+
+@dataclass(frozen=True)
+class StartupGate:
+    allowed: bool
+    health: str
 
 
 @dataclass(frozen=True)
@@ -45,3 +56,44 @@ def validate_data_root(path: Path, system_drive: str) -> None:
     protected = system_drive.upper().rstrip("\\/")
     if not drive or drive == protected:
         raise ValueError("录音数据必须保存到非系统盘")
+
+
+def evaluate_startup_gate(config: WorkerConfig, system_drive: str) -> StartupGate:
+    if not config.data_root:
+        return StartupGate(False, "storage_unavailable")
+    root = Path(config.data_root)
+    try:
+        validate_data_root(root, system_drive)
+    except ValueError:
+        return StartupGate(False, "storage_unavailable")
+    if not _ensure_writable(root):
+        return StartupGate(False, "storage_unavailable")
+    try:
+        if _free_bytes(root) < LOW_SPACE_BYTES:
+            return StartupGate(False, "disk_low")
+    except OSError:
+        return StartupGate(False, "storage_unavailable")
+    if not all(
+        (
+            config.device_no,
+            config.school_id is not None,
+            config.location_id,
+            config.location_name,
+        )
+    ):
+        return StartupGate(False, "binding_required")
+    return StartupGate(True, "healthy")
+
+
+def _ensure_writable(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=path):
+            pass
+        return True
+    except OSError:
+        return False
+
+
+def _free_bytes(path: Path) -> int:
+    return shutil.disk_usage(path).free

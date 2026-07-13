@@ -2,7 +2,18 @@ from pathlib import Path
 
 import pytest
 
-from worker.config import WorkerConfig, validate_data_root
+from worker.config import WorkerConfig, evaluate_startup_gate, validate_data_root
+
+
+def bound_config(data_root="D:/ClassroomRecorderData"):
+    return WorkerConfig(
+        data_root=data_root,
+        device_no="device-1",
+        school_id=7,
+        location_id="room-101",
+        location_name="一班",
+        base_url="https://offline.invalid",
+    )
 
 
 def test_defaults_contain_no_school_or_credentials(tmp_path: Path):
@@ -50,3 +61,56 @@ def test_save_atomic_persists_worker_settings(tmp_path: Path):
 
     assert WorkerConfig.load(path) == config
     assert not path.with_suffix(".json.tmp").exists()
+
+
+@pytest.mark.parametrize("data_root", ["", "ClassroomRecorderData", "C:/Recorder"])
+def test_startup_gate_rejects_empty_relative_and_system_drive_roots(data_root):
+    gate = evaluate_startup_gate(bound_config(data_root), "C:")
+
+    assert gate.allowed is False
+    assert gate.health == "storage_unavailable"
+
+
+def test_startup_gate_rejects_unwritable_storage(monkeypatch):
+    monkeypatch.setattr("worker.config._ensure_writable", lambda path: False)
+
+    gate = evaluate_startup_gate(bound_config(), "C:")
+
+    assert gate.allowed is False
+    assert gate.health == "storage_unavailable"
+
+
+def test_startup_gate_rejects_low_disk_space(monkeypatch):
+    monkeypatch.setattr("worker.config._ensure_writable", lambda path: True)
+    monkeypatch.setattr("worker.config._free_bytes", lambda path: 5 * 1024**3 - 1)
+
+    gate = evaluate_startup_gate(bound_config(), "C:")
+
+    assert gate.allowed is False
+    assert gate.health == "disk_low"
+
+
+@pytest.mark.parametrize(
+    "missing",
+    ["device_no", "school_id", "location_id", "location_name"],
+)
+def test_startup_gate_requires_complete_device_binding(monkeypatch, missing):
+    monkeypatch.setattr("worker.config._ensure_writable", lambda path: True)
+    monkeypatch.setattr("worker.config._free_bytes", lambda path: 6 * 1024**3)
+    config = bound_config()
+    config = WorkerConfig(**{**config.__dict__, missing: None if missing == "school_id" else ""})
+
+    gate = evaluate_startup_gate(config, "C:")
+
+    assert gate.allowed is False
+    assert gate.health == "binding_required"
+
+
+def test_startup_gate_accepts_complete_binding_without_using_network(monkeypatch):
+    monkeypatch.setattr("worker.config._ensure_writable", lambda path: True)
+    monkeypatch.setattr("worker.config._free_bytes", lambda path: 6 * 1024**3)
+
+    gate = evaluate_startup_gate(bound_config(), "C:")
+
+    assert gate.allowed is True
+    assert gate.health == "healthy"

@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from worker.audio_journal import AudioJournal, recover_journals
-from worker.config import WorkerConfig
+from worker.config import StartupGate, WorkerConfig, evaluate_startup_gate
 from worker.protocol import event, parse_command
 from worker.queue_store import QueueStore, migrate_json_queue
 from worker.retention import cleanup_completed, disk_health
@@ -250,23 +250,29 @@ class RecorderWorker:
         upload_poll_seconds: float = 1.0,
         shutdown_join_seconds: float = 5.0,
         config_path: Path | None = None,
+        startup_gate: Callable[[WorkerConfig, str], StartupGate] = evaluate_startup_gate,
+        system_drive: str | None = None,
     ):
         self.config = config
         self.emit_event = emit_event or emit
         self.session_factory = session_factory or CaptureSession
         self.recover = recover
         self.ffmpeg_path = ffmpeg_path
-        root = Path(config.data_root) if config.data_root else Path.cwd()
-        self.recordings_dir = root / "recordings"
-        self.queue_store = queue_store or QueueStore(root / "queue.db")
+        root = Path(config.data_root) if config.data_root else None
+        self.recordings_dir = root / "recordings" if root is not None else None
+        self.queue_store = queue_store or (
+            QueueStore(root / "queue.db") if root is not None else None
+        )
         self.upload_service = upload_service
         self.upload_poll_seconds = upload_poll_seconds
         self.shutdown_join_seconds = shutdown_join_seconds
         self.config_path = config_path
+        self.startup_gate = startup_gate
+        self.system_drive = system_drive or os.environ.get("SystemDrive", "C:")
         self._upload_lock = threading.Lock()
         self._upload_stop = threading.Event()
         self._upload_thread: threading.Thread | None = None
-        self.legacy_queue_path = root / "queue.json"
+        self.legacy_queue_path = root / "queue.json" if root is not None else None
         self.state = {
             "recording": "idle",
             "upload": "clear",
@@ -278,6 +284,12 @@ class RecorderWorker:
         self._state_lock = threading.Lock()
 
     def startup(self) -> None:
+        gate = self._evaluate_startup_gate()
+        if not gate.allowed:
+            return
+        assert self.recordings_dir is not None
+        assert self.queue_store is not None
+        assert self.legacy_queue_path is not None
         self.recordings_dir.mkdir(parents=True, exist_ok=True)
         migrate_json_queue(self.legacy_queue_path, self.queue_store)
         recovered = self.recover(self.recordings_dir, self._recovery_error)
@@ -290,6 +302,7 @@ class RecorderWorker:
                 target=self._upload_loop, daemon=True
             )
             self._upload_thread.start()
+        self.maybe_auto_start()
 
     def _upload_loop(self) -> None:
         while not self._upload_stop.is_set():
@@ -315,24 +328,7 @@ class RecorderWorker:
                 self.emit_event("snapshot", self.snapshot())
                 return False
             if command.command == "start":
-                if self.session is None:
-                    journal = AudioJournal(
-                        self.recordings_dir,
-                        self.config.device_no or "unconfigured-device",
-                        datetime.now(timezone.utc),
-                        16000,
-                        1,
-                        2,
-                    )
-                    self.session = self.session_factory(
-                        config=self.config,
-                        journal=journal,
-                        ffmpeg_path=self.ffmpeg_path,
-                        on_error=self._capture_error,
-                        queue_store=self.queue_store,
-                    )
-                    self.session.start()
-                self.state["recording"] = "recording"
+                self._guarded_start()
             elif command.command == "pause":
                 self._stop_session("paused")
             elif command.command == "stop":
@@ -349,6 +345,42 @@ class RecorderWorker:
         except Exception as exc:
             self._capture_error(exc)
             return command.command != "shutdown"
+
+    def maybe_auto_start(self) -> None:
+        if self.config.auto_record_enabled:
+            self._guarded_start()
+
+    def _guarded_start(self) -> bool:
+        gate = self._evaluate_startup_gate()
+        if not gate.allowed:
+            self._command_error(f"recording blocked: {gate.health}")
+            return False
+        if self.session is None:
+            journal = AudioJournal(
+                self.recordings_dir,
+                self.config.device_no,
+                datetime.now(timezone.utc),
+                16000,
+                1,
+                2,
+            )
+            self.session = self.session_factory(
+                config=self.config,
+                journal=journal,
+                ffmpeg_path=self.ffmpeg_path,
+                on_error=self._capture_error,
+                queue_store=self.queue_store,
+            )
+            self.session.start()
+        self.state["recording"] = "recording"
+        return True
+
+    def _evaluate_startup_gate(self) -> StartupGate:
+        gate = self.startup_gate(self.config, self.system_drive)
+        self.state["health"] = gate.health
+        if not gate.allowed:
+            self.state["recording"] = "error"
+        return gate
 
     def _stop_session(self, next_state: str) -> None:
         session = self.session
@@ -386,9 +418,11 @@ class RecorderWorker:
         self.emit_event("error", {"message": f"journal recovery failed: {exc}"})
 
     def snapshot(self) -> dict:
-        counts = self.queue_store.counts()
+        counts = self.queue_store.counts() if self.queue_store is not None else {}
         pending = sum(count for status, count in counts.items() if status != "completed")
         try:
+            if self.recordings_dir is None:
+                raise OSError("data root is not configured")
             free_bytes = shutil.disk_usage(self.recordings_dir).free
             disk_status = disk_health(self.recordings_dir)
             disk_health_name = "disk_low" if disk_status == "low" else disk_status
