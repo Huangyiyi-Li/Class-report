@@ -91,6 +91,18 @@ jobs:
           if (-not $ffmpeg) { throw "Packaged FFmpeg is missing" }
           if ($installers.Count -lt 2) { throw "Expected both Setup and Portable installers" }
 
+      - name: Run packaged application smoke test
+        run: |
+          $app = Get-ChildItem release/win-unpacked -Filter *.exe | Select-Object -First 1
+          if (-not $app) { throw "Packaged desktop executable is missing" }
+          $env:ELECTRON_SMOKE_TEST = "1"
+          $process = Start-Process -FilePath $app.FullName -PassThru
+          if (-not $process.WaitForExit(60000)) {
+            Stop-Process -Id $process.Id -Force
+            throw "Packaged desktop application did not finish its smoke test"
+          }
+          if ($process.ExitCode -ne 0) { throw "Packaged desktop smoke test failed with exit code $($process.ExitCode)" }
+
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:

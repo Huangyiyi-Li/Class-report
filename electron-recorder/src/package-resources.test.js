@@ -8,6 +8,23 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = path.resolve(root, "..");
 const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 
+test("packages every relative module imported by the Electron main process", () => {
+  const packaged = new Set(pkg.build.files);
+  const visited = new Set();
+
+  function verifyModule(relativePath) {
+    if (visited.has(relativePath)) return;
+    visited.add(relativePath);
+    assert.ok(packaged.has(relativePath), `${relativePath} is imported at runtime but excluded from build.files`);
+    const source = readFileSync(path.join(root, relativePath), "utf8");
+    for (const match of source.matchAll(/from\s+["'](\.\/.+?)["']/g)) {
+      verifyModule(path.posix.normalize(path.posix.join(path.posix.dirname(relativePath), match[1])));
+    }
+  }
+
+  verifyModule(pkg.main);
+});
+
 test("declares packaged worker and Windows FFmpeg resources", () => {
   assert.ok(pkg.build.extraResources.some((item) => item.from === "build/worker/ClassroomRecorderWorker.exe" && item.to === "worker/ClassroomRecorderWorker.exe"));
   assert.ok(pkg.build.extraResources.some((item) => item.from === "build/ffmpeg/ffmpeg.exe" && item.to === "ffmpeg/ffmpeg.exe"));
@@ -59,6 +76,8 @@ test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   assert.match(workflow, /python scripts\/build-worker\.py/);
   assert.match(workflow, /npm run build/);
   assert.match(workflow, /electron-builder --win nsis portable --x64/);
+  assert.match(workflow, /Run packaged application smoke test/);
+  assert.match(workflow, /ELECTRON_SMOKE_TEST/);
   assert.match(workflow, /FFMPEG_EXE/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /gh release create/);
