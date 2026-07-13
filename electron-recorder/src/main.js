@@ -1,8 +1,9 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, shell as electronShell, Tray } from "electron";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import { WorkerSupervisor } from "./worker-supervisor.js";
+import { WorkerClient } from "./worker-client.js";
 import { createRuntimeState } from "./runtime-state.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -293,25 +294,35 @@ function applyAutoLaunchPreference(enabled) {
 }
 
 function spawnRecorderWorker() {
-  const configPath = path.join(app.getPath("userData"), "worker-config.json");
-  if (process.env.ELECTRON_SMOKE_TEST) {
-    const source = `const readline=require("readline");let state={recording:"idle",upload:"clear",health:"healthy",pending:0,location:null,freeDiskBytes:1e10,diskHealth:"healthy",latestError:""};const emit=(event)=>process.stdout.write(JSON.stringify({event,payload:state})+"\\n");emit("ready");readline.createInterface({input:process.stdin}).on("line",line=>{const value=JSON.parse(line);if(value.command==="shutdown")process.exit(0);if(value.command==="start")state.recording="recording";if(value.command==="pause")state.recording="paused";if(value.command==="stop")state.recording="idle";emit("snapshot");});`;
-    return spawn(process.execPath, ["-e", source], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-  }
+  const configPath = getWorkerConfigPath();
+  let child;
   if (app.isPackaged) {
-    return spawn(path.join(process.resourcesPath, "worker", "ClassroomRecorderWorker.exe"), [], {
+    child = spawn(path.join(process.resourcesPath, "worker", "ClassroomRecorderWorker.exe"), [], {
       env: { ...process.env, RECORDER_CONFIG_PATH: configPath },
-      stdio: ["pipe", "pipe", "pipe"],
+      detached: true,
+      stdio: "ignore",
+    });
+  } else {
+    child = spawn(process.env.RECORDER_PYTHON || (process.platform === "win32" ? "python" : "python3"), ["-m", "worker.recorder_worker"], {
+      cwd: path.join(__dirname, ".."),
+      env: { ...process.env, RECORDER_CONFIG_PATH: configPath },
+      detached: true,
+      stdio: "ignore",
     });
   }
-  return spawn(process.env.RECORDER_PYTHON || (process.platform === "win32" ? "python" : "python3"), ["-m", "worker.recorder_worker"], {
-    cwd: path.join(__dirname, ".."),
-    env: { ...process.env, RECORDER_CONFIG_PATH: configPath },
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  child.unref();
+}
+
+function getWorkerConfigPath() {
+  return path.join(app.getPath("userData"), "worker-config.json");
+}
+
+function loadConfiguredDataRoot() {
+  try {
+    return JSON.parse(fs.readFileSync(getWorkerConfigPath(), "utf8")).data_root || "";
+  } catch {
+    return "";
+  }
 }
 
 function publishSnapshot(snapshot) {
@@ -442,14 +453,31 @@ async function runSmokeTest() {
 }
 
 app.whenReady().then(async () => {
-  supervisor = new WorkerSupervisor({ spawnWorker: spawnRecorderWorker });
+  settings = { ...settings, dataRoot: loadConfiguredDataRoot() };
+  supervisor = process.env.ELECTRON_SMOKE_TEST
+    ? new WorkerClient({
+        runtimeDir: "",
+        readEndpoint: async () => ({ host: "127.0.0.1", port: 0, token: "smoke" }),
+        openSocket: async () => {
+          const events = new EventTarget();
+          events.write = () => {};
+          events.end = () => {};
+          events.on = (name, listener) => events.addEventListener(name, (event) => listener(event.detail));
+          return events;
+        },
+        launchWorker: () => {},
+      })
+    : new WorkerClient({
+        runtimeDir: path.join(settings.dataRoot, "runtime"),
+        launchWorker: spawnRecorderWorker,
+      });
   supervisor.on("ready", publishSnapshot);
   supervisor.on("snapshot", publishSnapshot);
   supervisor.on("error", (error) => {
     workerSnapshot = { ...workerSnapshot, latestError: error.message };
     publishSnapshot({});
   });
-  supervisor.start();
+  await supervisor.connect();
   applyAutoLaunchPreference(settings.autoLaunch);
 
   createMainWindow();
@@ -536,5 +564,5 @@ app.on("window-all-closed", (event) => {
 app.on("before-quit", () => {
   app.isQuitting = true;
   releaseRecordingAwake();
-  supervisor?.stop();
+  supervisor?.disconnect();
 });

@@ -1,6 +1,5 @@
 from pathlib import Path
 from types import SimpleNamespace
-import io
 import time
 import threading
 
@@ -136,7 +135,7 @@ def test_capture_error_changes_recording_and_health_state(tmp_path: Path):
     assert captured["session"].stopped == 1
 
 
-def test_main_shuts_down_worker_when_stdin_reaches_eof(monkeypatch):
+def test_main_lifetime_is_not_tied_to_stdin_eof(monkeypatch, tmp_path):
     calls = []
     finalized = []
 
@@ -163,11 +162,30 @@ def test_main_shuts_down_worker_when_stdin_reaches_eof(monkeypatch):
             calls.append("shutdown")
             self.session.stop()
 
+    class FakeControlServer:
+        def __init__(self, worker, runtime_dir):
+            calls.append(("server", runtime_dir))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    class ReturningEvent:
+        def wait(self):
+            calls.append("wait")
+
+        def set(self):
+            pass
+
     monkeypatch.setattr("worker.recorder_worker.RecorderWorker", FakeWorker)
-    monkeypatch.setattr("worker.recorder_worker.sys.stdin", io.StringIO(""))
+    monkeypatch.setattr("worker.recorder_worker.ControlServer", FakeControlServer)
+    monkeypatch.setattr("worker.recorder_worker.threading.Event", ReturningEvent)
+    monkeypatch.setenv("RECORDER_RUNTIME_DIR", str(tmp_path))
 
     assert main() == 0
-    assert calls == ["startup", "shutdown"]
+    assert calls == ["startup", ("server", tmp_path), "wait", "shutdown"]
     assert finalized == [True]
 
 

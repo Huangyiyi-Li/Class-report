@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import queue
 import shutil
-import sys
+import signal
 import threading
 import time
 from datetime import datetime, timezone
@@ -13,7 +13,8 @@ from typing import Callable
 
 from worker.audio_journal import AudioJournal, recover_journals
 from worker.config import StartupGate, WorkerConfig, evaluate_startup_gate
-from worker.protocol import event, parse_command
+from worker.control_server import ControlServer
+from worker.protocol import event
 from worker.queue_store import QueueStore, migrate_json_queue
 from worker.retention import cleanup_completed, disk_health
 from worker.segment_encoder import encode_ogg_opus
@@ -566,15 +567,19 @@ def main() -> int:
     if config.device_no and worker.queue_store is not None:
         worker.upload_service = create_upload_service(config, worker.queue_store)
         worker.start_uploading()
-    emit("ready", worker.snapshot())
+    runtime_override = os.environ.get("RECORDER_RUNTIME_DIR")
+    if not runtime_override and not config.data_root:
+        raise ValueError("data root is required for the worker runtime directory")
+    runtime_dir = Path(runtime_override or config.data_root) / (
+        "" if runtime_override else "runtime"
+    )
+    stopped = threading.Event()
+    for signal_name in ("SIGINT", "SIGTERM"):
+        if hasattr(signal, signal_name):
+            signal.signal(getattr(signal, signal_name), lambda *_args: stopped.set())
     try:
-        for line in sys.stdin:
-            try:
-                command = parse_command(line)
-                if not worker.handle(command):
-                    return 0
-            except Exception as exc:
-                emit("error", {"message": str(exc)})
+        with ControlServer(worker, runtime_dir):
+            stopped.wait()
         return 0
     finally:
         worker.shutdown()
