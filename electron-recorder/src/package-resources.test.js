@@ -52,6 +52,7 @@ test("generated worker and FFmpeg inputs are explicitly ignored", () => {
 test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   const workflow = readFileSync(path.join(repositoryRoot, ".github/workflows/windows-recorder.yml"), "utf8");
   assert.match(workflow, /runs-on:\s*windows-2022/);
+  assert.match(workflow, /branches:\s*\n\s*- master/);
   assert.match(workflow, /Run Python checks/);
   assert.match(workflow, /Run Node\.js checks/);
   assert.match(workflow, /python scripts\/build-worker\.py/);

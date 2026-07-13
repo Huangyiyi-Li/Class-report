@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - master
       - feat/windows-recorder-production
     paths:
       - ".github/workflows/windows-recorder.yml"
