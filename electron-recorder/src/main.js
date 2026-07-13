@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, shell as electronShell, Tray } from "electron";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import fs from "node:fs";
+import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
 import { WorkerClient } from "./worker-client.js";
+import { bootstrapWorkerConfig, loadWorkerLocator } from "./worker-bootstrap.js";
 import { createRuntimeState } from "./runtime-state.js";
 import { configureSingleInstance } from "./single-instance.js";
 
@@ -21,6 +22,7 @@ let recordingPowerBlockerId = null;
 let supervisor;
 let workerSnapshot = { recording: "idle", upload: "clear", health: "healthy", pending: 0 };
 let settings = { autoLaunch: true, autoRecordEnabled: false, inputDevice: "default", dataRoot: "" };
+let workerLocation = null;
 const hasSingleInstanceLock = configureSingleInstance(app, () => {
   showMainWindow();
 });
@@ -298,7 +300,8 @@ function applyAutoLaunchPreference(enabled) {
 }
 
 function spawnRecorderWorker() {
-  const configPath = getWorkerConfigPath();
+  if (!workerLocation?.configPath) throw new Error("worker configuration is not bootstrapped");
+  const configPath = workerLocation.configPath;
   let child;
   if (app.isPackaged) {
     child = spawn(path.join(process.resourcesPath, "worker", "ClassroomRecorderWorker.exe"), [], {
@@ -315,18 +318,6 @@ function spawnRecorderWorker() {
     });
   }
   child.unref();
-}
-
-function getWorkerConfigPath() {
-  return path.join(app.getPath("userData"), "worker-config.json");
-}
-
-function loadConfiguredDataRoot() {
-  try {
-    return JSON.parse(fs.readFileSync(getWorkerConfigPath(), "utf8")).data_root || "";
-  } catch {
-    return "";
-  }
 }
 
 function publishSnapshot(snapshot) {
@@ -457,30 +448,44 @@ async function runSmokeTest() {
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(() => {
-  settings = { ...settings, dataRoot: loadConfiguredDataRoot() };
-  supervisor = process.env.ELECTRON_SMOKE_TEST
-    ? new WorkerClient({
+  workerLocation = loadWorkerLocator(app.getPath("userData"));
+  settings = { ...settings, dataRoot: workerLocation?.dataRoot || "" };
+
+  const attachWorkerClient = (client) => {
+    supervisor?.disconnect();
+    supervisor = client;
+    supervisor.on("ready", publishSnapshot);
+    supervisor.on("snapshot", publishSnapshot);
+    supervisor.on("error", (error) => {
+      workerSnapshot = { ...workerSnapshot, latestError: error.message };
+      publishSnapshot({});
+    });
+    publishSnapshot({ health: "blocked", latestError: "正在连接录音服务" });
+    supervisor.start().catch((error) => {
+      if (!app.isQuitting) publishSnapshot({ health: "blocked", latestError: error.message });
+    });
+  };
+
+  if (process.env.ELECTRON_SMOKE_TEST) {
+    attachWorkerClient(new WorkerClient({
         runtimeDir: "",
         readEndpoint: async () => ({ host: "127.0.0.1", port: 0, token: "smoke" }),
         openSocket: async () => {
-          const events = new EventTarget();
-          events.write = () => {};
-          events.end = () => {};
-          events.on = (name, listener) => events.addEventListener(name, (event) => listener(event.detail));
-          return events;
+          const socket = new EventEmitter();
+          socket.write = (value) => {
+            if (JSON.parse(value).token) queueMicrotask(() => socket.emit("data", Buffer.from('{"event":"ready","payload":{"recording":"idle","health":"healthy"}}\n')));
+          };
+          socket.end = () => socket.emit("close");
+          return socket;
         },
         launchWorker: () => {},
-      })
-    : new WorkerClient({
-        runtimeDir: path.join(settings.dataRoot, "runtime"),
+      }));
+  } else if (workerLocation) {
+    attachWorkerClient(new WorkerClient({
+        runtimeDir: workerLocation.runtimeDir,
         launchWorker: spawnRecorderWorker,
-      });
-  supervisor.on("ready", publishSnapshot);
-  supervisor.on("snapshot", publishSnapshot);
-  supervisor.on("error", (error) => {
-    workerSnapshot = { ...workerSnapshot, latestError: error.message };
-    publishSnapshot({});
-  });
+      }));
+  }
   applyAutoLaunchPreference(settings.autoLaunch);
 
   createMainWindow();
@@ -489,25 +494,23 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   showFloatingBallWindow();
   runSmokeTest();
 
-  publishSnapshot({ health: "blocked", latestError: "正在连接录音服务" });
-  const connectInBackground = () => {
-    supervisor.connect().catch((error) => {
-      workerSnapshot = { ...workerSnapshot, health: "blocked", latestError: error.message };
-      publishSnapshot({});
-      if (!app.isQuitting) setTimeout(connectInBackground, 2000);
-    });
-  };
-  connectInBackground();
+  if (!supervisor) publishSnapshot({ health: "blocked", latestError: "请先选择非系统盘录音目录" });
 
   ipcMain.handle("recorder:get-snapshot", () => ({ ...workerSnapshot, runtime: createRuntimeState(workerSnapshot), settings, appVersion: app.getVersion() }));
-  ipcMain.handle("recorder:start", () => supervisor.send("start"));
-  ipcMain.handle("recorder:pause", () => supervisor.send("pause"));
-  ipcMain.handle("recorder:stop", () => supervisor.send("stop"));
-  ipcMain.handle("recorder:flush", () => supervisor.send("flush_queue"));
+  ipcMain.handle("recorder:start", () => supervisor?.send("start") ?? false);
+  ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
+  ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);
+  ipcMain.handle("recorder:flush", () => supervisor?.send("flush_queue") ?? false);
   ipcMain.handle("recorder:update-settings", (_event, patch) => {
     const allowed = ["autoRecordEnabled", "inputDevice", "dataRoot"];
     settings = { ...settings, ...Object.fromEntries(Object.entries(patch || {}).filter(([key]) => allowed.includes(key))) };
-    supervisor.send("update_settings", settings);
+    const previousLocation = workerLocation;
+    workerLocation = bootstrapWorkerConfig({ userDataDir: app.getPath("userData"), patch: settings });
+    if (!previousLocation || workerLocation.dataRoot !== previousLocation.dataRoot) {
+      attachWorkerClient(new WorkerClient({ runtimeDir: workerLocation.runtimeDir, launchWorker: spawnRecorderWorker }));
+    } else if (supervisor?.socket) {
+      supervisor.send("update_settings", settings);
+    }
     publishSnapshot({});
     return settings;
   });

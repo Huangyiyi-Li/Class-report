@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import net from "node:net";
 
-const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+class ConnectionCancelled extends Error {}
 
 async function defaultReadEndpoint(runtimeDir) {
   const endpoint = JSON.parse(await fs.readFile(`${runtimeDir}/worker-endpoint.json`, "utf8"));
@@ -22,7 +22,8 @@ function defaultOpenSocket({ host, port }) {
 
 export class WorkerClient extends EventEmitter {
   constructor({ runtimeDir, readEndpoint = () => defaultReadEndpoint(runtimeDir), openSocket = defaultOpenSocket,
-    launchWorker, retryDelayMs = 200, maxRetryDelayMs = 2000, maxAttempts = 25, authenticationTimeoutMs = 2000 }) {
+    launchWorker, retryDelayMs = 200, maxRetryDelayMs = 2000, maxAttempts = 25,
+    authenticationTimeoutMs = 2000, launchCooldownMs = 5000 }) {
     super();
     this.readEndpoint = readEndpoint;
     this.openSocket = openSocket;
@@ -31,106 +32,152 @@ export class WorkerClient extends EventEmitter {
     this.maxRetryDelayMs = maxRetryDelayMs;
     this.maxAttempts = maxAttempts;
     this.authenticationTimeoutMs = authenticationTimeoutMs;
-    this.buffer = "";
+    this.launchCooldownMs = launchCooldownMs;
     this.socket = null;
-    this.explicitlyDisconnected = false;
-    this.launchedWorker = false;
-    this.connectPromise = null;
+    this.pendingSocket = null;
+    this.terminal = false;
+    this.generation = 0;
+    this.recoveryPromise = null;
+    this.cancelSleeps = new Set();
+    this.nextLaunchAt = 0;
     this.on("error", () => {});
   }
 
   connect() {
-    this.explicitlyDisconnected = false;
-    if (!this.connectPromise) {
-      this.connectPromise = this._connectLoop().finally(() => { this.connectPromise = null; });
+    if (this.terminal) return Promise.reject(new ConnectionCancelled("worker client is disconnected"));
+    if (this.socket) return Promise.resolve();
+    if (!this.recoveryPromise) {
+      const generation = this.generation;
+      const recovery = this._recoveryLoop(generation).finally(() => {
+        if (this.recoveryPromise === recovery) this.recoveryPromise = null;
+      });
+      this.recoveryPromise = recovery;
     }
-    return this.connectPromise;
+    return this.recoveryPromise;
   }
 
-  async _connectLoop() {
-    let lastError;
-    for (let attempt = 0; attempt < this.maxAttempts && !this.explicitlyDisconnected; attempt += 1) {
-      let socket;
-      try {
-        const endpoint = await this.readEndpoint();
-        socket = await this.openSocket(endpoint);
-        await this._authenticate(socket, endpoint.token);
-        this.socket = socket;
-        return;
-      } catch (error) {
-        lastError = error;
-        socket?.destroy?.();
-        socket?.end?.();
-        if (!this.launchedWorker && !this.explicitlyDisconnected) {
-          this.launchWorker({ detached: true, stdio: "ignore" });
-          this.launchedWorker = true;
-        }
-        if (attempt + 1 < this.maxAttempts) {
-          await delay(Math.min(this.retryDelayMs * (attempt + 1), this.maxRetryDelayMs));
+  start() { return this.resume(); }
+
+  resume() {
+    if (this.terminal) {
+      this.terminal = false;
+      this.generation += 1;
+    }
+    return this.connect();
+  }
+
+  _assertActive(generation) {
+    if (this.terminal || generation !== this.generation) throw new ConnectionCancelled("worker connection cancelled");
+  }
+
+  async _recoveryLoop(generation) {
+    let cycle = 0;
+    while (true) {
+      this._assertActive(generation);
+      for (let attempt = 0; attempt < this.maxAttempts; attempt += 1) {
+        let socket;
+        try {
+          const endpoint = await this.readEndpoint();
+          this._assertActive(generation);
+          socket = await this.openSocket(endpoint);
+          this._assertActive(generation);
+          this.pendingSocket = socket;
+          const snapshot = await this._authenticate(socket, endpoint.token, generation);
+          this._assertActive(generation);
+          this.pendingSocket = null;
+          this.socket = socket;
+          this.nextLaunchAt = 0;
+          this._attachRuntimeSocket(socket, generation);
+          this.emit("ready", snapshot);
+          return;
+        } catch (error) {
+          if (this.pendingSocket === socket) this.pendingSocket = null;
+          socket?.destroy?.();
+          socket?.end?.();
+          this._assertActive(generation);
+          const now = Date.now();
+          if (now >= this.nextLaunchAt) {
+            this.launchWorker({ detached: true, stdio: "ignore" });
+            this.nextLaunchAt = now + this.launchCooldownMs;
+          }
+          await this._sleep(Math.min(this.retryDelayMs * (attempt + 1), this.maxRetryDelayMs), generation);
         }
       }
+      cycle += 1;
+      await this._sleep(Math.min(this.maxRetryDelayMs * cycle, this.maxRetryDelayMs), generation);
     }
-    if (!this.explicitlyDisconnected) throw lastError || new Error("worker connection stopped");
   }
 
-  _authenticate(socket, token) {
-    this.buffer = "";
+  _sleep(milliseconds, generation) {
     return new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (error) => {
-        if (settled) return;
-        settled = true;
+      const cancel = () => { clearTimeout(timer); this.cancelSleeps.delete(cancel); reject(new ConnectionCancelled("worker connection cancelled")); };
+      const timer = setTimeout(() => { this.cancelSleeps.delete(cancel); resolve(); }, milliseconds);
+      this.cancelSleeps.add(cancel);
+      if (this.terminal || generation !== this.generation) cancel();
+    });
+  }
+
+  _authenticate(socket, token, generation) {
+    let buffer = "";
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
         clearTimeout(timer);
-        if (error) reject(error); else resolve();
+        socket.removeListener("data", onData);
+        socket.removeListener("error", onError);
+        socket.removeListener("close", onClose);
+      };
+      const finish = (error, snapshot) => { cleanup(); error ? reject(error) : resolve(snapshot); };
+      const onError = (error) => finish(error);
+      const onClose = () => finish(new Error("worker closed before authentication"));
+      const onData = (chunk) => {
+        buffer += chunk.toString("utf8");
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines.filter(Boolean)) {
+          try {
+            const message = JSON.parse(line);
+            if (message.event === "ready") return finish(null, message.payload);
+            if (message.event === "error") return finish(new Error(message.payload?.message || "worker authentication failed"));
+          } catch (error) { return finish(error); }
+        }
       };
       const timer = setTimeout(() => finish(new Error("worker authentication timed out")), this.authenticationTimeoutMs);
-      const onData = (chunk) => this._consume(chunk.toString("utf8"), (message) => {
-        if (message.event === "ready") finish();
-        else if (message.event === "error") finish(new Error(message.payload?.message || "worker authentication failed"));
-      });
       socket.on("data", onData);
-      socket.once("error", finish);
-      socket.once("close", () => finish(new Error("worker closed before authentication")));
-      socket.write(`${JSON.stringify({ token })}\n`);
-      this._attachRuntimeSocket(socket);
-    });
-  }
-
-  _attachRuntimeSocket(socket) {
-    socket.on("error", (error) => {
-      this.emit("error", error);
-      if (this.socket === socket) {
-        this.socket = null;
-        socket.destroy?.();
-        this._reconnectAfterLoss();
-      }
-    });
-    socket.on("close", () => {
-      if (this.socket === socket) {
-        this.socket = null;
-        this._reconnectAfterLoss();
-      }
-    });
-  }
-
-  _reconnectAfterLoss() {
-    this.emit("disconnect");
-    if (!this.explicitlyDisconnected) this.connect().catch((error) => this.emit("error", error));
-  }
-
-  _consume(text, observe = () => {}) {
-    this.buffer += text;
-    const lines = this.buffer.split("\n");
-    this.buffer = lines.pop() || "";
-    for (const line of lines.filter(Boolean)) {
+      socket.once("error", onError);
+      socket.once("close", onClose);
       try {
-        const message = JSON.parse(line);
-        observe(message);
-        this.emit(message.event, message.payload);
-      } catch (error) {
-        this.emit("error", error);
+        this._assertActive(generation);
+        socket.write(`${JSON.stringify({ token })}\n`);
+      } catch (error) { finish(error); }
+    });
+  }
+
+  _attachRuntimeSocket(socket, generation) {
+    let buffer = "";
+    const onData = (chunk) => {
+      buffer += chunk.toString("utf8");
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines.filter(Boolean)) {
+        try {
+          const message = JSON.parse(line);
+          this.emit(message.event, message.payload);
+        } catch (error) { this.emit("error", error); }
       }
-    }
+    };
+    const lost = (error) => {
+      if (error) this.emit("error", error);
+      if (this.socket !== socket) return;
+      this.socket = null;
+      socket.removeListener("data", onData);
+      this.emit("disconnect");
+      if (!this.terminal && generation === this.generation) this.connect().catch((failure) => {
+        if (!(failure instanceof ConnectionCancelled)) this.emit("error", failure);
+      });
+    };
+    socket.on("data", onData);
+    socket.on("error", lost);
+    socket.on("close", () => lost());
   }
 
   send(command, payload = {}) {
@@ -139,7 +186,15 @@ export class WorkerClient extends EventEmitter {
   }
 
   disconnect() {
-    this.explicitlyDisconnected = true;
+    if (this.terminal) return;
+    this.terminal = true;
+    this.generation += 1;
+    this.recoveryPromise = null;
+    for (const cancel of [...this.cancelSleeps]) cancel();
+    const pending = this.pendingSocket;
+    this.pendingSocket = null;
+    pending?.destroy?.();
+    pending?.end?.();
     const socket = this.socket;
     this.socket = null;
     socket?.end();

@@ -13,7 +13,8 @@ class FakeSocket extends EventEmitter {
     this.writes.push(message);
     if (message.token) queueMicrotask(() => this.emit("data", Buffer.from('{"event":"ready","payload":{"recording":"idle"}}\n')));
   }
-  end() { this.emit("close"); }
+  end() { this.ended = true; this.emit("close"); }
+  destroy() { this.destroyed = true; }
 }
 
 const endpoint = { host: "127.0.0.1", port: 43123, token: "secret" };
@@ -147,6 +148,82 @@ test("runtime socket error reconnects even before close", async () => {
   await client.connect();
   first.emit("error", new Error("reset"));
   await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(client.socket, second);
+  client.disconnect();
+});
+
+test("disconnect during authentication cancels pending socket and late ready cannot resurrect it", async () => {
+  const pending = new FakeSocket();
+  pending.write = function(value) { this.writes.push(JSON.parse(value)); };
+  const client = new WorkerClient({
+    readEndpoint: async () => endpoint, openSocket: async () => pending,
+    launchWorker() {}, authenticationTimeoutMs: 1000,
+  });
+  const connecting = client.connect().catch((error) => error);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  client.disconnect();
+  pending.emit("data", Buffer.from('{"event":"ready","payload":{"recording":"idle"}}\n'));
+  await connecting;
+  assert.equal(pending.ended || pending.destroyed, true);
+  assert.equal(client.socket, null);
+});
+
+test("late recovery can relaunch after a previously connected worker crashes", async () => {
+  const first = new FakeSocket();
+  const recovered = new FakeSocket();
+  let available = true;
+  let launches = 0;
+  const client = new WorkerClient({
+    readEndpoint: async () => endpoint,
+    openSocket: async () => {
+      if (available && launches === 0) return first;
+      if (available && launches > 0) return recovered;
+      throw new Error("down");
+    },
+    launchWorker() { launches += 1; available = true; },
+    retryDelayMs: 1, maxRetryDelayMs: 2, maxAttempts: 2, launchCooldownMs: 2,
+  });
+  await client.connect();
+  available = false;
+  first.emit("close");
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  assert.equal(client.socket, recovered);
+  assert.equal(launches, 1);
+  client.disconnect();
+});
+
+test("quit cancels queued retry timers without later connection work", async () => {
+  let reads = 0;
+  const client = new WorkerClient({
+    readEndpoint: async () => { reads += 1; throw new Error("offline"); },
+    openSocket: async () => { throw new Error("offline"); },
+    launchWorker() {}, retryDelayMs: 50, maxRetryDelayMs: 50, maxAttempts: 2,
+  });
+  const recovery = client.connect().catch((error) => error);
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  client.disconnect();
+  await recovery;
+  const readsAtQuit = reads;
+  await new Promise((resolve) => setTimeout(resolve, 70));
+  assert.equal(reads, readsAtQuit);
+  await assert.rejects(client.connect(), /disconnected/);
+});
+
+test("resume starts a new generation after explicit disconnect", async () => {
+  const first = new FakeSocket();
+  first.write = function(value) { this.writes.push(JSON.parse(value)); };
+  const second = new FakeSocket();
+  let attempts = 0;
+  const client = new WorkerClient({
+    readEndpoint: async () => endpoint,
+    openSocket: async () => (++attempts === 1 ? first : second),
+    launchWorker() {}, retryDelayMs: 1,
+  });
+  const firstAttempt = client.connect().catch((error) => error);
+  await new Promise((resolve) => setTimeout(resolve, 1));
+  client.disconnect();
+  await firstAttempt;
+  await client.resume();
   assert.equal(client.socket, second);
   client.disconnect();
 });

@@ -90,3 +90,39 @@ The initial submission was rejected after deeper lifecycle review. The following
 ### Remaining concern
 
 Windows `msvcrt.locking` remains a Task 5 Windows-host gate as directed. No Windows correctness claim is made from the macOS run.
+
+## Second remediation after bootstrap and cancellation review
+
+### RED evidence
+
+- Bootstrap tests initially failed because `worker-bootstrap.js` did not exist; there was no non-system config or restart locator workflow.
+- The real Node-to-Python integration test initially failed waiting for `worker-endpoint.json` because no Python control harness existed.
+- Disconnecting during authentication left the pending socket open, allowing a late `ready` frame to outlive application shutdown.
+- Runtime `error` and late worker recovery tests exposed the need to distinguish a launch cooldown from a permanent launch latch.
+- A queued-retry quit test reproduced connection work surviving after terminal disconnect.
+- A pending-generation resume test failed with `worker connection cancelled`, proving the old rejected recovery promise could poison a later explicit resume.
+
+### GREEN changes
+
+- Added a minimal bootstrap module. The first valid settings patch atomically writes a complete worker config to `<dataRoot>/.classroom-recorder/worker-config.json`; `userData` contains only `worker-config-locator.json` with the config path and no credentials.
+- Startup resolves config and runtime paths through that locator. Electron no longer reads or writes a formal worker config under `app.getPath("userData")`.
+- Settings bootstrap is independent of worker connectivity. It persists first, rebuilds `WorkerClient` for the selected data root, and launches the detached worker. Later settings also persist when the worker socket is unavailable.
+- Windows bootstrap performs the current minimal absolute/non-system-drive validation. Binding fields remain Task 4 scope; a config lacking binding still starts the worker control plane and reports the existing `binding_required` gate.
+- Replaced connection flags with a generation-based cancellation model. `disconnect()` advances the generation, cancels retry sleeps, destroys pending-auth sockets, closes the active socket, and cannot be undone by late awaits or frames.
+- `connect()` never clears terminal state. `start()`/`resume()` are the explicit transitions into a new active generation.
+- Recovery now loops indefinitely in bounded attempt cycles and capped backoff until explicit disconnect. There is no Electron outer reconnect timer.
+- Launching uses cooldown state, not a permanent latch. A successful authenticated connection resets launch eligibility, so a later real worker crash can launch again; one shared recovery promise prevents concurrent duplicate launches.
+- Authentication listeners and parser are removed after ACK. Runtime event parsing is attached separately only after generation validation.
+- Added a real cross-language test in which Node `WorkerClient` reads Python-generated endpoint/token files, authenticates `ControlServer`, starts recording, loses the Python server, reconnects after server restoration, and observes the persisted recording snapshot.
+
+### Verification
+
+- Full Python worker suite: 97 passed.
+- Full Node suite: 35 passed, including bootstrap/locator, queued quit cancellation, pending-auth disconnect, resume generation, late relaunch, and cross-language recovery.
+- Vite production build: passed.
+- Electron UI smoke: passed; still treated only as UI/build evidence.
+- Syntax and diff checks: passed.
+
+### Remaining scope note
+
+Bootstrap intentionally performs only the minimum path validation requested here. Binding completeness and stronger configuration validation remain Task 4; Windows lock behavior remains Task 5.
