@@ -1,0 +1,82 @@
+name: Windows Recorder Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/windows-recorder-production
+    paths:
+      - ".github/workflows/windows-recorder.yml"
+      - "electron-recorder/**"
+      - "windows_client/**"
+
+concurrency:
+  group: windows-recorder-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: electron-recorder
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+          cache-dependency-path: electron-recorder/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: electron-recorder/worker/requirements-build.txt
+
+      - name: Install Python dependencies
+        run: python -m pip install -r worker/requirements-build.txt
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Run automated checks
+        run: |
+          python -m pytest worker ../windows_client/test_timeouts.py -q
+          npm test
+
+      - name: Install Windows FFmpeg
+        run: |
+          choco install ffmpeg -y --no-progress
+          $ffmpeg = (Get-ChildItem "C:\ProgramData\chocolatey\lib\ffmpeg\tools" -Filter ffmpeg.exe -Recurse | Select-Object -First 1).FullName
+          if (-not $ffmpeg) { throw "ffmpeg.exe was not installed" }
+          "FFMPEG_EXE=$ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build NSIS and portable installers
+        run: npm run dist:win
+
+      - name: Verify packaged resources
+        run: |
+          $worker = Get-ChildItem release -Filter ClassroomRecorderWorker.exe -Recurse
+          $ffmpeg = Get-ChildItem release -Filter ffmpeg.exe -Recurse
+          $installers = Get-ChildItem release -Filter *.exe | Where-Object { $_.Name -match "Setup|Portable" }
+          if (-not $worker) { throw "Packaged worker is missing" }
+          if (-not $ffmpeg) { throw "Packaged FFmpeg is missing" }
+          if ($installers.Count -lt 2) { throw "Expected both Setup and Portable installers" }
+
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: classroom-recorder-windows-${{ github.sha }}
+          path: electron-recorder/release/*.exe
+          if-no-files-found: error
+          retention-days: 14

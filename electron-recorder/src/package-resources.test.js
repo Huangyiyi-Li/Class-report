@@ -48,3 +48,18 @@ test("generated worker and FFmpeg inputs are explicitly ignored", () => {
   assert.match(gitignore, /^electron-recorder\/build\/worker\/$/m);
   assert.match(gitignore, /^electron-recorder\/build\/ffmpeg\/$/m);
 });
+
+test("GitHub Windows workflow builds and uploads installer artifacts", () => {
+  const workflow = readFileSync(path.join(repositoryRoot, ".github/workflows/windows-recorder.yml"), "utf8");
+  assert.match(workflow, /runs-on:\s*windows-2022/);
+  assert.match(workflow, /npm run dist:win/);
+  assert.match(workflow, /FFMPEG_EXE/);
+  assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /release\/\*\.exe/);
+});
+
+test("NSIS and portable installers use distinct artifact names", () => {
+  assert.match(pkg.build.nsis.artifactName, /Setup/);
+  assert.match(pkg.build.portable.artifactName, /Portable/);
+  assert.notEqual(pkg.build.nsis.artifactName, pkg.build.portable.artifactName);
+});
