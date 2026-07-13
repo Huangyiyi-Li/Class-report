@@ -54,7 +54,9 @@ test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   assert.match(workflow, /runs-on:\s*windows-2022/);
   assert.match(workflow, /Run Python checks/);
   assert.match(workflow, /Run Node\.js checks/);
-  assert.match(workflow, /npm run dist:win/);
+  assert.match(workflow, /python scripts\/build-worker\.py/);
+  assert.match(workflow, /npm run build/);
+  assert.match(workflow, /electron-builder --win nsis portable --x64/);
   assert.match(workflow, /FFMPEG_EXE/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /release\/\*\.exe/);

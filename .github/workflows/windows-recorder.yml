@@ -62,8 +62,19 @@ jobs:
           if (-not $ffmpeg) { throw "ffmpeg.exe was not installed" }
           "FFMPEG_EXE=$ffmpeg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Prepare FFmpeg packaging input
+        run: |
+          New-Item -ItemType Directory -Force build/ffmpeg | Out-Null
+          Copy-Item $env:FFMPEG_EXE build/ffmpeg/ffmpeg.exe -Force
+
+      - name: Build recorder worker
+        run: python scripts/build-worker.py
+
+      - name: Build desktop interface
+        run: npm run build
+
       - name: Build NSIS and portable installers
-        run: npm run dist:win
+        run: npx electron-builder --win nsis portable --x64 --publish never
 
       - name: Verify packaged resources
         run: |
