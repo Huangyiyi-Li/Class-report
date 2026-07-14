@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -22,7 +22,7 @@ function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     env,
     stdio: "inherit",
-    shell: false,
+    shell: isWindows,
     ...options,
   });
   if (result.error) console.error(result.error);
@@ -44,7 +44,7 @@ if (!ffmpegSource || !existsSync(ffmpegSource)) {
 }
 const ffmpegDestination = path.join(recorderDir, "build", "ffmpeg", "ffmpeg.exe");
 mkdirSync(path.dirname(ffmpegDestination), { recursive: true });
-cpSync(ffmpegSource, ffmpegDestination);
+copyFileSync(ffmpegSource, ffmpegDestination);
 
 run(pythonCommand, ["scripts/build-worker.py"], { cwd: recorderDir });
 run(npmCommand, ["run", "build"]);

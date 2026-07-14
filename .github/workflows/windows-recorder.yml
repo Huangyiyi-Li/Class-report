@@ -107,6 +107,12 @@ jobs:
           Get-Content $stderr -ErrorAction SilentlyContinue
           if ($process.ExitCode -ne 0) { throw "Packaged desktop smoke test failed with exit code $($process.ExitCode)" }
 
+      - name: Run packaged normal-start test
+        run: |
+          $app = Get-ChildItem release/win-unpacked -Filter *.exe | Select-Object -First 1
+          if (-not $app) { throw "Packaged desktop executable is missing" }
+          & ./scripts/test-packaged-normal-start.ps1 -AppPath $app.FullName
+
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
         with:

@@ -23,6 +23,7 @@ def main() -> int:
             "--noconfirm",
             "--clean",
             "--onefile",
+            "--noconsole",
             "--paths",
             str(ROOT.parent),
             "--hidden-import",

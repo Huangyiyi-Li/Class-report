@@ -41,12 +41,15 @@ test("Windows release validates and builds worker before packaging", () => {
   assert.match(releaseScript, /build-worker\.py/);
   assert.match(releaseScript, /FFMPEG_EXE/);
   assert.match(releaseScript, /process\.platform !== "win32"/);
+  assert.match(releaseScript, /shell:\s*isWindows/);
+  assert.match(releaseScript, /copyFileSync\(ffmpegSource, ffmpegDestination\)/);
   assert.match(releaseScript, /"nsis", "portable"/);
   assert.doesNotMatch(releaseScript, /"zip"/);
 });
 
 test("worker build includes runtime upload and audio dependencies", () => {
   const buildWorker = readFileSync(path.join(root, "scripts/build-worker.py"), "utf8");
+  assert.match(buildWorker, /["']--noconsole["']/, "packaged worker must not open a console window during normal startup");
   assert.match(buildWorker, /"--paths",\s*str\(ROOT\.parent\)/);
   for (const dependency of ["sounddevice", "numpy", "windows_client.xxt_upload", "oss2"]) {
     assert.match(buildWorker, new RegExp(`--hidden-import.*${dependency.replaceAll(".", "\\.")}`, "s"));
@@ -77,6 +80,8 @@ test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   assert.match(workflow, /npm run build/);
   assert.match(workflow, /electron-builder --win nsis portable --x64/);
   assert.match(workflow, /Run packaged application smoke test/);
+  assert.match(workflow, /Run packaged normal-start test/);
+  assert.match(workflow, /test-packaged-normal-start\.ps1/);
   assert.match(workflow, /ELECTRON_SMOKE_TEST/);
   assert.match(workflow, /RedirectStandardOutput/);
   assert.match(workflow, /RedirectStandardError/);
@@ -85,6 +90,17 @@ test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /--prerelease/);
   assert.match(workflow, /release\/\*\.exe/);
+});
+
+test("packaged normal-start gate launches the real worker without smoke mode", () => {
+  const script = readFileSync(path.join(root, "scripts/test-packaged-normal-start.ps1"), "utf8");
+  assert.match(script, /Remove-Item Env:ELECTRON_SMOKE_TEST/);
+  assert.match(script, /worker-endpoint\.json/);
+  assert.match(script, /worker-token/);
+  assert.match(script, /TcpClient/);
+  assert.match(script, /MainWindowHandle/);
+  assert.match(script, /Sort-Object StartTime -Descending/);
+  assert.match(script, /Start-Sleep -Seconds 1[\s\S]*Get-Process -Name ClassroomRecorderWorker/);
 });
 
 test("NSIS and portable installers use distinct artifact names", () => {
