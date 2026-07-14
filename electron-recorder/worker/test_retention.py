@@ -2,6 +2,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from worker.queue_store import QueueStore
 from worker.retention import cleanup_completed, disk_health
 
@@ -71,7 +73,12 @@ def test_completed_symlink_cannot_delete_pending_target(tmp_path):
     pending = tmp_path / "pending.wav"
     pending.write_bytes(b"keep")
     link = tmp_path / "completed.wav"
-    link.symlink_to(pending)
+    try:
+        link.symlink_to(pending)
+    except OSError as error:
+        if getattr(error, "winerror", None) == 1314:
+            pytest.skip("Windows symlink privilege is unavailable")
+        raise
     completed_id = add_segment(store, link, "completed")
     store.enqueue({"local_path": str(pending), "segment_index": 1})
     store.set_completed_at(completed_id, NOW - timedelta(days=8))

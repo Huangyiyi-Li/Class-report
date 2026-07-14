@@ -11,7 +11,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitForFile(target) {
-  for (let index = 0; index < 100; index += 1) {
+  for (let index = 0; index < 500; index += 1) {
     if (fs.existsSync(target)) return;
     await wait(10);
   }
@@ -19,8 +19,9 @@ async function waitForFile(target) {
 }
 
 function startHarness(runtimeDir) {
-  const executable = process.env.RECORDER_PYTHON || (process.platform === "win32" ? "python" : "python3");
-  return spawn(executable, ["-m", "worker._control_harness", runtimeDir], {
+  const executable = process.env.RECORDER_PYTHON || (process.platform === "win32" ? "py" : "python3");
+  const versionArgs = !process.env.RECORDER_PYTHON && process.platform === "win32" ? ["-3.11"] : [];
+  return spawn(executable, [...versionArgs, "-m", "worker._control_harness", runtimeDir], {
     cwd: projectRoot, stdio: "ignore",
   });
 }

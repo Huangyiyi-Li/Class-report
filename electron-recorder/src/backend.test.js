@@ -69,6 +69,7 @@ test("init prefers Windows physical adapter MAC over network interface enumerati
 test("updateConfig keeps device numbers MAC-based and persists auto launch preference", async () => {
   const backend = new RecorderBackend({
     userDataPath: path.join(os.tmpdir(), `classroom-recorder-test-${Date.now()}`),
+    physicalMacResolver: () => "",
     networkInterfaces: () => ({
       wifi: [{ internal: false, mac: "AA-BB-CC-DD-EE-FF" }],
     }),
