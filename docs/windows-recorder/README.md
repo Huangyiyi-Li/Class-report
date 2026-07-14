@@ -15,4 +15,4 @@
 - [稳定性整改实施计划](../superpowers/plans/2026-07-13-windows-recorder-stability-remediation.md)
 - [开发进度与历史任务报告](../../.superpowers/sdd/progress.md)
 
-当前结论：`0.1.18-beta.2` 在 GitHub Windows 构建和打包烟测中通过，但用户真实安装后仍然报错，不能作为可用版本交付。下一步必须在 Windows 10/11 x64 真机上复现正常启动路径。
+当前结论：`WIN-REC-002` 已在 Windows 10 Pro x64 真机复现。用户截图是首次未选择非系统盘时的预期阻塞提示；可重复的产品缺陷是 packaged worker 弹出控制台窗口。源码已使用无控制台 PyInstaller 子系统修复，并由本地 `0.1.19-beta.1` 候选 Setup 完成非系统盘安装、正常启动、真实 worker、真实麦克风录音和 Electron 重连验收。该候选包尚未发布，最新公开候选仍是不可交付的 `0.1.18-beta.2`。

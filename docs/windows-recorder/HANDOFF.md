@@ -5,9 +5,9 @@
 - 仓库：`https://github.com/Huangyiyi-Li/Class-report.git`
 - 工作分支：`feat/windows-recorder-production`
 - Draft PR：`https://github.com/Huangyiyi-Li/Class-report/pull/1`
-- 当前源码版本：`0.1.18`
+- 当前源码版本：`0.1.19-beta.1`（仅本地候选，未创建标签或 Release）
 - 最新候选标签：`recorder-v0.1.18-beta.2`
-- 最新阻断：安装后的真实 Windows 正常启动仍报错，见 `WIN-REC-002`
+- 最新状态：`WIN-REC-002` 已在 Windows 10 x64 真机完成本地修复验收；最新公开候选仍是不可交付的 `recorder-v0.1.18-beta.2`
 
 ## 1. 新 Windows 电脑接手步骤
 
@@ -91,10 +91,10 @@ git switch feat/windows-recorder-production
 
 ## 5. 当前风险与阻断项
 
-1. `WIN-REC-002`：`0.1.18-beta.2` 用户真实安装后仍报错，详细错误尚未录入仓库。
-2. CI 缺少“不设置 `ELECTRON_SMOKE_TEST` 的正常启动”测试。
-3. 首次启动需要用户选择非系统盘，但正常首次启动和首次保存设置尚未在真机完整验证。
-4. PyInstaller worker、PortAudio/sounddevice、FFmpeg 和 detached 启动只在 CI 资源存在性层面验证过。
+1. `WIN-REC-002` 已修复并通过本地候选 Setup 真机验收，但尚未发布新候选；证据见 `docs/windows-recorder/evidence/WIN-REC-002-summary.md`。
+2. CI 已新增“不设置 `ELECTRON_SMOKE_TEST`”的 packaged 正常启动门禁；它验证真实 worker、endpoint/token、鉴权和无可见控制台，但不替代真机麦克风。
+3. 首次启动未选择非系统盘时的阻塞提示已确认符合设计；安装器仍允许选到系统盘，部署验收必须记录并强制选择非系统盘。
+4. 本地候选已验证 PyInstaller worker、PortAudio/sounddevice、FFmpeg、detached 续录和 Electron 重连；GitHub Actions 尚未运行本次未发布改动。
 5. 扫码绑定依赖外部小程序和服务端仓库，当前只能使用受控预配置 fixture 做技术测试。
 6. 正式安装包尚未配置 Windows 代码签名证书。
 7. 开机自启和冰点白名单行为未知。

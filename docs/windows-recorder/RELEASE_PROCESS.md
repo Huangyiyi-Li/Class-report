@@ -28,6 +28,15 @@ $env:FFMPEG_EXE = "C:\tools\ffmpeg\bin\ffmpeg.exe"
 npm run dist:win
 ```
 
+构建完成后，除 renderer 烟测外，还必须执行不设置 `ELECTRON_SMOKE_TEST` 的正常启动门禁：
+
+```powershell
+$app = Get-ChildItem release\win-unpacked -Filter *.exe | Select-Object -First 1
+.\scripts\test-packaged-normal-start.ps1 -AppPath $app.FullName
+```
+
+该门禁使用临时非系统盘目录启动真实 packaged worker，等待 loopback endpoint/token，完成认证并确认 worker 没有打开可见控制台。它不替代真实麦克风录音验收。
+
 ## 3. 每个候选包的真机验收
 
 ### 启动和安装
