@@ -1,6 +1,6 @@
 # Windows 录音采集客户端交接
 
-- 更新日期：2026-07-14
+- 更新日期：2026-07-15
 - 当前状态：开发中，尚未达到用户试用条件
 - 仓库：`https://github.com/Huangyiyi-Li/Class-report.git`
 - 工作分支：`feat/windows-recorder-production`
@@ -61,7 +61,8 @@ git switch feat/windows-recorder-production
 - 一个登录账号可能属于多所学校，也可能尚未加入目标学校。
 - 用户必须能自己完成全流程，不依赖运维或技术人员现场输入班级 ID。
 - 正式目标流程是微信扫码、登录小程序、选择账号已加入的学校，再选择或创建采集位置。
-- 当前仓库不含小程序和 binding service，因此扫码自助绑定尚未实现，是外部集成阻断项。
+- 客户端已实现可显式启用的 mock 扫码绑定流程，覆盖扫码、学校、班级教室/公共录播室、确认和空闲时重绑；它只用于内部流程验证。
+- 当前仓库仍不含小程序和 HTTP binding service。生产模式不回退 mock，正式接口联调仍是外部集成阻断项。
 
 ### 采集位置
 
@@ -80,6 +81,7 @@ git switch feat/windows-recorder-production
 - `electron-recorder/scripts/build-worker.py` 使用 PyInstaller 生成 `ClassroomRecorderWorker.exe`。
 - 安装包必须包含 worker 和 `ffmpeg.exe`，目标电脑不需要另装 Python、Node.js 或 FFmpeg。
 - `.github/workflows/windows-recorder.yml` 在 GitHub Windows runner 上运行检查并生成 NSIS/Portable 包。
+- `electron-recorder/src/binding-service.js` 和 `binding-controller.js` 隔离绑定协议与界面；服务端就绪后应在该 adapter 边界接入 HTTP，不应改写录音核心状态机。
 
 ## 4. 已完成但不能过度解读的验证
 
@@ -88,6 +90,7 @@ git switch feat/windows-recorder-production
 - `0.1.18-beta.2` 的打包烟测成功加载主窗口、悬浮球和设置窗口。
 - 该烟测设置了 `ELECTRON_SMOKE_TEST=1`，使用假的 worker endpoint，绕过真实首次配置、worker exe 启动、麦克风和数据盘。因此它不能证明真实正常启动可用。
 - Windows 真机安装/升级/卸载矩阵、冰点环境和连续 72 小时运行均未完成。
+- 2026-07-15 本地 `0.1.19-beta.1` 新构建 Setup 已完成 mock 扫码、教室绑定、真实麦克风录音、录音中禁止重绑、公共录播室重绑验证；证据见 `docs/windows-recorder/evidence/WIN-REC-BINDING-MOCK-2026-07-15.md`。
 
 ## 5. 当前风险与阻断项
 
@@ -95,7 +98,7 @@ git switch feat/windows-recorder-production
 2. CI 已新增“不设置 `ELECTRON_SMOKE_TEST`”的 packaged 正常启动门禁；它验证真实 worker、endpoint/token、鉴权和无可见控制台，但不替代真机麦克风。
 3. 首次启动未选择非系统盘时的阻塞提示已确认符合设计；安装器仍允许选到系统盘，部署验收必须记录并强制选择非系统盘。
 4. 本地候选已验证 PyInstaller worker、PortAudio/sounddevice、FFmpeg、detached 续录和 Electron 重连；GitHub Actions 尚未运行本次未发布改动。
-5. 扫码绑定依赖外部小程序和服务端仓库，当前只能使用受控预配置 fixture 做技术测试。
+5. mock 扫码流程已经可走通，但正式扫码绑定仍依赖外部小程序和服务端；mock 录音强制只存本地，不能用于验证生产上传。
 6. 正式安装包尚未配置 Windows 代码签名证书。
 7. 开机自启和冰点白名单行为未知。
 

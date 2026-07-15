@@ -51,6 +51,7 @@ $app = Get-ChildItem release\win-unpacked -Filter *.exe | Select-Object -First 1
 
 - 未选择非系统盘、未绑定、麦克风不可用时拒绝录音且状态准确。
 - 合法数据盘和受控 binding fixture 下，真实麦克风能够录音。
+- `BINDING_SERVICE_MODE=mock` 仅用于内部流程验收；此时上传状态必须为 `mock_blocked`，队列保持 `pending` 且两类尝试计数为 0。任何 mock 录音进入生产上传都必须阻止发布。
 - 录音状态只在音频耐久写入后显示“录音中”。
 - 断网继续录音，恢复网络后补传。
 - Electron 退出不终止 worker；重开后恢复连接。
@@ -94,6 +95,7 @@ git push origin recorder-v0.1.19-beta.1
 - 冰点/还原软件开启时的安装、重启、开机自启、升级和非系统盘持久化。
 - 连续 72 小时稳定运行。
 - 正式扫码绑定的端到端联调。
+- 使用真实 HTTP binding adapter 验证扫码会话过期、鉴权、学校/位置权限和确认幂等；生产模式不得回退 mock。
 - Windows 代码签名和 SmartScreen 策略。
 
 上述事项未完成前，只能发布内部测试版，不能宣称正式可部署。

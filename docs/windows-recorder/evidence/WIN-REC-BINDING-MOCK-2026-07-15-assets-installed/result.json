@@ -1,0 +1,56 @@
+{
+  "target": {
+    "title": "课堂录音采集助手",
+    "url": "file:///E:/WIN-REC-BINDING-E2E-INSTALLED-20260715/resources/app.asar/dist/renderer/index.html"
+  },
+  "initial": {
+    "recording": "error",
+    "upload": "clear",
+    "health": "binding_required",
+    "pending": 0,
+    "binding": null,
+    "dataRoot": "E:\\WIN-REC-BINDING-E2E-20260715-03\\data",
+    "latestError": ""
+  },
+  "classroom": {
+    "recording": "idle",
+    "upload": "mock_blocked",
+    "health": "healthy",
+    "pending": 0,
+    "binding": {
+      "deviceNo": "6045CB624433",
+      "schoolId": 1001,
+      "schoolName": "星河实验学校",
+      "locationType": "classroom",
+      "locationId": "room-101",
+      "locationName": "一年级一班教室",
+      "classId": "class-101",
+      "className": "一年级一班",
+      "bindingSource": "mock",
+      "boundAt": "2026-07-15T04:27:43.703Z"
+    },
+    "dataRoot": "E:\\WIN-REC-BINDING-E2E-20260715-03\\data",
+    "latestError": ""
+  },
+  "final": {
+    "recording": "idle",
+    "upload": "mock_blocked",
+    "health": "healthy",
+    "pending": 1,
+    "binding": {
+      "deviceNo": "6045CB624433",
+      "schoolId": 1001,
+      "schoolName": "星河实验学校",
+      "locationType": "studio",
+      "locationId": "studio-main",
+      "locationName": "公共录播教室",
+      "classId": "",
+      "className": "",
+      "bindingSource": "mock",
+      "boundAt": "2026-07-15T04:27:53.720Z"
+    },
+    "dataRoot": "E:\\WIN-REC-BINDING-E2E-20260715-03\\data",
+    "latestError": ""
+  },
+  "verifiedAt": "2026-07-15T04:27:54.646Z"
+}

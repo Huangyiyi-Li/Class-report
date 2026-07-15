@@ -43,7 +43,21 @@ Get-ChildItem .\release -Recurse -Filter ffmpeg.exe
 6. Electron 退出时 worker 正在录音：worker 继续运行；Electron 重启后可重连。
 7. 诊断导出：保存成功和失败均有明确反馈，且 password、token、secret、authorization、control token 等字段在任意嵌套层级均已脱敏。
 
-技术验证可以使用受控的预置设备/学校/教室 binding fixture，仅用于验证上述安全门和采集恢复链路。该 fixture 不是生产用户绑定流程；小程序和 binding service 仓库当前不在本项目中，自助扫码绑定仍是外部集成阻塞项。
+技术验证可以显式设置 `BINDING_SERVICE_MODE=mock`，走完扫码、选学校、选教室/录播室、确认和空闲时重绑流程。mock 模式必须同时满足：
+
+- 界面明确显示“模拟模式”，上传状态显示“模拟模式，仅保存本地”。
+- worker 不创建生产上传服务、不启动上传线程；录音队列保持 `pending`，`attempts` 和 `metadata_attempts` 都为 0。
+- mock 绑定仅用于内部流程验证，不得作为发布候选的生产配置；未设置环境变量时默认使用 remote adapter，服务未实现时必须失败关闭，不能静默回退到 mock。
+
+安装包端到端验证可使用：
+
+```powershell
+node scripts\verify-packaged-binding.mjs `
+  --endpoint http://127.0.0.1:9335 `
+  --output ..\docs\windows-recorder\evidence\binding-assets
+```
+
+脚本通过 Electron DevTools Protocol 操作真实 packaged 页面，要求真实麦克风成功录音，并验证录音期间禁止重绑、停止后音频只在本地排队。正式扫码绑定仍依赖待开发的 HTTP binding service 和小程序；客户端现有 `binding-service.js`/`binding-controller.js` 是未来 adapter 边界。
 
 ## 发布前人工门禁
 
