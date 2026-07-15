@@ -96,6 +96,7 @@ jobs:
           $app = Get-ChildItem release/win-unpacked -Filter *.exe | Select-Object -First 1
           if (-not $app) { throw "Packaged desktop executable is missing" }
           $env:ELECTRON_SMOKE_TEST = "1"
+          $env:BINDING_SERVICE_MODE = "mock"
           $stdout = Join-Path $env:RUNNER_TEMP "recorder-smoke.stdout.log"
           $stderr = Join-Path $env:RUNNER_TEMP "recorder-smoke.stderr.log"
           $process = Start-Process -FilePath $app.FullName -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr

@@ -83,6 +83,7 @@ test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   assert.match(workflow, /Run packaged normal-start test/);
   assert.match(workflow, /test-packaged-normal-start\.ps1/);
   assert.match(workflow, /ELECTRON_SMOKE_TEST/);
+  assert.match(workflow, /BINDING_SERVICE_MODE\s*=\s*["']mock["']/);
   assert.match(workflow, /RedirectStandardOutput/);
   assert.match(workflow, /RedirectStandardError/);
   assert.match(workflow, /FFMPEG_EXE/);

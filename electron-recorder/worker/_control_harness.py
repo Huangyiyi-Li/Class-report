@@ -31,8 +31,11 @@ def main() -> int:
         data_root=str(data_root), device_no="harness-device", school_id=1,
         location_id="room-1", location_name="Harness Room",
     )
+    config_path = runtime_dir / "worker-config.json"
+    config.save_atomic(config_path)
     worker = RecorderWorker(
         config,
+        config_path=config_path,
         emit_event=lambda _name, _payload: None,
         session_factory=FakeSession,
         recover=lambda _root, _on_error: [],

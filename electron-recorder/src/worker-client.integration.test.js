@@ -71,3 +71,40 @@ test("Electron disconnect leaves real Python RecorderWorker capturing for the ne
     await stopHarness(server);
   }
 });
+
+test("WorkerClient applies a binding through the real Python control protocol", { timeout: 10000 }, async () => {
+  const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-binding-control-"));
+  const server = startHarness(runtimeDir);
+  let client;
+  try {
+    await waitForFile(path.join(runtimeDir, "worker-endpoint.json"));
+    const snapshots = [];
+    client = new WorkerClient({ runtimeDir, launchWorker() {}, authenticationTimeoutMs: 200 });
+    client.on("snapshot", (snapshot) => snapshots.push(snapshot));
+    await client.connect();
+
+    const binding = {
+      deviceNo: "AABBCCDDEEFF",
+      schoolId: 1001,
+      schoolName: "星河实验学校",
+      locationType: "classroom",
+      locationId: "room-101",
+      locationName: "一年级一班教室",
+      classId: "class-101",
+      className: "一年级一班",
+      bindingSource: "mock",
+      boundAt: "2026-07-15T08:00:00.000Z",
+    };
+    const result = await client.sendCommand("apply_binding", binding);
+
+    assert.equal(result.success, true);
+    while (!snapshots.some((snapshot) => snapshot.binding?.locationId === "room-101")) await wait(10);
+    assert.equal(snapshots.at(-1).binding.classId, "class-101");
+    const persisted = JSON.parse(fs.readFileSync(path.join(runtimeDir, "worker-config.json"), "utf8"));
+    assert.equal(persisted.device_no, "AABBCCDDEEFF");
+    assert.equal(persisted.location_id, "room-101");
+  } finally {
+    client?.disconnect();
+    await stopHarness(server);
+  }
+});

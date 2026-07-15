@@ -35,7 +35,7 @@ const bindingServiceMode = process.env.BINDING_SERVICE_MODE === "mock" ? "mock" 
 const bindingService = createBindingService({ mode: bindingServiceMode });
 const bindingController = new BindingController({
   service: bindingService,
-  resolveDeviceNo,
+  resolveDeviceNo: () => process.env.ELECTRON_SMOKE_TEST ? "SMOKEDEVICE001" : resolveDeviceNo(),
   getSnapshot: () => workerSnapshot,
   sendWorkerCommand: (command, payload) => {
     if (!supervisor) {
@@ -401,6 +401,45 @@ async function runSmokeTest() {
       })
     `);
 
+    let bindingResult = { skipped: true };
+    if (bindingServiceMode === "mock") {
+      bindingResult = await mainWindow.webContents.executeJavaScript(`
+        new Promise(async (resolve) => {
+          const waitFor = async (selector, timeout = 5000) => {
+            const started = Date.now();
+            while (Date.now() - started < timeout) {
+              const node = document.querySelector(selector);
+              if (node) return node;
+              await new Promise((next) => setTimeout(next, 50));
+            }
+            return null;
+          };
+          const openButton = await waitFor('[data-testid="open-binding"]');
+          openButton?.click();
+          const wizard = await waitFor('[data-testid="binding-wizard"]');
+          const simulateButton = await waitFor('[data-testid="simulate-binding-scan"]');
+          const qr = wizard?.querySelector('.qr-frame svg');
+          const mockBadge = Array.from(wizard?.querySelectorAll('*') || []).some((node) => node.textContent?.trim() === '模拟数据');
+          simulateButton?.click();
+          const schoolStep = await waitFor('[data-binding-step="school"]');
+          const geometry = Array.from(wizard?.querySelectorAll('.binding-modal, .binding-workbench, .binding-identity-panel, .binding-step-panel') || [])
+            .map((node) => ({ className: node.className, ...node.getBoundingClientRect().toJSON() }));
+          const overflowing = geometry.filter((rect) => rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1);
+          wizard?.querySelector('[aria-label="关闭绑定向导"]')?.click();
+          resolve({
+            skipped: false,
+            hasOpenButton: Boolean(openButton),
+            hasWizard: Boolean(wizard),
+            hasQr: Boolean(qr),
+            hasMockBadge: mockBadge,
+            hasSimulateButton: Boolean(simulateButton),
+            reachedSchoolStep: Boolean(schoolStep),
+            overflowing
+          });
+        })
+      `);
+    }
+
     const settingsResult = await mainWindow.webContents.executeJavaScript(`
       new Promise((resolve) => {
         document.querySelector('[aria-label="维护设置"]')?.click();
@@ -445,10 +484,19 @@ async function runSmokeTest() {
       floatingResult.bubbleRole === "" &&
       floatingResult.scrollWidth <= FLOATING_BALL_SIZE &&
       floatingResult.scrollHeight <= FLOATING_BALL_SIZE &&
+      (bindingResult.skipped || (
+        bindingResult.hasOpenButton &&
+        bindingResult.hasWizard &&
+        bindingResult.hasQr &&
+        bindingResult.hasMockBadge &&
+        bindingResult.hasSimulateButton &&
+        bindingResult.reachedSchoolStep &&
+        bindingResult.overflowing.length === 0
+      )) &&
       settingsResult.hasModal &&
       settingsResult.footerVisible;
 
-    console.log("[electron-smoke]", JSON.stringify({ main: mainResult, floating: floatingResult, settings: settingsResult, passed }));
+    console.log("[electron-smoke]", JSON.stringify({ main: mainResult, floating: floatingResult, binding: bindingResult, settings: settingsResult, passed }));
     app.isQuitting = true;
     if (passed) app.quit();
     else app.exit(1);
@@ -484,13 +532,26 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
   };
 
   if (process.env.ELECTRON_SMOKE_TEST) {
+    const smokeBindingMode = bindingServiceMode === "mock";
+    let smokeWorkerSnapshot = smokeBindingMode
+      ? { recording: "error", health: "binding_required", binding: null, dataRoot: "D:/SmokeRecorderData" }
+      : { recording: "idle", health: "healthy" };
     attachWorkerClient(new WorkerClient({
         runtimeDir: "",
         readEndpoint: async () => ({ host: "127.0.0.1", port: 0, token: "smoke" }),
         openSocket: async () => {
           const socket = new EventEmitter();
           socket.write = (value) => {
-            if (JSON.parse(value).token) queueMicrotask(() => socket.emit("data", Buffer.from('{"event":"ready","payload":{"recording":"idle","health":"healthy"}}\n')));
+            const message = JSON.parse(value);
+            if (message.token) {
+              queueMicrotask(() => socket.emit("data", Buffer.from(`${JSON.stringify({ event: "ready", payload: smokeWorkerSnapshot })}\n`)));
+            } else if (message.command) {
+              if (message.command === "apply_binding") {
+                smokeWorkerSnapshot = { ...smokeWorkerSnapshot, recording: "idle", health: "healthy", binding: message.payload };
+                queueMicrotask(() => socket.emit("data", Buffer.from(`${JSON.stringify({ event: "snapshot", payload: smokeWorkerSnapshot })}\n`)));
+              }
+              queueMicrotask(() => socket.emit("data", Buffer.from(`${JSON.stringify({ event: "command_result", payload: { id: message.id, success: true } })}\n`)));
+            }
           };
           socket.end = () => socket.emit("close");
           return socket;
