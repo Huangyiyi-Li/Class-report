@@ -4,6 +4,8 @@ import { AlertTriangle, Check, ChevronUp, Cloud, FolderOpen, HardDrive, Mic, Pau
 import { createRuntimeState } from "./runtime-state.js";
 import { getHealthMeta, getRecordingMeta, getUploadMeta } from "./state.js";
 import { saveSettings } from "./settings-save.js";
+import { canRebind } from "./binding-flow.js";
+import { BindingWizard } from "./binding-wizard.jsx";
 import "./styles.css";
 
 const shell = window.recorderShell;
@@ -33,6 +35,7 @@ function App() {
 }
 
 function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
+  const [bindingOpen, setBindingOpen] = useState(false);
   const recording = getRecordingMeta(runtime.recording);
   const upload = getUploadMeta(runtime.upload);
   const health = getHealthMeta(runtime.health);
@@ -51,7 +54,7 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
         </div>
       </header>
       {!shell ? <section className="bridge-warning"><AlertTriangle size={20} />客户端控制通道未连接，请重新安装最新版安装包。</section> : null}
-      {runtime.health === "binding_required" ? <section className="binding-gate"><AlertTriangle size={22} /><div><strong>设备尚未绑定</strong><p>设备尚未绑定，扫码绑定功能将在设备绑定服务接入后启用</p></div><button disabled>扫码绑定暂不可用</button></section> : null}
+      {snapshot.binding || runtime.health === "binding_required" ? <BindingBanner snapshot={snapshot} runtime={runtime} onOpen={() => setBindingOpen(true)} /> : null}
       <section className="layout">
         <section className={`record-card tone-${recording.tone}`}>
           <div className="card-label">当前课堂录音</div>
@@ -74,8 +77,23 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
         </aside>
       </section>
       {settingsOpen ? <SettingsModal snapshot={snapshot} runtime={runtime} onClose={() => setSettingsOpen(false)} /> : null}
+      <BindingWizard
+        open={bindingOpen}
+        isRebinding={Boolean(snapshot.binding)}
+        bindingServiceMode={snapshot.bindingServiceMode || "remote"}
+        onClose={() => setBindingOpen(false)}
+        onBound={() => {}}
+      />
     </main>
   );
+}
+
+function BindingBanner({ snapshot, runtime, onOpen }) {
+  const binding = snapshot.binding;
+  const rebindAllowed = canRebind({ ...snapshot, runtime });
+  if (!binding) return <section className="binding-gate unbound"><div className="binding-gate-icon"><AlertTriangle size={22} /></div><div><span className="binding-gate-label">需要完成设备配置</span><strong>设备尚未绑定班级或录播室</strong><p>绑定后录音 worker 会立即启用，无需重启客户端。</p></div><button className="binding-action" onClick={onOpen} data-testid="open-binding">扫码绑定设备</button></section>;
+  const type = binding.locationType === "studio" ? "公共录播室" : "班级教室";
+  return <section className="binding-gate bound"><div className="binding-gate-icon"><Check size={22} /></div><div><span className="binding-gate-label">当前采集位置 {binding.bindingSource === "mock" ? <em>模拟数据</em> : null}</span><strong>{binding.schoolName || "学校未命名"} · {binding.locationName}</strong><p>{type}{binding.className ? ` · ${binding.className}` : ""}</p></div><button className="binding-action subtle" onClick={onOpen} disabled={!rebindAllowed} title={rebindAllowed ? "" : "请先停止录音"} data-testid="open-binding">重新绑定</button></section>;
 }
 
 function FloatingBall({ recording }) {
