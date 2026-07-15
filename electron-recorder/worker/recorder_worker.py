@@ -338,7 +338,10 @@ class RecorderWorker:
         self.state["recovered"] = len(recovered)
         for path in recovered:
             self.emit_event("recovered", {"path": str(path)})
-        if self.upload_service is None and self.upload_service_factory is not None:
+        if self.config.binding_source == "mock":
+            self.upload_service = None
+            self.state["upload"] = "mock_blocked"
+        elif self.upload_service is None and self.upload_service_factory is not None:
             self.upload_service = self.upload_service_factory(self.config, self.queue_store)
         self.start_uploading()
         self.maybe_auto_start()
@@ -636,8 +639,8 @@ class RecorderWorker:
             recordings_dir, queue_store, legacy_queue_path, recovered, recovery_errors = (
                 self._prepare_binding_runtime(candidate)
             )
-            replacement_upload_service = self.upload_service
-            if self.upload_service_factory is not None:
+            replacement_upload_service = None if candidate.binding_source == "mock" else self.upload_service
+            if candidate.binding_source != "mock" and self.upload_service_factory is not None:
                 replacement_upload_service = self.upload_service_factory(candidate, queue_store)
 
             candidate.save_atomic(self.config_path)
@@ -650,12 +653,15 @@ class RecorderWorker:
 
             self.state["health"] = "healthy"
             self.state["recording"] = "idle"
+            self.state["upload"] = "mock_blocked" if candidate.binding_source == "mock" else "clear"
             self.state["latestError"] = ""
             self.state["recovered"] = len(recovered)
             for path in recovered:
                 self.emit_event("recovered", {"path": str(path)})
             for error in recovery_errors:
                 self.emit_event("error", {"message": f"journal recovery failed: {error}"})
+            if replacement_upload_service is None:
+                self._stop_uploading()
             self.start_uploading()
             self.maybe_auto_start()
 
@@ -734,6 +740,9 @@ class RecorderWorker:
             self._shutdown_capture()
         except Exception as exc:
             self._capture_error(exc)
+        self._stop_uploading()
+
+    def _stop_uploading(self) -> None:
         self._upload_stop.set()
         if self._upload_thread is not None:
             thread = self._upload_thread
@@ -766,7 +775,7 @@ class XxtProductionAdapter:
 
 
 def create_upload_service(config: WorkerConfig, store: QueueStore):
-    if not config.device_no:
+    if not config.device_no or config.binding_source == "mock":
         return None
     from windows_client.xxt_upload import XxtDeviceApiClient, XxtUploadManager
 

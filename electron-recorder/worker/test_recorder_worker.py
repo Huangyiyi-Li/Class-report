@@ -102,8 +102,40 @@ def test_apply_binding_activates_initially_blocked_worker_without_restart(tmp_pa
     assert worker.state["recording"] == "idle"
     assert WorkerConfig.load(config_path) == worker.config
     assert worker.queue_store is not None
+    assert worker.upload_service is None
+    assert worker._upload_thread is None
+    assert worker.state["upload"] == "mock_blocked"
+    assert services == []
+    worker.shutdown()
+
+
+def test_remote_binding_starts_the_production_upload_boundary(tmp_path: Path):
+    config_path = tmp_path / "worker-config.json"
+    original = WorkerConfig(data_root=str(tmp_path))
+    original.save_atomic(config_path)
+    services = []
+
+    def upload_factory(config, store):
+        service = FakeUploadService(store, config)
+        services.append(service)
+        return service
+
+    worker = RecorderWorker(
+        original,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=require_binding,
+        upload_service_factory=upload_factory,
+        upload_poll_seconds=10,
+    )
+    worker.startup()
+
+    worker.execute_command(command("apply_binding", classroom_binding(bindingSource="remote")))
+
     assert worker.upload_service is services[0]
     assert worker._upload_thread is not None
+    assert worker.state["upload"] == "clear"
     worker.shutdown()
 
 
@@ -146,7 +178,7 @@ def test_binding_activation_failure_does_not_persist_or_swap_runtime(tmp_path: P
     )
     worker.startup()
 
-    worker.handle(command("apply_binding", classroom_binding()))
+    worker.handle(command("apply_binding", classroom_binding(bindingSource="remote")))
 
     assert WorkerConfig.load(config_path) == original
     assert worker.config == original
@@ -188,7 +220,7 @@ def test_idle_rebind_replaces_upload_service_without_rewriting_queue_metadata(tm
         location_name="旧教室",
         class_id="old-class",
         class_name="旧班级",
-        binding_source="mock",
+        binding_source="remote",
         bound_at="2026-07-14T08:00:00.000Z",
     )
     first.save_atomic(config_path)
@@ -218,7 +250,7 @@ def test_idle_rebind_replaces_upload_service_without_rewriting_queue_metadata(tm
         "location_id": "old-room",
     })
 
-    worker.execute_command(command("apply_binding", classroom_binding()))
+    worker.execute_command(command("apply_binding", classroom_binding(bindingSource="remote")))
 
     with sqlite3.connect(worker.queue_store.database_path) as connection:
         metadata = connection.execute(

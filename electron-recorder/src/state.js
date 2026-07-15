@@ -8,6 +8,7 @@ export const RECORDING_META = {
 
 export const UPLOAD_META = {
   clear: { label: "队列已清空", tone: "ok" },
+  mock_blocked: { label: "模拟模式，仅保存本地", tone: "mock" },
   uploading: { label: "上传中", tone: "sync" },
   waiting_network: { label: "等待网络", tone: "danger" },
   failed: { label: "上传失败", tone: "danger" },

@@ -139,6 +139,11 @@ h1 {
   border: 2px solid rgba(59, 130, 246, 0.75);
 }
 
+.status-pill.mock {
+  border: 2px solid rgba(245, 158, 11, 0.72);
+  color: #8a5500;
+}
+
 .ghost-button,
 .icon-button {
   background: #eef3f6;
