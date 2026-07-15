@@ -6,6 +6,7 @@ import { getHealthMeta, getRecordingMeta, getUploadMeta } from "./state.js";
 import { saveSettings } from "./settings-save.js";
 import { canRebind } from "./binding-flow.js";
 import { BindingWizard } from "./binding-wizard.jsx";
+import { createFloatingDragController } from "./floating-drag.js";
 import "./styles.css";
 
 const shell = window.recorderShell;
@@ -98,11 +99,24 @@ function BindingBanner({ snapshot, runtime, onOpen }) {
 
 function FloatingBall({ recording }) {
   const meta = getRecordingMeta(recording);
-  const drag = useRef({ active: false, moved: false, x: 0, y: 0 });
+  const drag = useRef(null);
+  if (!drag.current) {
+    drag.current = createFloatingDragController({
+      onStart: (point) => shell?.startFloatingDrag?.(point),
+      onMove: (point) => shell?.moveFloatingDrag?.(point),
+      onEnd: () => shell?.endFloatingDrag?.(),
+      onClick: () => shell?.showMain?.(),
+    });
+  }
+  const releasePointer = (event) => {
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   return <main className="floating-ball-stage" onContextMenu={(event) => { event.preventDefault(); shell?.showFloatingMenu?.(); }}><div className={`floating-status-bubble tone-${meta.tone}`}
-    onPointerDown={(event) => { if (event.button !== 0) return; drag.current = { active: true, moved: false, x: event.screenX, y: event.screenY }; shell?.startFloatingDrag?.(); }}
-    onPointerMove={(event) => { if (!drag.current.active) return; drag.current.moved ||= Math.hypot(event.screenX - drag.current.x, event.screenY - drag.current.y) > 4; shell?.moveFloatingDrag?.(); }}
-    onPointerUp={() => { const moved = drag.current.moved; drag.current.active = false; shell?.endFloatingDrag?.(); if (!moved) shell?.showMain?.(); }}>
+    onPointerDown={(event) => { if (event.button !== 0) return; event.currentTarget.setPointerCapture?.(event.pointerId); drag.current.start({ x: event.screenX, y: event.screenY }); }}
+    onPointerMove={(event) => drag.current.move({ x: event.screenX, y: event.screenY })}
+    onPointerUp={(event) => { drag.current.end(); releasePointer(event); }}
+    onPointerCancel={(event) => { drag.current.cancel(); releasePointer(event); }}
+    onLostPointerCapture={() => drag.current.cancel()}>
     <span className="bubble-ripple" /><span className="bubble-icon">{recording === "recording" ? <Mic size={18} /> : recording === "paused" ? <Pause size={18} /> : recording.includes("error") ? <WifiOff size={18} /> : <Power size={18} />}</span><strong>{meta.bubbleText}</strong>
   </div></main>;
 }

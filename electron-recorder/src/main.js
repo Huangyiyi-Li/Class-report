@@ -14,6 +14,7 @@ import { setAutoLaunchAfterBootstrap } from "./settings-save.js";
 import { createBindingService } from "./binding-service.js";
 import { BindingController } from "./binding-controller.js";
 import { resolveDeviceNo } from "./backend.js";
+import { clampFloatingPosition } from "./floating-drag.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -33,6 +34,11 @@ let autoLaunchStatus = { desired: false, actual: null, status: "unverified", err
 let workerLocation = null;
 const bindingServiceMode = process.env.BINDING_SERVICE_MODE === "mock" ? "mock" : "remote";
 const bindingService = createBindingService({ mode: bindingServiceMode });
+
+function isScreenPoint(point) {
+  return Number.isFinite(point?.x) && Number.isFinite(point?.y);
+}
+
 const bindingController = new BindingController({
   service: bindingService,
   resolveDeviceNo: () => process.env.ELECTRON_SMOKE_TEST ? "SMOKEDEVICE001" : resolveDeviceNo(),
@@ -674,17 +680,18 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
     showFloatingBallMenu();
     return true;
   });
-  ipcMain.handle("floating:drag-start", () => {
-    if (!floatingBallWindow) return false;
-    const cursor = screen.getCursorScreenPoint();
+  ipcMain.handle("floating:drag-start", (_event, point) => {
+    if (!floatingBallWindow || !isScreenPoint(point)) return false;
     const bounds = floatingBallWindow.getBounds();
-    floatingDragOffset = { x: cursor.x - bounds.x, y: cursor.y - bounds.y };
+    floatingDragOffset = { x: point.x - bounds.x, y: point.y - bounds.y };
     return true;
   });
-  ipcMain.handle("floating:drag-move", () => {
-    if (!floatingBallWindow || !floatingDragOffset) return false;
-    const cursor = screen.getCursorScreenPoint();
-    floatingBallWindow.setPosition(cursor.x - floatingDragOffset.x, cursor.y - floatingDragOffset.y);
+  ipcMain.handle("floating:drag-move", (_event, point) => {
+    if (!floatingBallWindow || !floatingDragOffset || !isScreenPoint(point)) return false;
+    const bounds = floatingBallWindow.getBounds();
+    const workArea = screen.getDisplayNearestPoint(point).workArea;
+    const position = clampFloatingPosition({ point, offset: floatingDragOffset, bounds, workArea });
+    floatingBallWindow.setPosition(position.x, position.y, false);
     return true;
   });
   ipcMain.handle("floating:drag-end", () => {

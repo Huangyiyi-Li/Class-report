@@ -20,8 +20,8 @@ contextBridge.exposeInMainWorld("recorderShell", {
   showMain: () => ipcRenderer.invoke("window:show-main"),
   showFloat: () => ipcRenderer.invoke("window:show-float"),
   openSettings: () => ipcRenderer.invoke("settings:open"),
-  startFloatingDrag: () => ipcRenderer.invoke("floating:drag-start"),
-  moveFloatingDrag: () => ipcRenderer.invoke("floating:drag-move"),
+  startFloatingDrag: (point) => ipcRenderer.invoke("floating:drag-start", point),
+  moveFloatingDrag: (point) => ipcRenderer.invoke("floating:drag-move", point),
   endFloatingDrag: () => ipcRenderer.invoke("floating:drag-end"),
   showFloatingMenu: () => ipcRenderer.invoke("floating:show-menu"),
   onOpenSettings: (callback) => {
