@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Callable
 
 from worker.audio_journal import AudioJournal, recover_journals
-from worker.config import StartupGate, WorkerConfig, evaluate_startup_gate, validate_settings_patch
+from worker.config import (
+    StartupGate,
+    WorkerConfig,
+    evaluate_startup_gate,
+    validate_binding_payload,
+    validate_settings_patch,
+)
 from worker.control_server import ControlServer, InstanceLock, ServerAlreadyRunning
 from worker.protocol import event
 from worker.queue_store import QueueStore, migrate_json_queue
@@ -266,6 +272,7 @@ class RecorderWorker:
         ffmpeg_path: Path = Path("ffmpeg.exe"),
         queue_store: QueueStore | None = None,
         upload_service=None,
+        upload_service_factory=None,
         upload_poll_seconds: float = 1.0,
         shutdown_join_seconds: float = 5.0,
         config_path: Path | None = None,
@@ -283,6 +290,7 @@ class RecorderWorker:
         self.queue_store = queue_store
         self._provided_queue_store = queue_store
         self.upload_service = upload_service
+        self.upload_service_factory = upload_service_factory
         self.upload_poll_seconds = upload_poll_seconds
         self.shutdown_join_seconds = shutdown_join_seconds
         self.config_path = config_path
@@ -330,6 +338,8 @@ class RecorderWorker:
         self.state["recovered"] = len(recovered)
         for path in recovered:
             self.emit_event("recovered", {"path": str(path)})
+        if self.upload_service is None and self.upload_service_factory is not None:
+            self.upload_service = self.upload_service_factory(self.config, self.queue_store)
         self.start_uploading()
         self.maybe_auto_start()
 
@@ -387,6 +397,14 @@ class RecorderWorker:
                 self._command_error("录音中不允许变更运行设置")
                 raise CommandRejected("录音中不允许变更运行设置")
             self._update_settings(command.payload)
+        elif command.command == "apply_binding":
+            try:
+                self._apply_binding(command.payload)
+            except CommandRejected:
+                raise
+            except Exception as exc:
+                self._command_error(str(exc))
+                raise CommandRejected(str(exc)) from exc
         self.emit_event("snapshot", self.snapshot())
         return True
 
@@ -575,15 +593,91 @@ class RecorderWorker:
                 "locationId": self.config.location_id,
                 "locationName": self.config.location_name,
             }
+        binding = None
+        if self.config.device_no and self.config.school_id is not None and self.config.location_id:
+            binding = {
+                "deviceNo": self.config.device_no,
+                "schoolId": self.config.school_id,
+                "schoolName": self.config.school_name,
+                "locationType": self.config.location_type,
+                "locationId": self.config.location_id,
+                "locationName": self.config.location_name,
+                "classId": self.config.class_id,
+                "className": self.config.class_name,
+                "bindingSource": self.config.binding_source,
+                "boundAt": self.config.bound_at,
+            }
         return {
             **self.state,
             "pending": pending,
             "completed": counts.get("completed", 0),
             "location": location,
+            "binding": binding,
             "dataRoot": self.config.data_root,
             "freeDiskBytes": free_bytes,
             "diskHealth": disk_health_name,
         }
+
+    def _apply_binding(self, payload: dict) -> None:
+        with self._capture_transition_lock:
+            if self.state["recording"] in {"starting", "recording"}:
+                message = "recording must stop before applying a binding"
+                self._command_error(message)
+                raise CommandRejected(message)
+            if self.config_path is None:
+                raise ValueError("worker config path is required to persist a binding")
+
+            changes = validate_binding_payload(payload)
+            candidate = replace(self.config, **changes)
+            gate = self.startup_gate(candidate, self.system_drive)
+            if not gate.allowed:
+                raise ValueError(f"binding activation blocked: {gate.health}")
+
+            recordings_dir, queue_store, legacy_queue_path, recovered, recovery_errors = (
+                self._prepare_binding_runtime(candidate)
+            )
+            replacement_upload_service = self.upload_service
+            if self.upload_service_factory is not None:
+                replacement_upload_service = self.upload_service_factory(candidate, queue_store)
+
+            candidate.save_atomic(self.config_path)
+            with self._upload_lock:
+                self.config = candidate
+                self.recordings_dir = recordings_dir
+                self.queue_store = queue_store
+                self.legacy_queue_path = legacy_queue_path
+                self.upload_service = replacement_upload_service
+
+            self.state["health"] = "healthy"
+            self.state["recording"] = "idle"
+            self.state["latestError"] = ""
+            self.state["recovered"] = len(recovered)
+            for path in recovered:
+                self.emit_event("recovered", {"path": str(path)})
+            for error in recovery_errors:
+                self.emit_event("error", {"message": f"journal recovery failed: {error}"})
+            self.start_uploading()
+            self.maybe_auto_start()
+
+    def _prepare_binding_runtime(self, candidate: WorkerConfig):
+        root = Path(candidate.data_root)
+        recordings_dir = root / "recordings"
+        legacy_queue_path = root / "queue.json"
+        queue_store = self.queue_store or self._provided_queue_store or QueueStore(root / "queue.db")
+        recordings_dir.mkdir(parents=True, exist_ok=True)
+
+        recovered = []
+        recovery_errors = []
+        if self.queue_store is None:
+            migrate_json_queue(legacy_queue_path, queue_store)
+            on_error = lambda exc: recovery_errors.append(exc)
+            try:
+                recovered = self.recover(recordings_dir, on_error, queue_store=queue_store)
+            except TypeError as exc:
+                if "queue_store" not in str(exc):
+                    raise
+                recovered = self.recover(recordings_dir, on_error)
+        return recordings_dir, queue_store, legacy_queue_path, recovered, recovery_errors
 
     def _flush_queue(self) -> None:
         if self.upload_service is None:
@@ -682,8 +776,10 @@ def create_upload_service(config: WorkerConfig, store: QueueStore):
     return UploadService(store, adapter, adapter)
 
 
+DEFAULT_WORKER_CLASS = RecorderWorker
+
+
 def run_worker(config_path: Path, stopped: threading.Event, worker_factory=None) -> int:
-    worker_factory = worker_factory or RecorderWorker
     config = WorkerConfig.load(config_path)
     runtime_override = os.environ.get("RECORDER_RUNTIME_DIR")
     if not runtime_override and not config.data_root:
@@ -696,12 +792,19 @@ def run_worker(config_path: Path, stopped: threading.Event, worker_factory=None)
     except ServerAlreadyRunning:
         return 2
     with instance_lock:
-        worker = worker_factory(config, config_path=config_path)
+        if worker_factory is None:
+            if RecorderWorker is DEFAULT_WORKER_CLASS:
+                worker = RecorderWorker(
+                    config,
+                    config_path=config_path,
+                    upload_service_factory=create_upload_service,
+                )
+            else:
+                worker = RecorderWorker(config, config_path=config_path)
+        else:
+            worker = worker_factory(config, config_path=config_path)
         try:
             worker.startup()
-            if config.device_no and worker.queue_store is not None:
-                worker.upload_service = create_upload_service(config, worker.queue_store)
-                worker.start_uploading()
             with ControlServer(worker, runtime_dir, instance_lock=instance_lock):
                 stopped.wait()
             return 0

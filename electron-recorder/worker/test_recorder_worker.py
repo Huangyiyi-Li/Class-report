@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+import sqlite3
 import time
 import threading
 
@@ -30,6 +31,205 @@ class FakeSession:
 
 def allow_startup(config, system_drive):
     return StartupGate(True, "healthy")
+
+
+def require_binding(config, system_drive):
+    allowed = bool(
+        config.data_root
+        and config.device_no
+        and config.school_id is not None
+        and config.location_id
+        and config.location_name
+    )
+    return StartupGate(allowed, "healthy" if allowed else "binding_required")
+
+
+def classroom_binding(**overrides):
+    return {
+        "deviceNo": "AABBCCDDEEFF",
+        "schoolId": 1001,
+        "schoolName": "星河实验学校",
+        "locationType": "classroom",
+        "locationId": "room-101",
+        "locationName": "一年级一班教室",
+        "classId": "class-101",
+        "className": "一年级一班",
+        "bindingSource": "mock",
+        "boundAt": "2026-07-15T08:00:00.000Z",
+    } | overrides
+
+
+class FakeUploadService:
+    def __init__(self, store, config):
+        self.store = store
+        self.config = config
+        self.calls = 0
+
+    def run_once(self, now):
+        self.calls += 1
+        return None
+
+
+def test_apply_binding_activates_initially_blocked_worker_without_restart(tmp_path: Path):
+    config_path = tmp_path / "worker-config.json"
+    original = WorkerConfig(data_root=str(tmp_path))
+    original.save_atomic(config_path)
+    services = []
+
+    def upload_factory(config, store):
+        service = FakeUploadService(store, config)
+        services.append(service)
+        return service
+
+    worker = RecorderWorker(
+        original,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=require_binding,
+        upload_service_factory=upload_factory,
+        upload_poll_seconds=10,
+    )
+    worker.startup()
+    assert worker.state["health"] == "binding_required"
+    assert worker.queue_store is None
+
+    worker.execute_command(command("apply_binding", classroom_binding()))
+
+    assert worker.config.location_type == "classroom"
+    assert worker.snapshot()["binding"]["classId"] == "class-101"
+    assert worker.snapshot()["health"] == "healthy"
+    assert worker.state["recording"] == "idle"
+    assert WorkerConfig.load(config_path) == worker.config
+    assert worker.queue_store is not None
+    assert worker.upload_service is services[0]
+    assert worker._upload_thread is not None
+    worker.shutdown()
+
+
+def test_invalid_binding_preserves_configuration_and_runtime_resources(tmp_path: Path):
+    config_path = tmp_path / "worker-config.json"
+    original = WorkerConfig(data_root=str(tmp_path))
+    original.save_atomic(config_path)
+    worker = RecorderWorker(
+        original,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=require_binding,
+        upload_service_factory=lambda config, store: FakeUploadService(store, config),
+    )
+    worker.startup()
+    previous_state = dict(worker.state)
+
+    worker.handle(command("apply_binding", classroom_binding(locationId="")))
+
+    assert WorkerConfig.load(config_path) == original
+    assert worker.config == original
+    assert worker.queue_store is None
+    assert worker.upload_service is None
+    assert worker.state["health"] == previous_state["health"]
+    assert worker.state["recording"] == previous_state["recording"]
+
+
+def test_binding_activation_failure_does_not_persist_or_swap_runtime(tmp_path: Path):
+    config_path = tmp_path / "worker-config.json"
+    original = WorkerConfig(data_root=str(tmp_path))
+    original.save_atomic(config_path)
+    worker = RecorderWorker(
+        original,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=require_binding,
+        upload_service_factory=lambda _config, _store: (_ for _ in ()).throw(RuntimeError("auth setup failed")),
+    )
+    worker.startup()
+
+    worker.handle(command("apply_binding", classroom_binding()))
+
+    assert WorkerConfig.load(config_path) == original
+    assert worker.config == original
+    assert worker.queue_store is None
+    assert worker.upload_service is None
+    assert worker.state["health"] == "binding_required"
+
+
+@pytest.mark.parametrize("recording_state", ["starting", "recording"])
+def test_apply_binding_is_rejected_during_active_recording(tmp_path: Path, recording_state):
+    config_path = tmp_path / "worker-config.json"
+    original = WorkerConfig(data_root=str(tmp_path))
+    original.save_atomic(config_path)
+    worker = RecorderWorker(
+        original,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        startup_gate=require_binding,
+        upload_service_factory=lambda config, store: FakeUploadService(store, config),
+    )
+    worker.state["recording"] = recording_state
+
+    worker.handle(command("apply_binding", classroom_binding()))
+
+    assert worker.config == original
+    assert WorkerConfig.load(config_path) == original
+    assert worker.queue_store is None
+
+
+def test_idle_rebind_replaces_upload_service_without_rewriting_queue_metadata(tmp_path: Path):
+    config_path = tmp_path / "worker-config.json"
+    first = WorkerConfig(
+        data_root=str(tmp_path),
+        device_no="OLDDEVICE",
+        school_id=7,
+        school_name="旧学校",
+        location_type="classroom",
+        location_id="old-room",
+        location_name="旧教室",
+        class_id="old-class",
+        class_name="旧班级",
+        binding_source="mock",
+        bound_at="2026-07-14T08:00:00.000Z",
+    )
+    first.save_atomic(config_path)
+    services = []
+
+    def upload_factory(config, store):
+        service = FakeUploadService(store, config)
+        services.append(service)
+        return service
+
+    worker = RecorderWorker(
+        first,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=require_binding,
+        upload_service_factory=upload_factory,
+        upload_poll_seconds=10,
+    )
+    worker.startup()
+    worker.queue_store.enqueue({
+        "local_path": str(tmp_path / "old.ogg"),
+        "segment_index": 1,
+        "device_no": "OLDDEVICE",
+        "code": "OLDDEVICE",
+        "school_id": 7,
+        "location_id": "old-room",
+    })
+
+    worker.execute_command(command("apply_binding", classroom_binding()))
+
+    with sqlite3.connect(worker.queue_store.database_path) as connection:
+        metadata = connection.execute(
+            "SELECT device_no, school_id, location_id FROM segments WHERE local_path = ?",
+            (str(tmp_path / "old.ogg"),),
+        ).fetchone()
+    assert metadata == ("OLDDEVICE", 7, "old-room")
+    assert worker.upload_service is services[-1]
+    assert worker.upload_service.config.device_no == "AABBCCDDEEFF"
+    assert len(services) == 2
+    worker.shutdown()
 
 
 def test_capture_session_uses_configured_input_device(tmp_path: Path):
