@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from worker.config import WorkerConfig, evaluate_startup_gate, validate_data_root, validate_settings_patch
+from worker.config import (
+    WorkerConfig,
+    evaluate_startup_gate,
+    validate_binding_payload,
+    validate_data_root,
+    validate_settings_patch,
+)
 
 
 def bound_config(data_root="D:/ClassroomRecorderData"):
@@ -61,6 +67,122 @@ def test_save_atomic_persists_worker_settings(tmp_path: Path):
 
     assert WorkerConfig.load(path) == config
     assert not path.with_suffix(".json.tmp").exists()
+
+
+def test_save_atomic_round_trips_binding_metadata(tmp_path: Path):
+    path = tmp_path / "worker-config.json"
+    config = WorkerConfig(
+        data_root="D:/Recorder",
+        device_no="AABBCCDDEEFF",
+        school_id=1001,
+        school_name="星河实验学校",
+        location_type="classroom",
+        location_id="room-101",
+        location_name="一年级一班教室",
+        class_id="class-101",
+        class_name="一年级一班",
+        binding_source="mock",
+        bound_at="2026-07-15T08:00:00.000Z",
+    )
+
+    config.save_atomic(path)
+
+    assert WorkerConfig.load(path) == config
+
+
+def classroom_binding():
+    return {
+        "deviceNo": "AABBCCDDEEFF",
+        "schoolId": 1001,
+        "schoolName": "星河实验学校",
+        "locationType": "classroom",
+        "locationId": "room-101",
+        "locationName": "一年级一班教室",
+        "classId": "class-101",
+        "className": "一年级一班",
+        "bindingSource": "mock",
+        "boundAt": "2026-07-15T08:00:00.000Z",
+    }
+
+
+def test_validate_classroom_binding_maps_to_worker_config_fields():
+    payload = classroom_binding()
+
+    result = validate_binding_payload(payload)
+
+    assert result == {
+        "device_no": "AABBCCDDEEFF",
+        "school_id": 1001,
+        "school_name": "星河实验学校",
+        "location_type": "classroom",
+        "location_id": "room-101",
+        "location_name": "一年级一班教室",
+        "class_id": "class-101",
+        "class_name": "一年级一班",
+        "binding_source": "mock",
+        "bound_at": "2026-07-15T08:00:00.000Z",
+    }
+    assert payload == classroom_binding()
+
+
+def test_validate_studio_binding_requires_empty_class_fields():
+    payload = classroom_binding() | {
+        "locationType": "studio",
+        "locationId": "studio-main",
+        "locationName": "公共录播教室",
+        "classId": "",
+        "className": "",
+    }
+
+    result = validate_binding_payload(payload)
+
+    assert result["class_id"] == ""
+    assert result["class_name"] == ""
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("deviceNo", ""),
+        ("schoolId", True),
+        ("schoolName", 123),
+        ("locationType", "office"),
+        ("locationId", "bad\nvalue"),
+        ("locationName", ""),
+        ("classId", ""),
+        ("className", ""),
+        ("bindingSource", "fallback"),
+        ("boundAt", "15 July"),
+    ],
+)
+def test_validate_classroom_binding_rejects_invalid_fields(field, value):
+    payload = classroom_binding() | {field: value}
+
+    with pytest.raises(ValueError):
+        validate_binding_payload(payload)
+
+
+@pytest.mark.parametrize("class_field", ["classId", "className"])
+def test_validate_studio_binding_rejects_nonempty_class_fields(class_field):
+    payload = classroom_binding() | {
+        "locationType": "studio",
+        "classId": "",
+        "className": "",
+        class_field: "stale-class",
+    }
+
+    with pytest.raises(ValueError):
+        validate_binding_payload(payload)
+
+
+def test_validate_binding_rejects_missing_and_unknown_fields():
+    missing = classroom_binding()
+    missing.pop("locationId")
+    with pytest.raises(ValueError):
+        validate_binding_payload(missing)
+
+    with pytest.raises(ValueError):
+        validate_binding_payload(classroom_binding() | {"baseUrl": "https://evil.invalid"})
 
 
 def test_worker_validates_core_settings_patch_strictly():

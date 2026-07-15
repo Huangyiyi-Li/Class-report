@@ -3,7 +3,16 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-ALLOWED_COMMANDS = {"start", "pause", "stop", "snapshot", "shutdown", "flush_queue", "update_settings"}
+ALLOWED_COMMANDS = {
+    "start",
+    "pause",
+    "stop",
+    "snapshot",
+    "shutdown",
+    "flush_queue",
+    "update_settings",
+    "apply_binding",
+}
 
 
 @dataclass(frozen=True)

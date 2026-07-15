@@ -5,11 +5,25 @@ import os
 import shutil
 import tempfile
 from dataclasses import asdict, dataclass, fields
+from datetime import datetime
 from pathlib import Path, PureWindowsPath
 
 
 LOW_SPACE_BYTES = 5 * 1024**3
 RUNTIME_SETTING_KEYS = {"autoRecordEnabled", "inputDevice", "dataRoot"}
+BINDING_FIELD_MAP = {
+    "deviceNo": "device_no",
+    "schoolId": "school_id",
+    "schoolName": "school_name",
+    "locationType": "location_type",
+    "locationId": "location_id",
+    "locationName": "location_name",
+    "classId": "class_id",
+    "className": "class_name",
+    "bindingSource": "binding_source",
+    "boundAt": "bound_at",
+}
+BINDING_KEYS = frozenset(BINDING_FIELD_MAP)
 
 
 @dataclass(frozen=True)
@@ -24,8 +38,14 @@ class WorkerConfig:
     base_url: str = "https://rest.xxt.cn"
     device_no: str = ""
     school_id: int | None = None
+    school_name: str = ""
+    location_type: str = ""
     location_id: str = ""
     location_name: str = ""
+    class_id: str = ""
+    class_name: str = ""
+    binding_source: str = ""
+    bound_at: str = ""
     segment_seconds: int = 300
     checkpoint_seconds: int = 10
     auto_record_enabled: bool = False
@@ -82,6 +102,72 @@ def validate_settings_patch(patch: object, system_drive: str = "C:") -> dict:
         validate_data_root(value, system_drive)
         changes["data_root"] = value
     return changes
+
+
+def validate_binding_payload(payload: object) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("binding payload must be an object")
+    supplied = set(payload)
+    if supplied != BINDING_KEYS:
+        missing = sorted(BINDING_KEYS - supplied)
+        unknown = sorted(supplied - BINDING_KEYS)
+        detail = missing[0] if missing else unknown[0]
+        raise ValueError(f"binding payload fields are invalid: {detail}")
+
+    school_id = payload["schoolId"]
+    if type(school_id) is not int or school_id <= 0:
+        raise ValueError("schoolId must be a positive integer")
+
+    values = {
+        "deviceNo": _validate_binding_string(payload["deviceNo"], "deviceNo", 128),
+        "schoolName": _validate_binding_string(payload["schoolName"], "schoolName", 256),
+        "locationId": _validate_binding_string(payload["locationId"], "locationId", 128),
+        "locationName": _validate_binding_string(payload["locationName"], "locationName", 256),
+        "classId": _validate_binding_string(payload["classId"], "classId", 128, allow_empty=True),
+        "className": _validate_binding_string(payload["className"], "className", 256, allow_empty=True),
+        "boundAt": _validate_binding_string(payload["boundAt"], "boundAt", 64),
+    }
+    location_type = payload["locationType"]
+    if location_type not in {"classroom", "studio"}:
+        raise ValueError("locationType must be classroom or studio")
+    binding_source = payload["bindingSource"]
+    if binding_source not in {"mock", "remote"}:
+        raise ValueError("bindingSource must be mock or remote")
+    if location_type == "classroom" and (not values["classId"] or not values["className"]):
+        raise ValueError("classroom binding requires classId and className")
+    if location_type == "studio" and (values["classId"] or values["className"]):
+        raise ValueError("studio binding cannot contain class identity")
+    try:
+        parsed_bound_at = datetime.fromisoformat(values["boundAt"].replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("boundAt must be an ISO-8601 timestamp") from error
+    if parsed_bound_at.tzinfo is None:
+        raise ValueError("boundAt must include a timezone")
+
+    normalized = {
+        "deviceNo": values["deviceNo"],
+        "schoolId": school_id,
+        "schoolName": values["schoolName"],
+        "locationType": location_type,
+        "locationId": values["locationId"],
+        "locationName": values["locationName"],
+        "classId": values["classId"] if location_type == "classroom" else "",
+        "className": values["className"] if location_type == "classroom" else "",
+        "bindingSource": binding_source,
+        "boundAt": values["boundAt"],
+    }
+    return {BINDING_FIELD_MAP[key]: value for key, value in normalized.items()}
+
+
+def _validate_binding_string(value: object, field: str, maximum: int, allow_empty: bool = False) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    normalized = value.strip()
+    if (not normalized and not allow_empty) or len(normalized) > maximum:
+        raise ValueError(f"{field} is invalid")
+    if any(ord(character) < 32 or ord(character) == 127 for character in normalized):
+        raise ValueError(f"{field} contains control characters")
+    return normalized
 
 
 def validate_data_root(path: Path | str, system_drive: str) -> None:
