@@ -11,6 +11,9 @@ import { configureSingleInstance } from "./single-instance.js";
 import { writeDiagnosticFile } from "./diagnostics.js";
 import { applyAutoLaunch, loadSettings, loadWorkerCoreSettings, saveSettings as persistSettings, validateAutoLaunchValue, validateSettingsPatch } from "./settings.js";
 import { setAutoLaunchAfterBootstrap } from "./settings-save.js";
+import { createBindingService } from "./binding-service.js";
+import { BindingController } from "./binding-controller.js";
+import { resolveDeviceNo } from "./backend.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -28,6 +31,21 @@ let workerSnapshot = { recording: "idle", upload: "clear", health: "healthy", pe
 let settings = { autoLaunch: false, autoRecordEnabled: false, inputDevice: "default", dataRoot: "" };
 let autoLaunchStatus = { desired: false, actual: null, status: "unverified", error: null };
 let workerLocation = null;
+const bindingServiceMode = process.env.BINDING_SERVICE_MODE === "mock" ? "mock" : "remote";
+const bindingService = createBindingService({ mode: bindingServiceMode });
+const bindingController = new BindingController({
+  service: bindingService,
+  resolveDeviceNo,
+  getSnapshot: () => workerSnapshot,
+  sendWorkerCommand: (command, payload) => {
+    if (!supervisor) {
+      const error = new Error("录音服务尚未连接，请先选择数据目录");
+      error.code = "WORKER_UNAVAILABLE";
+      throw error;
+    }
+    return supervisor.sendCommand(command, payload);
+  },
+});
 const hasSingleInstanceLock = configureSingleInstance(app, () => {
   showMainWindow();
 });
@@ -321,7 +339,7 @@ function publishSnapshot(snapshot) {
   if (workerSnapshot.recording === "recording") keepRecordingAwake();
   else releaseRecordingAwake();
   updateTray();
-  broadcast("recorder:snapshot", { ...workerSnapshot, runtime, settings, autoLaunchStatus, dataRootLocked: Boolean(workerLocation), appVersion: app.getVersion() });
+  broadcast("recorder:snapshot", { ...workerSnapshot, runtime, settings, autoLaunchStatus, dataRootLocked: Boolean(workerLocation), bindingServiceMode, appVersion: app.getVersion() });
 }
 
 function waitForWindowLoad(win) {
@@ -498,7 +516,13 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
 
   if (!supervisor) publishSnapshot({ health: "blocked", latestError: "请先选择非系统盘录音目录" });
 
-  ipcMain.handle("recorder:get-snapshot", () => ({ ...workerSnapshot, runtime: createRuntimeState(workerSnapshot), settings, autoLaunchStatus, dataRootLocked: Boolean(workerLocation), appVersion: app.getVersion() }));
+  ipcMain.handle("recorder:get-snapshot", () => ({ ...workerSnapshot, runtime: createRuntimeState(workerSnapshot), settings, autoLaunchStatus, dataRootLocked: Boolean(workerLocation), bindingServiceMode, appVersion: app.getVersion() }));
+  ipcMain.handle("binding:create-session", () => bindingController.createSession());
+  ipcMain.handle("binding:get-session", (_event, sessionId) => bindingController.getSession(sessionId));
+  ipcMain.handle("binding:simulate-scan", (_event, sessionId) => bindingController.simulateScan(sessionId));
+  ipcMain.handle("binding:list-schools", (_event, sessionId) => bindingController.listSchools(sessionId));
+  ipcMain.handle("binding:list-locations", (_event, sessionId, query) => bindingController.listLocations(sessionId, query));
+  ipcMain.handle("binding:confirm", (_event, sessionId, selection) => bindingController.confirmBinding(sessionId, selection));
   ipcMain.handle("recorder:start", () => supervisor?.send("start") ?? false);
   ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
   ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);

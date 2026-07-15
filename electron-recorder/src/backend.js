@@ -466,6 +466,14 @@ export function deriveDeviceNoFromNetworkInterfaces(networkInterfaces = {}) {
   return "";
 }
 
+export function resolveDeviceNo({
+  physicalMacResolver = resolveWindowsPhysicalMac,
+  networkInterfaces = os.networkInterfaces,
+} = {}) {
+  return normalizeMacAddress(physicalMacResolver()) ||
+    deriveDeviceNoFromNetworkInterfaces(networkInterfaces());
+}
+
 function normalizeMacAddress(mac) {
   const normalized = String(mac || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
   if (!normalized || /^0+$/.test(normalized)) return "";

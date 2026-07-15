@@ -6,6 +6,7 @@ import {
   RecorderBackend,
   deriveDeviceNoFromNetworkInterfaces,
   formatLocalDateTime,
+  resolveDeviceNo,
   selectPhysicalMacFromWindowsAdapters,
 } from "./backend.js";
 
@@ -24,6 +25,18 @@ test("deriveDeviceNoFromNetworkInterfaces skips virtual adapters and returns upp
   });
 
   assert.equal(value, "8C884B07689D");
+});
+
+test("resolveDeviceNo prefers a normalized physical MAC and falls back to interfaces", () => {
+  assert.equal(resolveDeviceNo({
+    physicalMacResolver: () => "8c-88-4b-07-68-9d",
+    networkInterfaces: () => ({ ethernet: [{ internal: false, mac: "AA:BB:CC:DD:EE:FF" }] }),
+  }), "8C884B07689D");
+
+  assert.equal(resolveDeviceNo({
+    physicalMacResolver: () => "",
+    networkInterfaces: () => ({ ethernet: [{ internal: false, mac: "AA:BB:CC:DD:EE:FF" }] }),
+  }), "AABBCCDDEEFF");
 });
 
 test("selectPhysicalMacFromWindowsAdapters prefers active PCI or USB hardware adapters", () => {

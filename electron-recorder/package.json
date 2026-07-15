@@ -55,6 +55,8 @@
       "src/settings.js",
       "src/settings-save.js",
       "src/backend.js",
+      "src/binding-service.js",
+      "src/binding-controller.js",
       "src/diagnostics.js",
       "src/preload.cjs",
       "package.json"
