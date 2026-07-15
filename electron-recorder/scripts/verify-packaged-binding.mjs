@@ -105,6 +105,12 @@ await waitFor("window.recorderShell.getSnapshot().then(value => value.recording 
 await waitFor("document.querySelector('[data-testid=\"open-binding\"]')?.disabled === true", "rebind disabled while recording");
 await screenshot("06-recording-and-rebind-disabled.png");
 await delay(4_000);
+if (options["pause-before-stop"] === "true") {
+  await click(".primary-actions .danger-action", "pause recording");
+  await waitFor("window.recorderShell.getSnapshot().then(value => value.recording === 'paused')", "recording pause", 45_000);
+  await screenshot("06b-paused-without-console.png");
+  await delay(1_500);
+}
 await click(".primary-actions .secondary-action", "stop recording");
 await waitFor("window.recorderShell.getSnapshot().then(value => value.recording === 'idle')", "recording stop", 45_000);
 await waitFor("window.recorderShell.getSnapshot().then(value => value.pending >= 1 && value.upload === 'mock_blocked')", "local-only mock queue", 45_000);
