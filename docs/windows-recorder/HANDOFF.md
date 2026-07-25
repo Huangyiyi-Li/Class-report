@@ -101,7 +101,7 @@ git switch feat/windows-recorder-production
 2. CI 已新增“不设置 `ELECTRON_SMOKE_TEST`”的 packaged 正常启动门禁；它验证真实 worker、endpoint/token、鉴权和无可见控制台，但不替代真机麦克风。
 3. 首次启动未选择非系统盘时的阻塞提示已确认符合设计；安装器仍允许选到系统盘，部署验收必须记录并强制选择非系统盘。
 4. 本地候选已验证 PyInstaller worker、PortAudio/sounddevice、FFmpeg、detached 续录和 Electron 重连；GitHub Actions 尚未运行本次未发布改动。
-5. mock 扫码流程已经可走通，但正式教师登录、HTTP binding service 和设备上传证明尚未实现；mock 录音强制只存本地，不能用于验证生产上传。
+5. 服务端设计已确认设备认证、OSS 凭证和音频元数据接口，worker 适配层已按该契约更新；但正式教师登录和绑定接口仍未形成闭环，现有服务端绑定设计要求学校管理员，且公共录播室缺少稳定 `locationId`。mock 录音仍强制只存本地，不能用于验证生产上传。
 6. 正式安装包尚未配置 Windows 代码签名证书。
 7. 开机自启和冰点白名单行为未知。
 

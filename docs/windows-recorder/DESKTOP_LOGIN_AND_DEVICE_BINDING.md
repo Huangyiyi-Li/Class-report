@@ -62,7 +62,7 @@ http.request({
 
 ## 4. deviceNo 与上传安全
 
-当前产品倾向把电脑 MAC 地址作为 deviceNo；上传不依赖教师 Cookie，也不使用 access token。
+当前产品倾向把电脑 MAC 地址作为 deviceNo。上传不依赖教师 Cookie 或教师 access token；已确认的服务端方案会先用设备签名换取短期 `Device-Access-Token`，再获取 OSS 凭证和登记文件。
 
 MAC 可以用于设备查找和兼容现有数据，但不能单独证明请求来自真实设备：
 
@@ -141,17 +141,46 @@ Device-Signature = HMAC(deviceSecret, method + path + bodyHash + timestamp + non
 - Cookie 过期只阻止新的绑定/重绑，不能停止本地录音。
 - 上传认证失败时录音继续落盘，队列等待恢复。
 
-## 7. 接口契约待服务端确认
+## 7. 服务端接口设计对齐
+
+2026-07-25 收到《7. 录音设备与文件上报》服务端设计，已确认以下设备上传契约：
+
+- `POST /wisdom/book-reading/device-auth`：沿用现有 `deviceNo + sign + timestamp` 设备认证，返回 `accessToken`。
+- `POST /wisdom/ali-oss/get-ali-oss-upload-token`：使用 `Device-Access-Token`，返回 `bucketName`、`endpoint`、`expireDate` 和服务端授权的 `uploadDir`。
+- `POST /audio/save-audio-file-info`：使用设备令牌保存文件元数据，服务端从认证上下文和当前设备绑定中确定学校及绑定快照。
+- `POST /wisdom/recording-device/bind-device` 和 `unbind-device`：当前设计要求学校管理员登录，支持按班级或教室名称绑定。
+
+Windows worker 已按上述确认契约调整 OSS 凭证和音频元数据适配层：
+
+- OSS 对象键必须使用服务端返回的 `uploadDir`，客户端不再自行拼接固定目录。
+- 元数据使用 `fileName`、字节单位 `fileSize`、`fileFormat`、`recordStartTime`、`recordEndTime` 和 `uploadStatus`。
+- 客户端不向元数据接口提交学校或位置作为权威归属，服务端在登记时按设备当前绑定保存快照。
+- 当前 worker 仅在 OSS 上传成功后登记 `uploadStatus=1`；无人声 `2` 和失败 `3` 尚未接入客户端状态机。
+
+以下差异尚未确认，不能据此接入正式绑定 UI：
+
+1. 产品方案要求具体教师个人账号自助绑定；服务端文档当前要求学校管理员。
+2. 客户端目标模型是 `deviceId + schoolId + locationId`，公共录播室有稳定 `locationId`；服务端当前以 `classId` 或自由文本 `classroom` 表示绑定。
+3. 设备认证只返回 `groupId/groupName`，没有返回 `bindType`、教室名称或 `locationId`，无法完整恢复公共录播室绑定。
+4. 设备签名继续沿用现有算法，尚未满足本方案中设备密钥、防重放和撤销的正式安全要求。
+5. 文档没有提供当前教师、授权学校/班级/位置和教师确认绑定接口。
+6. 元数据延迟登记时服务端读取“当前绑定”，会使重绑前录制但重绑后补传的音频归到新位置；尚缺采集时绑定快照或等价的服务端时态查询方案。
+
+## 8. 接口契约待服务端确认
 
 1. Passport 登录完成如何通知 Electron。
 2. 登录 Cookie 是否可被隔离 Electron session 正常保存和发送。
 3. keep-login-alive 的状态码、TTL 和 Set-Cookie 行为。
 4. 当前教师、学校、班级、位置、教师补全和确认绑定接口。
 5. MAC 选择规则是否与既有 Android/服务端 deviceNo 规则一致。
-6. 上传最终采用 HMAC、设备专用 Cookie、客户端证书还是其他设备证明。
-7. 旧接口 /wisdom/book-reading/device-auth 的迁移与兼容策略。
+6. 设备签名是否继续作为正式设备证明，或升级为 HMAC、设备专用 Cookie、客户端证书等方案。
+7. 学校管理员绑定接口是否会补充教师自助绑定入口，以及两者的权限与审计关系。
+8. 公共录播室是否建立稳定 locationId，并在设备认证或绑定查询中返回完整绑定。
+9. `filePath` 要求提交 OSS object key、完整公开 URL，还是可长期访问的受控 URL。
+10. 客户端何时应上报 `uploadStatus=2/3`，以及瞬时网络失败是否仍只保留本地重试。
+11. `recordStartTime/recordEndTime` 的服务端约定时区是否固定为北京时间。
 
-## 8. 验收要求
+## 9. 验收要求
 
 - 未登录不能查询或提交绑定。
 - 无目标班级权限的教师不能通过篡改 ID 完成绑定。

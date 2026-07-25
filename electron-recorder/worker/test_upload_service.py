@@ -81,6 +81,7 @@ def test_success_uploads_then_registers_metadata(tmp_path):
     assert metadata.payloads == [
         {
             "segmentIndex": 1,
+            "fileName": "one.wav",
             "filePath": "https://files.test/one.wav",
             "fileSize": 5,
             "format": "wav",

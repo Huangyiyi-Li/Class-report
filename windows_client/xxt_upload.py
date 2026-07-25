@@ -6,11 +6,15 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .api_client import ClassroomApiClient, REQUEST_TIMEOUT_SECONDS
+
+
+SERVER_TIMEZONE = timezone(timedelta(hours=8))
 
 
 def device_sign(device_no: str) -> str:
@@ -22,8 +26,11 @@ def build_device_auth_payload(device_no: str, timestamp: int | None = None) -> d
     return {"deviceNo": device_no, "sign": device_sign(device_no), "timestamp": timestamp}
 
 
-def build_oss_object_key(file_name: str, start_time: datetime) -> str:
-    return f"test/{start_time:%Y%m%d}/{file_name}"
+def build_oss_object_key(file_name: str, upload_dir: str) -> str:
+    authorized_prefix = str(upload_dir or "").strip("/")
+    if not authorized_prefix:
+        raise ValueError("OSS uploadDir is required")
+    return f"{authorized_prefix}/{Path(file_name).name}"
 
 
 @dataclass
@@ -69,6 +76,7 @@ class OssConfig:
     bucket: str
     endpoint: str
     expire_at: datetime
+    upload_dir: str = ""
 
     @classmethod
     def from_response(cls, data: dict[str, Any]) -> "OssConfig":
@@ -76,9 +84,10 @@ class OssConfig:
             access_key_id=str(data["accessKeyId"]),
             access_key_secret=str(data["accessKeySecret"]),
             security_token=str(data["securityToken"]),
-            bucket=str(data["bucket"]),
-            endpoint=str(data["endPoint"]),
-            expire_at=_millis_to_datetime(int(data["expiration"])),
+            bucket=str(data["bucketName"]),
+            endpoint=str(data["endpoint"]),
+            expire_at=_millis_to_datetime(int(data["expireDate"])),
+            upload_dir=str(data["uploadDir"]),
         )
 
     def public_url(self, object_key: str) -> str:
@@ -149,11 +158,12 @@ class XxtUploadManager:
         self.device_auth_data: DeviceAuth | None = None
         self.oss_config: OssConfig | None = None
 
-    def upload(self, local_path: str | Path, start_time: datetime | None = None) -> str:
-        start_time = start_time or datetime.now()
+    def upload(self, local_path: str | Path) -> str:
         self._ensure_device_auth()
         self._ensure_oss_config()
-        object_key = build_oss_object_key(Path(local_path).name, start_time)
+        object_key = build_oss_object_key(
+            Path(local_path).name, self.oss_config.upload_dir
+        )
         uploader = self.uploader_factory(self.oss_config)
         return uploader.upload(local_path, object_key)
 
@@ -187,7 +197,9 @@ class XxtDeviceApiClient(ClassroomApiClient):
         original_token = self.token
         self.token = access_token
         try:
-            response = self._post_json("/book-reading/ali-oss/get-ali-oss-upload-token", {})
+            response = self._post_json(
+                "/wisdom/ali-oss/get-ali-oss-upload-token", {}
+            )
             if "accessKeyId" not in response:
                 raise RuntimeError(response.get("message") or f"获取 OSS token 失败: {response}")
             return OssConfig.from_response(response)
@@ -195,21 +207,28 @@ class XxtDeviceApiClient(ClassroomApiClient):
             self.token = original_token
 
     def save_audio_file_info(self, payload: dict[str, Any]) -> dict[str, Any]:
-        try:
-            return super().save_audio_file_info(payload)
-        except RuntimeError:
-            return self._post_json("/book-reading/audio/save-audio-file-info", self._android_legacy_metadata(payload))
+        return self._post_json(
+            "/audio/save-audio-file-info", self._server_audio_metadata(payload)
+        )
 
     @staticmethod
-    def _android_legacy_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    def _server_audio_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+        start_time = _record_time(str(payload["startTime"]))
+        end_time = _record_time(str(payload["endTime"]))
+        file_path = str(payload["filePath"])
         return {
-            "code": payload["code"],
+            "deviceNo": str(payload["deviceNo"]),
             "segmentIndex": int(payload["segmentIndex"]),
-            "filePath": payload["filePath"],
+            "fileName": str(
+                payload.get("fileName") or Path(urlparse(file_path).path).name
+            ),
+            "filePath": file_path,
             "fileSize": int(payload.get("fileSize") or 0),
-            "format": str(payload["format"]).upper(),
-            "startTime": _iso_to_millis(str(payload["startTime"])),
-            "endTime": _iso_to_millis(str(payload["endTime"])),
+            "fileFormat": str(payload["format"]).upper(),
+            "duration": max(0, int((end_time - start_time).total_seconds())),
+            "recordStartTime": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "recordEndTime": end_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "uploadStatus": 1,
         }
 
     def _post_json(self, path: str, payload: dict[str, Any], *, auth: bool = True) -> dict[str, Any]:
@@ -240,5 +259,8 @@ def _millis_to_datetime(value: int) -> datetime:
     return datetime.fromtimestamp(value / 1000)
 
 
-def _iso_to_millis(value: str) -> int:
-    return int(datetime.fromisoformat(value).timestamp() * 1000)
+def _record_time(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return parsed.replace(tzinfo=SERVER_TIMEZONE)
+    return parsed.astimezone(SERVER_TIMEZONE)

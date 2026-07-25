@@ -78,6 +78,7 @@ def _metadata_payload(item) -> dict:
         "schoolId": item.school_id,
         "locationId": item.location_id,
         "segmentIndex": item.segment_index,
+        "fileName": Path(item.local_path).name,
         "filePath": item.uploaded_url,
         "fileSize": Path(item.local_path).stat().st_size,
         "format": item.audio_format,
