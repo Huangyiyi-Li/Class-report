@@ -8,6 +8,7 @@
 4. [构建、发布与验收流程](RELEASE_PROCESS.md)
 5. [当前启动故障修复计划](../superpowers/plans/2026-07-14-windows-recorder-live-debug.md)
 6. [模拟扫码绑定与安装包录音证据](evidence/WIN-REC-BINDING-MOCK-2026-07-15.md)
+7. [教师登录、设备绑定与上传鉴权方案](DESKTOP_LOGIN_AND_DEVICE_BINDING.md)
 
 产品设计和历史整改资料：
 

@@ -60,7 +60,10 @@ git switch feat/windows-recorder-production
 - 正式部署前，老师必须先通过现有资料导入流程加入系统。
 - 一个登录账号可能属于多所学校，也可能尚未加入目标学校。
 - 用户必须能自己完成全流程，不依赖运维或技术人员现场输入班级 ID。
-- 正式目标流程是微信扫码、登录小程序、选择账号已加入的学校，再选择或创建采集位置。
+- 最新确认的正式目标是 Windows 客户端打开现有数智家校 passport，由具体教师个人账号登录；同班任意有权限教师完成一次绑定即可，不需要日常切换账号。
+- 教师 Cookie 只用于查询/创建教师、读取授权范围和确认绑定。绑定成功后，正常录音和上传不依赖教师会话；重新绑定时再次登录。
+- 上传按设备和采集位置归属。MAC 可作为兼容现有系统的 deviceNo，但不能单独作为上传凭证；正式接口必须提供 HMAC、设备专用 Cookie、客户端证书或等价设备证明。
+- 完整决策、服务端开发清单和接口待确认项见 docs/windows-recorder/DESKTOP_LOGIN_AND_DEVICE_BINDING.md。
 - 客户端已实现可显式启用的 mock 扫码绑定流程，覆盖扫码、学校、班级教室/公共录播室、确认和空闲时重绑；它只用于内部流程验证。
 - 当前仓库仍不含小程序和 HTTP binding service。生产模式不回退 mock，正式接口联调仍是外部集成阻断项。
 
@@ -98,7 +101,7 @@ git switch feat/windows-recorder-production
 2. CI 已新增“不设置 `ELECTRON_SMOKE_TEST`”的 packaged 正常启动门禁；它验证真实 worker、endpoint/token、鉴权和无可见控制台，但不替代真机麦克风。
 3. 首次启动未选择非系统盘时的阻塞提示已确认符合设计；安装器仍允许选到系统盘，部署验收必须记录并强制选择非系统盘。
 4. 本地候选已验证 PyInstaller worker、PortAudio/sounddevice、FFmpeg、detached 续录和 Electron 重连；GitHub Actions 尚未运行本次未发布改动。
-5. mock 扫码流程已经可走通，但正式扫码绑定仍依赖外部小程序和服务端；mock 录音强制只存本地，不能用于验证生产上传。
+5. mock 扫码流程已经可走通，但正式教师登录、HTTP binding service 和设备上传证明尚未实现；mock 录音强制只存本地，不能用于验证生产上传。
 6. 正式安装包尚未配置 Windows 代码签名证书。
 7. 开机自启和冰点白名单行为未知。
 
