@@ -94,8 +94,8 @@ git push origin recorder-v0.1.19-beta.1
 - Windows 10/11 x64 完整故障矩阵。
 - 冰点/还原软件开启时的安装、重启、开机自启、升级和非系统盘持久化。
 - 连续 72 小时稳定运行。
-- 正式扫码绑定的端到端联调。
-- 使用真实 HTTP binding adapter 验证扫码会话过期、鉴权、学校/位置权限和确认幂等；生产模式不得回退 mock。
+- 正式 Passport 登录与绑定的端到端联调。
+- 使用真实 HTTP binding adapter 验证登录会话过期、学校归属、四类角色、公共录播室维护和确认幂等；生产模式不得回退 mock。
 - Windows 代码签名和 SmartScreen 策略。
 
 上述事项未完成前，只能发布内部测试版，不能宣称正式可部署。
