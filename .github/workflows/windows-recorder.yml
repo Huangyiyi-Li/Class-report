@@ -1,7 +1,15 @@
-name: Windows Recorder Installer
+name: Windows Recorder CI
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/windows-recorder.yml"
+      - "electron-recorder/**"
+      - "windows_client/xxt_upload.py"
+      - "windows_client/test_timeouts.py"
   push:
     branches:
       - master
@@ -11,14 +19,15 @@ on:
     paths:
       - ".github/workflows/windows-recorder.yml"
       - "electron-recorder/**"
-      - "windows_client/**"
+      - "windows_client/xxt_upload.py"
+      - "windows_client/test_timeouts.py"
 
 concurrency:
   group: windows-recorder-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-windows-installer:
@@ -122,8 +131,20 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  publish-github-prerelease:
+    if: startsWith(github.ref, 'refs/tags/recorder-v')
+    needs: build-windows-installer
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows installers
+        uses: actions/download-artifact@v4
+        with:
+          name: classroom-recorder-windows-${{ github.sha }}
+          path: release
+
       - name: Publish GitHub pre-release
-        if: startsWith(github.ref, 'refs/tags/recorder-v')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

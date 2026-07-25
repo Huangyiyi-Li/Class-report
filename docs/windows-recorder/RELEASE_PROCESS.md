@@ -10,6 +10,14 @@
 
 ## 2. 发布前自动化
 
+提交代码时，`electron-recorder/.husky/pre-commit` 会对暂存文件执行
+Prettier，并运行 Node.js 测试和桌面界面构建。首次执行 `npm ci` 或
+`npm install` 后，`prepare` 脚本会自动安装该版本化钩子。
+
+本地钩子用于提前发现问题，但可以被开发者跳过，不能替代 GitHub Actions。
+Pull Request 和 `feat/windows-recorder-production` 分支推送必须以
+`.github/workflows/windows-recorder.yml` 的结果为准。
+
 在干净检出中执行：
 
 ```powershell
@@ -84,8 +92,13 @@ git push origin recorder-v0.1.19-beta.1
 - NSIS 和 Portable build；
 - packaged resource verification；
 - packaged UI smoke；
+- packaged normal-start test；
 - installer upload；
 - prerelease publish。
+
+GitHub 仓库还应把 `Windows Recorder CI / build-windows-installer` 配置为
+合并到 `master` 前的必需状态检查。该保护规则属于 GitHub 仓库设置，不能只靠
+工作流文件替代。
 
 下载 Release 中实际生成的 Setup 文件，再执行一次 SHA-256 校验和真机快速回归。测试的必须是 Release 资产，不能只测试本地 `release` 目录。
 
@@ -97,5 +110,6 @@ git push origin recorder-v0.1.19-beta.1
 - 正式 Passport 登录与绑定的端到端联调。
 - 使用真实 HTTP binding adapter 验证登录会话过期、学校归属、四类角色、公共录播室维护和确认幂等；生产模式不得回退 mock。
 - Windows 代码签名和 SmartScreen 策略。
+- 定期执行依赖漏洞审计，并在发布候选版本前关闭高危、严重风险或形成书面例外。
 
 上述事项未完成前，只能发布内部测试版，不能宣称正式可部署。
