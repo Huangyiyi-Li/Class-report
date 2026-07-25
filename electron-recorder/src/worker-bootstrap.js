@@ -4,8 +4,9 @@ import crypto from "node:crypto";
 
 const CONFIG_DEFAULTS = {
   data_root: "", base_url: "https://rest.xxt.cn", device_no: "", school_id: null,
-  location_id: "", location_name: "", segment_seconds: 300, checkpoint_seconds: 10,
-  auto_record_enabled: false, input_device: "", username: "", password: "", mirror_server_url: "",
+  school_name: "", bind_type: null, classroom: "", class_id: "", class_name: "",
+  binding_source: "", bound_at: "", unbind_pending: false, segment_seconds: 300, checkpoint_seconds: 10,
+  auto_record_enabled: true, input_device: "", username: "", password: "", mirror_server_url: "",
 };
 
 export function atomicWriteJson(target, payload) {

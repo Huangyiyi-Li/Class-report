@@ -20,7 +20,7 @@ const DEFAULT_CONFIG = {
   segmentSeconds: 300,
   checkpointSeconds: 10,
   autoLaunchEnabled: false,
-  autoRecordEnabled: false,
+  autoRecordEnabled: true,
   inputDevice: "",
 };
 

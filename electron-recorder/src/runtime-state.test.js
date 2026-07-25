@@ -15,10 +15,10 @@ test("unsafe storage prevents recording label", () => {
   assert.equal(state.safe, false);
 });
 
-test("preserves worker location and normalizes invalid pending count", () => {
-  const location = { school_name: "示例学校", location_name: "一班" };
-  const state = createRuntimeState({ location, pending: "not-a-number" });
-  assert.deepEqual(state.location, location);
+test("preserves worker binding and normalizes invalid pending count", () => {
+  const binding = { schoolName: "示例学校", classroom: "一班录音设备" };
+  const state = createRuntimeState({ binding, pending: "not-a-number" });
+  assert.deepEqual(state.binding, binding);
   assert.equal(state.pending, 0);
 });
 

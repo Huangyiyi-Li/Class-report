@@ -29,7 +29,10 @@ def main() -> int:
     data_root = runtime_dir / "data"
     config = WorkerConfig(
         data_root=str(data_root), device_no="harness-device", school_id=1,
-        location_id="room-1", location_name="Harness Room",
+        school_name="Harness School", bind_type=1,
+        classroom="Harness Class录音设备", class_id="class-1",
+        class_name="Harness Class", binding_source="mock",
+        bound_at="2026-07-15T08:00:00.000Z",
     )
     config_path = runtime_dir / "worker-config.json"
     config.save_atomic(config_path)

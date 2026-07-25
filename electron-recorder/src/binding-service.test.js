@@ -1,152 +1,182 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  MOCK_BINDING_TTL_MS,
-  createBindingService,
-} from "./binding-service.js";
+import { createBindingService } from "./binding-service.js";
 
 const NOW = Date.parse("2026-07-15T08:00:00.000Z");
 
-function createMock(overrides = {}) {
-  let now = NOW;
+test("mock mode follows the same Passport-shaped grade and class contract", async () => {
   const service = createBindingService({
     mode: "mock",
-    now: () => now,
+    now: () => NOW,
     createId: () => "session-1",
-    ...overrides,
   });
-  return { service, advance: (milliseconds) => { now += milliseconds; } };
-}
+  const session = await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+  assert.equal(session.status, "authenticated");
+  assert.equal(session.user.schoolName, "星河实验学校");
+  assert.deepEqual(await service.listGrades(session.id), [
+    { gradeCode: 1, gradeName: "一年级" },
+    { gradeCode: 2, gradeName: "二年级" },
+  ]);
+  assert.deepEqual(await service.listClasses(session.id, { gradeCode: 1 }), [
+    { classId: 101, className: "1.1班" },
+    { classId: 102, className: "1.2班" },
+  ]);
+});
 
-async function scannedSession(service) {
+test("mock mode creates canonical class and public classroom bindings", async () => {
+  const service = createBindingService({
+    mode: "mock",
+    now: () => NOW,
+    createId: () => "session-1",
+  });
   await service.createSession({ deviceNo: "AABBCCDDEEFF" });
-  await service.simulateScan("session-1");
-}
-
-test("mock session moves from waiting to scanned and confirmed", async () => {
-  const { service } = createMock();
-  const created = await service.createSession({ deviceNo: "AABBCCDDEEFF" });
-
-  assert.equal(created.status, "waiting");
-  assert.match(created.qrPayload, /session-1/);
-  assert.equal((await service.simulateScan("session-1")).status, "scanned");
-
-  const binding = await service.confirmBinding("session-1", {
-    schoolId: 1001,
-    locationType: "classroom",
-    locationId: "room-101",
-  });
-
-  assert.deepEqual(binding, {
+  assert.deepEqual(await service.confirmBinding("session-1", {
+    bindType: 1,
+    classId: 101,
+    className: "1.1班",
+  }), {
     deviceNo: "AABBCCDDEEFF",
     schoolId: 1001,
     schoolName: "星河实验学校",
-    locationType: "classroom",
-    locationId: "room-101",
-    locationName: "一年级一班教室",
-    classId: "class-101",
-    className: "一年级一班",
+    bindType: 1,
+    classroom: "1.1班录音设备",
+    classId: "101",
+    className: "1.1班",
     bindingSource: "mock",
     boundAt: "2026-07-15T08:00:00.000Z",
   });
-  assert.equal((await service.getSession("session-1")).status, "confirmed");
-});
 
-test("studio binding has no class identity", async () => {
-  const { service } = createMock();
-  await scannedSession(service);
-
-  const binding = await service.confirmBinding("session-1", {
-    schoolId: 1001,
-    locationType: "studio",
-    locationId: "studio-main",
+  const second = createBindingService({ mode: "mock", now: () => NOW, createId: () => "session-2" });
+  await second.createSession({ deviceNo: "AABBCCDDEEFF" });
+  const publicBinding = await second.confirmBinding("session-2", {
+    bindType: 2,
+    classroom: "  多媒体教室录音设备  ",
   });
-
-  assert.equal(binding.locationName, "公共录播教室");
-  assert.equal(binding.classId, "");
-  assert.equal(binding.className, "");
-});
-
-test("catalog is available only after scan and filters by school and type", async () => {
-  const { service } = createMock();
-  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
-
-  await assert.rejects(service.listSchools("session-1"), { code: "BINDING_SESSION_NOT_SCANNED" });
-  await service.simulateScan("session-1");
-
-  const schools = await service.listSchools("session-1");
-  assert.deepEqual(schools.map(({ id }) => id), [1001, 1002]);
-  assert.deepEqual(
-    (await service.listLocations("session-1", { schoolId: 1001, locationType: "classroom" })).map(({ id }) => id),
-    ["room-101", "room-202"],
-  );
-  assert.deepEqual(
-    (await service.listLocations("session-1", { schoolId: 1002, locationType: "studio" })).map(({ id }) => id),
-    ["studio-west"],
-  );
-});
-
-test("session expires without silently creating a replacement", async () => {
-  const { service, advance } = createMock();
-  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
-  advance(MOCK_BINDING_TTL_MS + 1);
-
-  assert.equal((await service.getSession("session-1")).status, "expired");
-  await assert.rejects(service.simulateScan("session-1"), { code: "BINDING_SESSION_EXPIRED" });
-  await assert.rejects(service.listSchools("session-1"), { code: "BINDING_SESSION_EXPIRED" });
-});
-
-test("unknown sessions and illegal transitions have stable errors", async () => {
-  const { service } = createMock();
-
-  await assert.rejects(service.getSession("missing"), { code: "BINDING_SESSION_NOT_FOUND" });
-  await scannedSession(service);
-  await assert.rejects(service.simulateScan("session-1"), { code: "BINDING_SESSION_INVALID_STATE" });
-  await service.confirmBinding("session-1", {
-    schoolId: 1001,
-    locationType: "studio",
-    locationId: "studio-main",
-  });
-  await assert.rejects(service.confirmBinding("session-1", {
-    schoolId: 1001,
-    locationType: "studio",
-    locationId: "studio-main",
-  }), { code: "BINDING_SESSION_INVALID_STATE" });
-});
-
-test("selection must reference the mock catalog", async () => {
-  const { service } = createMock();
-  await scannedSession(service);
-
-  await assert.rejects(service.confirmBinding("session-1", {
-    schoolId: 9999,
-    locationType: "classroom",
-    locationId: "room-101",
-  }), { code: "BINDING_SELECTION_INVALID" });
-  await assert.rejects(service.confirmBinding("session-1", {
-    schoolId: 1001,
-    locationType: "classroom",
-    locationId: "studio-main",
-  }), { code: "BINDING_SELECTION_INVALID" });
-});
-
-test("service returns defensive copies", async () => {
-  const { service } = createMock();
-  const created = await service.createSession({ deviceNo: "AABBCCDDEEFF" });
-  created.status = "confirmed";
-
-  assert.equal((await service.getSession("session-1")).status, "waiting");
+  assert.equal(publicBinding.classId, "");
+  assert.equal(publicBinding.className, "");
+  assert.equal(publicBinding.classroom, "多媒体教室录音设备");
 });
 
 test("default remote mode fails closed and never exposes mock data", async () => {
   const service = createBindingService();
-
   await assert.rejects(service.createSession({ deviceNo: "AABBCCDDEEFF" }), {
     code: "BINDING_SERVICE_UNAVAILABLE",
   });
-  await assert.rejects(service.listSchools("anything"), {
+  await assert.rejects(service.listGrades("anything"), {
     code: "BINDING_SERVICE_UNAVAILABLE",
   });
   assert.equal(service.mode, "remote");
+});
+
+function remoteFixture(requests) {
+  return createBindingService({
+    mode: "remote",
+    createId: () => "passport-session-1",
+    now: () => NOW,
+    authenticate: async () => ({
+      user: { schoolId: 9001, schoolName: "众享中学", userName: "测试教师", userType: 1 },
+      post: async (url, payload) => {
+        requests.push([url, payload]);
+        if (url.endsWith("/get-grade-list")) return [{ gradeCode: 7, gradeName: "七年级" }];
+        if (url.endsWith("/get-class-list")) return [{ classId: 701, className: "七年级一班" }];
+        return { success: true };
+      },
+    }),
+  });
+}
+
+test("remote mode uses the Passport identity for grade and class calls", async () => {
+  const requests = [];
+  const service = remoteFixture(requests);
+  const session = await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+  assert.equal(session.status, "authenticated");
+  assert.equal(session.user.schoolId, 9001);
+  assert.deepEqual(await service.listGrades(session.id), [{ gradeCode: 7, gradeName: "七年级" }]);
+  assert.deepEqual(await service.listClasses(session.id, { gradeCode: 7 }), [{ classId: 701, className: "七年级一班" }]);
+  assert.deepEqual(requests, [
+    ["https://rest.xxt.cn/ai-lesson-eval/basic-data/get-grade-list", {}],
+    ["https://rest.xxt.cn/ai-lesson-eval/basic-data/get-class-list", { gradeCode: 7 }],
+  ]);
+});
+
+test("remote classroom binding sends the confirmed request contract", async () => {
+  const requests = [];
+  const service = remoteFixture(requests);
+  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+  const binding = await service.confirmBinding("passport-session-1", {
+    bindType: 1,
+    classId: 701,
+    className: "七年级一班",
+  });
+  assert.deepEqual(requests[0], [
+    "https://rest.xxt.cn/ai-lesson-eval/recording-device/bind-device",
+    {
+      schoolId: 9001,
+      deviceNo: "AABBCCDDEEFF",
+      bindType: 1,
+      classId: 701,
+      classroom: "七年级一班录音设备",
+    },
+  ]);
+  assert.equal(binding.classroom, "七年级一班录音设备");
+  assert.equal(binding.bindingSource, "remote");
+});
+
+test("remote binding rejects business failure and consumes a successful session once", async () => {
+  let response = { success: false, message: "设备已被其他学校绑定" };
+  const service = createBindingService({
+    mode: "remote",
+    createId: () => "passport-session-1",
+    authenticate: async () => ({
+      user: { schoolId: 9001, schoolName: "众享中学", userName: "测试教师", userType: 1 },
+      post: async () => response,
+    }),
+  });
+  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+  const selection = { bindType: 1, classId: 701, className: "七年级一班" };
+  await assert.rejects(service.confirmBinding("passport-session-1", selection), {
+    code: "BINDING_REJECTED",
+  });
+  response = { success: true };
+  await service.confirmBinding("passport-session-1", selection);
+  await assert.rejects(service.confirmBinding("passport-session-1", selection), {
+    code: "BINDING_SESSION_NOT_FOUND",
+  });
+});
+
+test("Passport student identity is rejected before catalog access", async () => {
+  const service = createBindingService({
+    mode: "remote",
+    authenticate: async () => ({
+      user: { schoolId: 9001, schoolName: "众享中学", userName: "测试学生", userType: 2 },
+      post: async () => ({ success: true }),
+    }),
+  });
+  await assert.rejects(service.createSession({ deviceNo: "AABBCCDDEEFF" }), {
+    code: "PASSPORT_ROLE_NOT_ALLOWED",
+  });
+});
+
+test("remote public classroom omits classId and unbind only sends deviceNo", async () => {
+  const requests = [];
+  const service = remoteFixture(requests);
+  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+  await service.confirmBinding("passport-session-1", {
+    bindType: 2,
+    classroom: "  多媒体教室录音设备  ",
+  });
+  assert.deepEqual(requests[0][1], {
+    schoolId: 9001,
+    deviceNo: "AABBCCDDEEFF",
+    bindType: 2,
+    classroom: "多媒体教室录音设备",
+  });
+  const unbindService = remoteFixture(requests);
+  await unbindService.createSession({ deviceNo: "AABBCCDDEEFF" });
+  await unbindService.unbindDevice("passport-session-1");
+  assert.deepEqual(requests[1], [
+    "https://rest.xxt.cn/ai-lesson-eval/recording-device/unbind-device",
+    { deviceNo: "AABBCCDDEEFF" },
+  ]);
 });

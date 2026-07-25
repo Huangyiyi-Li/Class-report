@@ -78,23 +78,21 @@ assert(initial.bindingServiceMode === "mock", `expected mock mode, got ${initial
 await screenshot("01-binding-required.png");
 
 await click('[data-testid="open-binding"]', "binding entry");
-await waitFor("document.querySelector('[data-testid=\"simulate-binding-scan\"]') && document.querySelector('.qr-frame svg')", "mock QR wizard");
+await waitFor("document.querySelector('[data-binding-step=\"bindingType\"]') && document.querySelector('.qr-frame svg')", "mock authenticated wizard");
 assert(await evaluate("document.querySelector('[data-testid=\"binding-wizard\"]').innerText.includes('模拟数据')"), "mock badge is missing");
-await screenshot("02-mock-qr.png");
+await screenshot("02-mock-identity.png");
 
-await click('[data-testid="simulate-binding-scan"]', "simulate scan");
-await waitFor("document.querySelector('[data-binding-step=\"school\"]')", "school selection");
-await screenshot("03-school-selection.png");
-await click(".binding-choice-list button", "school choice");
-await waitFor("document.querySelector('[data-binding-step=\"locationType\"]')", "location type selection");
 await click(".location-type-grid button:first-child", "classroom type");
-await waitFor("document.querySelector('[data-binding-step=\"location\"]')", "classroom location selection");
-await click(".binding-choice-list.location-list button", "classroom location");
+await waitFor("document.querySelector('[data-binding-step=\"grade\"]')", "grade selection");
+await screenshot("03-grade-selection.png");
+await click(".binding-choice-list button", "grade choice");
+await waitFor("document.querySelector('[data-binding-step=\"class\"]')", "class selection");
+await click(".binding-choice-list button", "class choice");
 await waitFor("document.querySelector('[data-binding-step=\"review\"]')", "classroom review");
 await screenshot("04-classroom-review.png");
 await click(".binding-confirm-button", "classroom confirmation");
 await waitFor("!document.querySelector('[data-testid=\"binding-wizard\"]')", "classroom binding acknowledgement");
-await waitFor("window.recorderShell.getSnapshot().then(value => value.health === 'healthy' && value.binding?.locationType === 'classroom')", "healthy classroom binding");
+await waitFor("window.recorderShell.getSnapshot().then(value => value.health === 'healthy' && value.binding?.bindType === 1)", "healthy classroom binding");
 
 const classroom = await snapshot();
 assert(classroom.binding?.classId, "classroom binding did not persist classId");
@@ -118,23 +116,26 @@ await waitFor("window.recorderShell.getSnapshot().then(value => value.pending >=
 await click('[data-testid="open-binding"]', "rebind entry");
 await waitFor("document.querySelector('.rebind-confirmation')", "rebind confirmation");
 await click(".rebind-confirmation .binding-confirm-button", "approve rebind");
-await waitFor("document.querySelector('[data-testid=\"simulate-binding-scan\"]')", "rebind QR");
-await click('[data-testid="simulate-binding-scan"]', "simulate rebind scan");
-await waitFor("document.querySelector('[data-binding-step=\"school\"]')", "rebind school selection");
-await click(".binding-choice-list button", "rebind school choice");
-await waitFor("document.querySelector('[data-binding-step=\"locationType\"]')", "rebind location type");
+await waitFor("document.querySelector('[data-binding-step=\"bindingType\"]')", "rebind identity");
 await click(".location-type-grid button:nth-child(2)", "studio type");
-await waitFor("document.querySelector('[data-binding-step=\"location\"]')", "studio location selection");
-await click(".binding-choice-list.location-list button", "studio location");
+await waitFor("document.querySelector('[data-binding-step=\"publicClassroom\"]')", "public classroom name");
+await evaluate(`(() => {
+  const input = document.querySelector('[data-binding-step="publicClassroom"] input');
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+  setter.call(input, '多媒体教室录音设备');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+})()`);
+await click('[data-binding-step="publicClassroom"] .binding-confirm-button', "public classroom continue");
 await waitFor("document.querySelector('[data-binding-step=\"review\"]')", "studio review");
 await click(".binding-confirm-button", "studio confirmation");
 await waitFor("!document.querySelector('[data-testid=\"binding-wizard\"]')", "studio binding acknowledgement");
-await waitFor("window.recorderShell.getSnapshot().then(value => value.health === 'healthy' && value.binding?.locationType === 'studio')", "healthy studio binding");
+await waitFor("window.recorderShell.getSnapshot().then(value => value.health === 'healthy' && value.binding?.bindType === 2)", "healthy public classroom binding");
 
 const final = await snapshot();
 assert(final.binding?.classId === "", "studio binding retained a classId");
 assert(final.binding?.className === "", "studio binding retained a className");
-await screenshot("07-studio-bound.png");
+await screenshot("07-public-classroom-bound.png");
 
 const result = {
   target: { title: target.title, url: target.url },

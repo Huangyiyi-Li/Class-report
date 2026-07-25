@@ -4,7 +4,7 @@ import { atomicWriteJson, validateBootstrapDataRoot } from "./worker-bootstrap.j
 
 export const DEFAULT_SETTINGS = Object.freeze({
   autoLaunch: false,
-  autoRecordEnabled: false,
+  autoRecordEnabled: true,
   inputDevice: "default",
 });
 

@@ -38,8 +38,8 @@ def require_binding(config, system_drive):
         config.data_root
         and config.device_no
         and config.school_id is not None
-        and config.location_id
-        and config.location_name
+        and config.bind_type in {1, 2}
+        and config.classroom
     )
     return StartupGate(allowed, "healthy" if allowed else "binding_required")
 
@@ -49,9 +49,8 @@ def classroom_binding(**overrides):
         "deviceNo": "AABBCCDDEEFF",
         "schoolId": 1001,
         "schoolName": "星河实验学校",
-        "locationType": "classroom",
-        "locationId": "room-101",
-        "locationName": "一年级一班教室",
+        "bindType": 1,
+        "classroom": "一年级一班录音设备",
         "classId": "class-101",
         "className": "一年级一班",
         "bindingSource": "mock",
@@ -96,7 +95,7 @@ def test_apply_binding_activates_initially_blocked_worker_without_restart(tmp_pa
 
     worker.execute_command(command("apply_binding", classroom_binding()))
 
-    assert worker.config.location_type == "classroom"
+    assert worker.config.bind_type == 1
     assert worker.snapshot()["binding"]["classId"] == "class-101"
     assert worker.snapshot()["health"] == "healthy"
     assert worker.state["recording"] == "idle"
@@ -154,7 +153,7 @@ def test_invalid_binding_preserves_configuration_and_runtime_resources(tmp_path:
     worker.startup()
     previous_state = dict(worker.state)
 
-    worker.handle(command("apply_binding", classroom_binding(locationId="")))
+    worker.handle(command("apply_binding", classroom_binding(classroom="")))
 
     assert WorkerConfig.load(config_path) == original
     assert worker.config == original
@@ -162,6 +161,54 @@ def test_invalid_binding_preserves_configuration_and_runtime_resources(tmp_path:
     assert worker.upload_service is None
     assert worker.state["health"] == previous_state["health"]
     assert worker.state["recording"] == previous_state["recording"]
+
+
+def test_clear_binding_preserves_queue_and_device_identity_but_blocks_recording(tmp_path: Path):
+    config_path = tmp_path / "worker-config.json"
+    config = WorkerConfig(
+        data_root=str(tmp_path),
+        device_no="AABBCCDDEEFF",
+        school_id=1001,
+        school_name="星河实验学校",
+        bind_type=1,
+        classroom="1.1班录音设备",
+        class_id="101",
+        class_name="1.1班",
+        binding_source="remote",
+        bound_at="2026-07-15T08:00:00.000Z",
+    )
+    config.save_atomic(config_path)
+    worker = RecorderWorker(
+        config,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=require_binding,
+        upload_service_factory=lambda candidate, store: FakeUploadService(store, candidate),
+    )
+    worker.startup()
+    queue_store = worker.queue_store
+
+    worker.execute_command(command("prepare_unbind"))
+
+    assert worker.config.unbind_pending is True
+    assert worker.snapshot()["binding"]["deviceNo"] == "AABBCCDDEEFF"
+    assert worker.state["health"] == "binding_required"
+    assert worker.upload_service is None
+    assert WorkerConfig.load(config_path).unbind_pending is True
+
+    worker.execute_command(command("clear_binding"))
+
+    assert worker.config.device_no == "AABBCCDDEEFF"
+    assert worker.config.school_id is None
+    assert worker.config.bind_type is None
+    assert worker.config.unbind_pending is False
+    assert worker.snapshot()["binding"] is None
+    assert worker.state["health"] == "binding_required"
+    assert worker.queue_store is queue_store
+    assert worker.upload_service is None
+    assert WorkerConfig.load(config_path) == worker.config
+    worker.shutdown()
 
 
 def test_binding_activation_failure_does_not_persist_or_swap_runtime(tmp_path: Path):
@@ -215,9 +262,8 @@ def test_idle_rebind_replaces_upload_service_without_rewriting_queue_metadata(tm
         device_no="OLDDEVICE",
         school_id=7,
         school_name="旧学校",
-        location_type="classroom",
-        location_id="old-room",
-        location_name="旧教室",
+        bind_type=1,
+        classroom="旧班级录音设备",
         class_id="old-class",
         class_name="旧班级",
         binding_source="remote",
@@ -677,10 +723,19 @@ def test_shutdown_is_bounded_when_upload_service_blocks(tmp_path: Path):
     assert any("did not stop" in payload["message"] for name, payload in events if name == "error")
 
 
-def test_snapshot_reports_queue_location_disk_and_latest_error(tmp_path: Path):
+def test_snapshot_reports_queue_binding_disk_and_latest_error(tmp_path: Path):
     events = []
     worker = RecorderWorker(
-        WorkerConfig(data_root=str(tmp_path), location_id="room-101", location_name="一班"),
+        WorkerConfig(
+            data_root=str(tmp_path),
+            device_no="device-1",
+            school_id=7,
+            school_name="示例学校",
+            bind_type=1,
+            classroom="一班录音设备",
+            class_id="class-1",
+            class_name="一班",
+        ),
         emit_event=lambda name, payload: events.append((name, payload)),
         recover=lambda root, on_error: [],
         startup_gate=allow_startup,
@@ -690,7 +745,8 @@ def test_snapshot_reports_queue_location_disk_and_latest_error(tmp_path: Path):
 
     snapshot = [payload for name, payload in events if name == "snapshot"][-1]
     assert snapshot["pending"] == 0
-    assert snapshot["location"] == {"locationId": "room-101", "locationName": "一班"}
+    assert snapshot["binding"]["classroom"] == "一班录音设备"
+    assert "location" not in snapshot
     assert snapshot["freeDiskBytes"] > 0
     assert snapshot["diskHealth"] in {"healthy", "disk_low", "storage_unavailable"}
     assert snapshot["latestError"] == "microphone gone"
@@ -785,8 +841,8 @@ def test_auto_record_starts_exactly_once_after_recovery_and_queue_initialization
             data_root=str(tmp_path),
             device_no="device-1",
             school_id=7,
-            location_id="room-101",
-            location_name="一班",
+            bind_type=1,
+            classroom="一班录音设备",
             auto_record_enabled=True,
         ),
         emit_event=lambda name, payload: None,
@@ -845,8 +901,8 @@ def test_invalid_data_root_never_creates_storage_before_or_during_startup(
             data_root=data_root,
             device_no="device-1",
             school_id=7,
-            location_id="room-101",
-            location_name="一班",
+            bind_type=1,
+            classroom="一班录音设备",
         ),
         system_drive="C:",
     )

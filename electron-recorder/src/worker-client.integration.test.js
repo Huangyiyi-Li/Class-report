@@ -87,9 +87,8 @@ test("WorkerClient applies a binding through the real Python control protocol", 
       deviceNo: "AABBCCDDEEFF",
       schoolId: 1001,
       schoolName: "星河实验学校",
-      locationType: "classroom",
-      locationId: "room-101",
-      locationName: "一年级一班教室",
+      bindType: 1,
+      classroom: "一年级一班录音设备",
       classId: "class-101",
       className: "一年级一班",
       bindingSource: "mock",
@@ -98,11 +97,12 @@ test("WorkerClient applies a binding through the real Python control protocol", 
     const result = await client.sendCommand("apply_binding", binding);
 
     assert.equal(result.success, true);
-    while (!snapshots.some((snapshot) => snapshot.binding?.locationId === "room-101")) await wait(10);
+    while (!snapshots.some((snapshot) => snapshot.binding?.classroom === "一年级一班录音设备")) await wait(10);
     assert.equal(snapshots.at(-1).binding.classId, "class-101");
     const persisted = JSON.parse(fs.readFileSync(path.join(runtimeDir, "worker-config.json"), "utf8"));
     assert.equal(persisted.device_no, "AABBCCDDEEFF");
-    assert.equal(persisted.location_id, "room-101");
+    assert.equal(persisted.bind_type, 1);
+    assert.equal(persisted.classroom, "一年级一班录音设备");
   } finally {
     client?.disconnect();
     await stopHarness(server);

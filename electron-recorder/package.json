@@ -57,6 +57,7 @@
       "src/backend.js",
       "src/binding-service.js",
       "src/binding-controller.js",
+      "src/passport-login.js",
       "src/floating-drag.js",
       "src/diagnostics.js",
       "src/preload.cjs",

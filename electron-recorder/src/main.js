@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, shell as electronShell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, session as electronSession, shell as electronShell, Tray } from "electron";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
@@ -13,6 +13,7 @@ import { applyAutoLaunch, loadSettings, loadWorkerCoreSettings, saveSettings as 
 import { setAutoLaunchAfterBootstrap } from "./settings-save.js";
 import { createBindingService } from "./binding-service.js";
 import { BindingController } from "./binding-controller.js";
+import { createPassportAuthenticator } from "./passport-login.js";
 import { resolveDeviceNo } from "./backend.js";
 import { clampFloatingPosition } from "./floating-drag.js";
 
@@ -29,29 +30,55 @@ let pendingFloatingShow = false;
 let recordingPowerBlockerId = null;
 let supervisor;
 let workerSnapshot = { recording: "idle", upload: "clear", health: "healthy", pending: 0 };
-let settings = { autoLaunch: false, autoRecordEnabled: false, inputDevice: "default", dataRoot: "" };
+let settings = { autoLaunch: false, autoRecordEnabled: true, inputDevice: "default", dataRoot: "" };
 let autoLaunchStatus = { desired: false, actual: null, status: "unverified", error: null };
 let workerLocation = null;
 const bindingServiceMode = process.env.BINDING_SERVICE_MODE === "mock" ? "mock" : "remote";
-const bindingService = createBindingService({ mode: bindingServiceMode });
+let bindingService;
+let bindingController;
 
 function isScreenPoint(point) {
   return Number.isFinite(point?.x) && Number.isFinite(point?.y);
 }
 
-const bindingController = new BindingController({
-  service: bindingService,
-  resolveDeviceNo: () => process.env.ELECTRON_SMOKE_TEST ? "SMOKEDEVICE001" : resolveDeviceNo(),
-  getSnapshot: () => workerSnapshot,
-  sendWorkerCommand: (command, payload) => {
-    if (!supervisor) {
-      const error = new Error("录音服务尚未连接，请先选择数据目录");
-      error.code = "WORKER_UNAVAILABLE";
-      throw error;
-    }
-    return supervisor.sendCommand(command, payload);
-  },
-});
+function initializeBindingController() {
+  let authenticate;
+  if (bindingServiceMode === "remote") {
+    const passportSession = electronSession.fromPartition("classroom-recorder-passport");
+    authenticate = createPassportAuthenticator({
+      browserSession: passportSession,
+      createWindow: () => new BrowserWindow({
+        width: 1080,
+        height: 760,
+        parent: mainWindow,
+        modal: false,
+        show: true,
+        title: "登录众享教育 Passport",
+        autoHideMenuBar: true,
+        webPreferences: {
+          partition: "classroom-recorder-passport",
+          contextIsolation: true,
+          nodeIntegration: false,
+          sandbox: true,
+        },
+      }),
+    });
+  }
+  bindingService = createBindingService({ mode: bindingServiceMode, authenticate });
+  bindingController = new BindingController({
+    service: bindingService,
+    resolveDeviceNo: () => process.env.ELECTRON_SMOKE_TEST ? "SMOKEDEVICE001" : resolveDeviceNo(),
+    getSnapshot: () => workerSnapshot,
+    sendWorkerCommand: (command, payload) => {
+      if (!supervisor) {
+        const error = new Error("录音服务尚未连接，请先选择数据目录");
+        error.code = "WORKER_UNAVAILABLE";
+        throw error;
+      }
+      return supervisor.sendCommand(command, payload);
+    },
+  });
+}
 const hasSingleInstanceLock = configureSingleInstance(app, () => {
   showMainWindow();
 });
@@ -423,11 +450,9 @@ async function runSmokeTest() {
           const openButton = await waitFor('[data-testid="open-binding"]');
           openButton?.click();
           const wizard = await waitFor('[data-testid="binding-wizard"]');
-          const simulateButton = await waitFor('[data-testid="simulate-binding-scan"]');
-          const qr = wizard?.querySelector('.qr-frame svg');
+          const identityIcon = wizard?.querySelector('.qr-frame svg');
           const mockBadge = Array.from(wizard?.querySelectorAll('*') || []).some((node) => node.textContent?.trim() === '模拟数据');
-          simulateButton?.click();
-          const schoolStep = await waitFor('[data-binding-step="school"]');
+          const bindingTypeStep = await waitFor('[data-binding-step="bindingType"]');
           const geometry = Array.from(wizard?.querySelectorAll('.binding-modal, .binding-workbench, .binding-identity-panel, .binding-step-panel') || [])
             .map((node) => ({ className: node.className, ...node.getBoundingClientRect().toJSON() }));
           const overflowing = geometry.filter((rect) => rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1);
@@ -436,10 +461,9 @@ async function runSmokeTest() {
             skipped: false,
             hasOpenButton: Boolean(openButton),
             hasWizard: Boolean(wizard),
-            hasQr: Boolean(qr),
+            hasIdentityIcon: Boolean(identityIcon),
             hasMockBadge: mockBadge,
-            hasSimulateButton: Boolean(simulateButton),
-            reachedSchoolStep: Boolean(schoolStep),
+            reachedBindingType: Boolean(bindingTypeStep),
             overflowing
           });
         })
@@ -493,10 +517,9 @@ async function runSmokeTest() {
       (bindingResult.skipped || (
         bindingResult.hasOpenButton &&
         bindingResult.hasWizard &&
-        bindingResult.hasQr &&
+        bindingResult.hasIdentityIcon &&
         bindingResult.hasMockBadge &&
-        bindingResult.hasSimulateButton &&
-        bindingResult.reachedSchoolStep &&
+        bindingResult.reachedBindingType &&
         bindingResult.overflowing.length === 0
       )) &&
       settingsResult.hasModal &&
@@ -515,6 +538,7 @@ async function runSmokeTest() {
 
 if (hasSingleInstanceLock) app.whenReady().then(() => {
   const userDataDir = app.getPath("userData");
+  initializeBindingController();
   workerLocation = loadWorkerLocator(app.getPath("userData"));
   settings = {
     ...loadSettings(workerLocation?.configPath),
@@ -585,11 +609,12 @@ if (hasSingleInstanceLock) app.whenReady().then(() => {
 
   ipcMain.handle("recorder:get-snapshot", () => ({ ...workerSnapshot, runtime: createRuntimeState(workerSnapshot), settings, autoLaunchStatus, dataRootLocked: Boolean(workerLocation), bindingServiceMode, appVersion: app.getVersion() }));
   ipcMain.handle("binding:create-session", () => bindingController.createSession());
+  ipcMain.handle("binding:create-replacement-session", () => bindingController.createReplacementSession());
   ipcMain.handle("binding:get-session", (_event, sessionId) => bindingController.getSession(sessionId));
-  ipcMain.handle("binding:simulate-scan", (_event, sessionId) => bindingController.simulateScan(sessionId));
-  ipcMain.handle("binding:list-schools", (_event, sessionId) => bindingController.listSchools(sessionId));
-  ipcMain.handle("binding:list-locations", (_event, sessionId, query) => bindingController.listLocations(sessionId, query));
+  ipcMain.handle("binding:list-grades", (_event, sessionId) => bindingController.listGrades(sessionId));
+  ipcMain.handle("binding:list-classes", (_event, sessionId, query) => bindingController.listClasses(sessionId, query));
   ipcMain.handle("binding:confirm", (_event, sessionId, selection) => bindingController.confirmBinding(sessionId, selection));
+  ipcMain.handle("binding:unbind", () => bindingController.unbindDevice());
   ipcMain.handle("recorder:start", () => supervisor?.send("start") ?? false);
   ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
   ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);

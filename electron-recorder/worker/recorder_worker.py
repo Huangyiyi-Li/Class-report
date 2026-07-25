@@ -152,7 +152,7 @@ class CaptureSession:
                             "code": journal.device_id,
                             "device_no": journal.device_id,
                             "school_id": self.config.school_id,
-                            "location_id": self.config.location_id,
+                            "location_id": "",
                             "start_time": journal.started_at.isoformat(),
                             "end_time": finalized_at.isoformat(),
                             "rate": journal.rate,
@@ -183,7 +183,7 @@ class CaptureSession:
             self.journal.channels,
             self.journal.sample_width,
             school_id=getattr(self.journal, "school_id", self.config.school_id),
-            location_id=getattr(self.journal, "location_id", self.config.location_id),
+            location_id="",
         )
 
     def _record_failure(self, exc: Exception) -> None:
@@ -408,6 +408,10 @@ class RecorderWorker:
             except Exception as exc:
                 self._command_error(str(exc))
                 raise CommandRejected(str(exc)) from exc
+        elif command.command == "clear_binding":
+            self._clear_binding()
+        elif command.command == "prepare_unbind":
+            self._prepare_unbind()
         self.emit_event("snapshot", self.snapshot())
         return True
 
@@ -444,7 +448,7 @@ class RecorderWorker:
                 1,
                 2,
                 school_id=self.config.school_id,
-                location_id=self.config.location_id,
+                location_id="",
             )
             self.session = self.session_factory(
                 config=self.config,
@@ -590,21 +594,19 @@ class RecorderWorker:
         except OSError:
             free_bytes = 0
             disk_health_name = "storage_unavailable"
-        location = None
-        if self.config.location_id or self.config.location_name:
-            location = {
-                "locationId": self.config.location_id,
-                "locationName": self.config.location_name,
-            }
         binding = None
-        if self.config.device_no and self.config.school_id is not None and self.config.location_id:
+        if (
+            self.config.device_no
+            and self.config.school_id is not None
+            and self.config.bind_type in {1, 2}
+            and self.config.classroom
+        ):
             binding = {
                 "deviceNo": self.config.device_no,
                 "schoolId": self.config.school_id,
                 "schoolName": self.config.school_name,
-                "locationType": self.config.location_type,
-                "locationId": self.config.location_id,
-                "locationName": self.config.location_name,
+                "bindType": self.config.bind_type,
+                "classroom": self.config.classroom,
                 "classId": self.config.class_id,
                 "className": self.config.class_name,
                 "bindingSource": self.config.binding_source,
@@ -614,7 +616,6 @@ class RecorderWorker:
             **self.state,
             "pending": pending,
             "completed": counts.get("completed", 0),
-            "location": location,
             "binding": binding,
             "dataRoot": self.config.data_root,
             "freeDiskBytes": free_bytes,
@@ -631,7 +632,7 @@ class RecorderWorker:
                 raise ValueError("worker config path is required to persist a binding")
 
             changes = validate_binding_payload(payload)
-            candidate = replace(self.config, **changes)
+            candidate = replace(self.config, unbind_pending=False, **changes)
             gate = self.startup_gate(candidate, self.system_drive)
             if not gate.allowed:
                 raise ValueError(f"binding activation blocked: {gate.health}")
@@ -684,6 +685,50 @@ class RecorderWorker:
                     raise
                 recovered = self.recover(recordings_dir, on_error)
         return recordings_dir, queue_store, legacy_queue_path, recovered, recovery_errors
+
+    def _clear_binding(self) -> None:
+        with self._capture_transition_lock:
+            if self.state["recording"] != "idle":
+                raise CommandRejected("请先停止录音，再解除设备绑定")
+            if self.config_path is None:
+                raise ValueError("worker config path is required to clear a binding")
+            candidate = replace(
+                self.config,
+                school_id=None,
+                school_name="",
+                bind_type=None,
+                classroom="",
+                class_id="",
+                class_name="",
+                binding_source="",
+                bound_at="",
+                unbind_pending=False,
+            )
+            candidate.save_atomic(self.config_path)
+            self._stop_uploading()
+            with self._upload_lock:
+                self.config = candidate
+                self.upload_service = None
+            self.state["recording"] = "idle"
+            self.state["upload"] = "clear"
+            self.state["health"] = "binding_required"
+            self.state["latestError"] = ""
+
+    def _prepare_unbind(self) -> None:
+        with self._capture_transition_lock:
+            if self.state["recording"] != "idle":
+                raise CommandRejected("请先停止录音，再解除设备绑定")
+            if self.config_path is None:
+                raise ValueError("worker config path is required to prepare unbind")
+            candidate = replace(self.config, unbind_pending=True)
+            candidate.save_atomic(self.config_path)
+            self._stop_uploading()
+            with self._upload_lock:
+                self.config = candidate
+                self.upload_service = None
+            self.state["upload"] = "clear"
+            self.state["health"] = "binding_required"
+            self.state["latestError"] = "设备正在解绑，录音和上传已安全暂停"
 
     def _flush_queue(self) -> None:
         if self.upload_service is None:

@@ -40,7 +40,7 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
   const recording = getRecordingMeta(runtime.recording);
   const upload = getUploadMeta(runtime.upload);
   const health = getHealthMeta(runtime.health);
-  const location = formatLocation(runtime.location);
+  const location = formatBinding(snapshot.binding || runtime.binding);
   const canStart = runtime.safe && runtime.recording !== "recording";
 
   return (
@@ -90,11 +90,23 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
 }
 
 function BindingBanner({ snapshot, runtime, onOpen }) {
+  const [unbinding, setUnbinding] = useState(false);
   const binding = snapshot.binding;
   const rebindAllowed = canRebind({ ...snapshot, runtime });
-  if (!binding) return <section className="binding-gate unbound"><div className="binding-gate-icon"><AlertTriangle size={22} /></div><div><span className="binding-gate-label">需要完成设备配置</span><strong>设备尚未绑定班级或录播室</strong><p>绑定后录音 worker 会立即启用，无需重启客户端。</p></div><button className="binding-action" onClick={onOpen} data-testid="open-binding">扫码绑定设备</button></section>;
-  const type = binding.locationType === "studio" ? "公共录播室" : "班级教室";
-  return <section className="binding-gate bound"><div className="binding-gate-icon"><Check size={22} /></div><div><span className="binding-gate-label">当前采集位置 {binding.bindingSource === "mock" ? <em>模拟数据</em> : null}</span><strong>{binding.schoolName || "学校未命名"} · {binding.locationName}</strong><p>{type}{binding.className ? ` · ${binding.className}` : ""}</p></div><button className="binding-action subtle" onClick={onOpen} disabled={!rebindAllowed} title={rebindAllowed ? "" : "请先停止录音"} data-testid="open-binding">重新绑定</button></section>;
+  if (!binding) return <section className="binding-gate unbound"><div className="binding-gate-icon"><AlertTriangle size={22} /></div><div><span className="binding-gate-label">需要完成设备配置</span><strong>设备尚未绑定班级或公共教室</strong><p>使用 Passport 登录并选择教室后，录音服务会立即启用。</p></div><button className="binding-action" onClick={onOpen} data-testid="open-binding">登录并绑定设备</button></section>;
+  const type = binding.bindType === 2 ? "公共教室" : "班级教室";
+  const unbind = async () => {
+    if (!window.confirm("解除绑定后将立即停止生产上传，并要求重新绑定才能录音。确认继续吗？")) return;
+    setUnbinding(true);
+    try {
+      await shell.unbindDevice();
+    } catch (error) {
+      window.alert(error?.message || "解绑失败，请稍后重试");
+    } finally {
+      setUnbinding(false);
+    }
+  };
+  return <section className="binding-gate bound"><div className="binding-gate-icon"><Check size={22} /></div><div><span className="binding-gate-label">当前设备归属 {binding.bindingSource === "mock" ? <em>模拟数据</em> : null}</span><strong>{binding.schoolName || "学校未命名"} · {binding.classroom}</strong><p>{type}{binding.className ? ` · ${binding.className}` : ""}</p></div><button className="binding-action danger" onClick={unbind} disabled={!rebindAllowed || unbinding} title={rebindAllowed ? "" : "请先停止录音"}>{unbinding ? "正在解绑…" : "解除绑定"}</button><button className="binding-action subtle" onClick={onOpen} disabled={!rebindAllowed || unbinding} title={rebindAllowed ? "" : "请先停止录音"} data-testid="open-binding">重新绑定</button></section>;
 }
 
 function FloatingBall({ recording }) {
@@ -144,7 +156,7 @@ function SettingsModal({ snapshot, runtime, onClose }) {
         <label><span>麦克风设备 ID</span><input value={form.inputDevice} onChange={(event) => update("inputDevice", event.target.value)} /></label>
         <label><span>录音数据目录</span><input value={form.dataRoot} disabled={snapshot.dataRootLocked} onChange={(event) => update("dataRoot", event.target.value)} />{snapshot.dataRootLocked ? <small>如需修改请重新部署</small> : null}</label>
         <SettingRow title="开机自启状态" value={formatAutoLaunchStatus(snapshot.autoLaunchStatus)} />
-        <SettingRow title="位置" value={formatLocation(runtime.location)} /><SettingRow title="当前版本" value={`v${snapshot.appVersion || "--"}`} />
+        <SettingRow title="设备归属" value={formatBinding(snapshot.binding || runtime.binding)} /><SettingRow title="当前版本" value={`v${snapshot.appVersion || "--"}`} />
       </section>
       <section className="settings-section"><h3><HardDrive size={21} />运行诊断</h3>
         <SettingRow title="待上传队列" value={`${runtime.pending} 段`} /><SettingRow title="已完成队列" value={`${snapshot.completed ?? "--"} 段`} />
@@ -161,7 +173,7 @@ function Toggle({ title, checked, onChange }) { return <label className="toggle-
 function SettingRow({ title, value }) { return <article className="setting-row"><div><strong>{title}</strong></div><span>{value}</span></article>; }
 function StatusPill({ icon, label, tone }) { return <div className={`status-pill ${tone}`}>{icon}<span>{label}</span></div>; }
 function InfoTile({ icon, title, value, tone }) { return <div className={`info-tile ${tone}`}>{React.cloneElement(icon, { size: 25 })}<span>{title}</span><strong>{value}</strong></div>; }
-function formatLocation(location) { if (!location) return "位置未配置"; if (typeof location === "string") return location; return [location.school_name || location.schoolName, location.location_name || location.locationName || location.class_name].filter(Boolean).join(" · ") || "位置未配置"; }
+function formatBinding(binding) { if (!binding) return "设备未绑定"; return [binding.schoolName, binding.classroom].filter(Boolean).join(" · ") || "设备未绑定"; }
 function formatBytes(bytes) { const value = Number(bytes); if (!Number.isFinite(value)) return "--"; return `${(value / 1024 ** 3).toFixed(1)} GB`; }
 function formatAutoLaunchStatus(value) { if (!value) return "未验证"; if (value.status === "verified") return "已验证"; if (value.status === "failed") return `失败：${value.error || "未知错误"}`; return value.actual === null ? (value.error || "未验证") : `未验证（实际${value.actual ? "已开启" : "未开启"}）`; }
 

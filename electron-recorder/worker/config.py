@@ -15,9 +15,8 @@ BINDING_FIELD_MAP = {
     "deviceNo": "device_no",
     "schoolId": "school_id",
     "schoolName": "school_name",
-    "locationType": "location_type",
-    "locationId": "location_id",
-    "locationName": "location_name",
+    "bindType": "bind_type",
+    "classroom": "classroom",
     "classId": "class_id",
     "className": "class_name",
     "bindingSource": "binding_source",
@@ -39,13 +38,13 @@ class WorkerConfig:
     device_no: str = ""
     school_id: int | None = None
     school_name: str = ""
-    location_type: str = ""
-    location_id: str = ""
-    location_name: str = ""
+    bind_type: int | None = None
+    classroom: str = ""
     class_id: str = ""
     class_name: str = ""
     binding_source: str = ""
     bound_at: str = ""
+    unbind_pending: bool = False
     segment_seconds: int = 300
     checkpoint_seconds: int = 10
     auto_record_enabled: bool = False
@@ -59,6 +58,14 @@ class WorkerConfig:
         if not path.exists():
             return cls()
         payload = json.loads(path.read_text(encoding="utf-8"))
+        if "bind_type" not in payload and payload.get("location_type") in {"classroom", "studio"}:
+            classroom_binding = payload["location_type"] == "classroom"
+            payload["bind_type"] = 1 if classroom_binding else 2
+            payload["classroom"] = (
+                f"{payload.get('class_name', '').strip()}录音设备"
+                if classroom_binding and str(payload.get("class_name") or "").strip()
+                else str(payload.get("location_name") or "").strip()
+            )
         allowed = {field.name for field in fields(cls)}
         return cls(**{key: value for key, value in payload.items() if key in allowed})
 
@@ -121,22 +128,21 @@ def validate_binding_payload(payload: object) -> dict:
     values = {
         "deviceNo": _validate_binding_string(payload["deviceNo"], "deviceNo", 128),
         "schoolName": _validate_binding_string(payload["schoolName"], "schoolName", 256),
-        "locationId": _validate_binding_string(payload["locationId"], "locationId", 128),
-        "locationName": _validate_binding_string(payload["locationName"], "locationName", 256),
+        "classroom": _validate_binding_string(payload["classroom"], "classroom", 256),
         "classId": _validate_binding_string(payload["classId"], "classId", 128, allow_empty=True),
         "className": _validate_binding_string(payload["className"], "className", 256, allow_empty=True),
         "boundAt": _validate_binding_string(payload["boundAt"], "boundAt", 64),
     }
-    location_type = payload["locationType"]
-    if location_type not in {"classroom", "studio"}:
-        raise ValueError("locationType must be classroom or studio")
+    bind_type = payload["bindType"]
+    if type(bind_type) is not int or bind_type not in {1, 2}:
+        raise ValueError("bindType must be 1 or 2")
     binding_source = payload["bindingSource"]
     if binding_source not in {"mock", "remote"}:
         raise ValueError("bindingSource must be mock or remote")
-    if location_type == "classroom" and (not values["classId"] or not values["className"]):
+    if bind_type == 1 and (not values["classId"] or not values["className"]):
         raise ValueError("classroom binding requires classId and className")
-    if location_type == "studio" and (values["classId"] or values["className"]):
-        raise ValueError("studio binding cannot contain class identity")
+    if bind_type == 2 and (values["classId"] or values["className"]):
+        raise ValueError("public classroom binding cannot contain class identity")
     try:
         parsed_bound_at = datetime.fromisoformat(values["boundAt"].replace("Z", "+00:00"))
     except ValueError as error:
@@ -148,11 +154,10 @@ def validate_binding_payload(payload: object) -> dict:
         "deviceNo": values["deviceNo"],
         "schoolId": school_id,
         "schoolName": values["schoolName"],
-        "locationType": location_type,
-        "locationId": values["locationId"],
-        "locationName": values["locationName"],
-        "classId": values["classId"] if location_type == "classroom" else "",
-        "className": values["className"] if location_type == "classroom" else "",
+        "bindType": bind_type,
+        "classroom": values["classroom"],
+        "classId": values["classId"] if bind_type == 1 else "",
+        "className": values["className"] if bind_type == 1 else "",
         "bindingSource": binding_source,
         "boundAt": values["boundAt"],
     }
@@ -199,10 +204,12 @@ def evaluate_startup_gate(config: WorkerConfig, system_drive: str) -> StartupGat
         (
             config.device_no,
             config.school_id is not None,
-            config.location_id,
-            config.location_name,
+            config.bind_type in {1, 2},
+            config.classroom,
         )
     ):
+        return StartupGate(False, "binding_required")
+    if config.unbind_pending:
         return StartupGate(False, "binding_required")
     return StartupGate(True, "healthy")
 

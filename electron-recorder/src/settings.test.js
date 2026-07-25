@@ -21,7 +21,7 @@ test("preferences stay default before bootstrap and persist beside worker config
   const configPath = path.join(root, ".classroom-recorder", "worker-config.json");
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, "{}", "utf8");
-  assert.deepEqual(loadSettings(null), { autoLaunch: false, autoRecordEnabled: false, inputDevice: "default" });
+  assert.deepEqual(loadSettings(null), { autoLaunch: false, autoRecordEnabled: true, inputDevice: "default" });
   saveSettings(configPath, { autoLaunch: true, autoRecordEnabled: false, inputDevice: "default" });
   assert.equal(fs.existsSync(path.join(path.dirname(configPath), "settings.json")), true);
   assert.equal(loadSettings(configPath).autoLaunch, true);
@@ -38,7 +38,7 @@ test("settings persist across a fresh load without worker or binding fields", ()
 test("invalid or corrupt persisted settings fall back safely", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-settings-"));
   fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify({ autoLaunch: "yes", inputDevice: { id: 1 } }));
-  assert.deepEqual(loadSettings(path.join(root, "worker-config.json")), { autoLaunch: false, autoRecordEnabled: false, inputDevice: "default" });
+  assert.deepEqual(loadSettings(path.join(root, "worker-config.json")), { autoLaunch: false, autoRecordEnabled: true, inputDevice: "default" });
 });
 
 test("worker core settings are loaded as authority instead of stale Electron defaults", () => {

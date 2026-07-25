@@ -1,8 +1,8 @@
 export const initialBindingFlow = Object.freeze({
   phase: "closed",
   session: null,
-  schools: [],
-  locations: [],
+  grades: [],
+  classes: [],
   selection: {},
   binding: null,
   error: null,
@@ -13,36 +13,50 @@ export function bindingFlowReducer(state, action) {
     case "OPEN":
     case "RESTART":
       return { ...initialBindingFlow, phase: "creating" };
-    case "SESSION_UPDATED": {
-      const status = action.session?.status;
-      const phase = status === "waiting" ? "waiting" : status === "scanned" ? "scanned" :
-        status === "expired" ? "expired" : status === "confirmed" ? "confirmed" : state.phase;
-      return { ...state, session: action.session, phase, error: null };
-    }
-    case "SCHOOLS_LOADED":
-      return { ...state, schools: action.schools || [], phase: "school", error: null };
-    case "SELECT_SCHOOL":
+    case "SESSION_UPDATED":
       return {
         ...state,
-        phase: "locationType",
-        locations: [],
-        selection: { schoolId: action.schoolId },
+        session: action.session,
+        phase: action.session?.status === "authenticated" ? "bindingType" : state.phase,
+        error: null,
       };
-    case "SELECT_LOCATION_TYPE":
+    case "SELECT_BIND_TYPE":
+      if (action.bindType === 1) {
+        return { ...state, phase: "loadingGrades", grades: [], classes: [], selection: { bindType: 1 } };
+      }
+      if (action.bindType === 2) {
+        return { ...state, phase: "publicClassroom", grades: [], classes: [], selection: { bindType: 2 } };
+      }
+      return state;
+    case "GRADES_LOADED":
+      return { ...state, grades: action.grades || [], phase: "grade", error: null };
+    case "SELECT_GRADE":
       return {
         ...state,
-        phase: "loadingLocations",
-        locations: [],
-        selection: normalizeSelection({ ...state.selection, locationType: action.locationType }),
+        phase: "loadingClasses",
+        classes: [],
+        selection: { bindType: 1, gradeCode: action.gradeCode },
       };
-    case "LOCATIONS_LOADED":
-      return { ...state, locations: action.locations || [], phase: "location", error: null };
-    case "SELECT_LOCATION":
+    case "CLASSES_LOADED":
+      return { ...state, classes: action.classes || [], phase: "class", error: null };
+    case "SELECT_CLASS": {
+      const selected = state.classes.find(({ classId }) => String(classId) === String(action.classId));
+      if (!selected) return state;
       return {
         ...state,
         phase: "review",
-        selection: normalizeSelection({ ...state.selection, locationId: action.locationId }),
+        selection: {
+          ...state.selection,
+          classId: selected.classId,
+          className: selected.className,
+        },
       };
+    }
+    case "REVIEW_PUBLIC": {
+      const classroom = String(action.classroom || "").trim();
+      if (!classroom) return state;
+      return { ...state, phase: "review", selection: { bindType: 2, classroom } };
+    }
     case "CONFIRMING":
       return { ...state, phase: "confirming", error: null };
     case "CONFIRMED":
@@ -58,25 +72,23 @@ export function bindingFlowReducer(state, action) {
   }
 }
 
-export function normalizeSelection(selection = {}) {
-  if (selection.locationType !== "studio") return { ...selection };
-  return { ...selection, classId: "", className: "" };
-}
-
 export function canRebind(snapshot = {}) {
   const recording = snapshot.recordingState || snapshot.recording || snapshot.runtime?.recording || "idle";
   return recording === "idle";
 }
 
-export function canSimulateScan(mode) {
-  return mode === "mock";
-}
-
 function back(state) {
-  if (["location", "loadingLocations"].includes(state.phase)) {
-    return { ...state, phase: "locationType", locations: [], selection: { schoolId: state.selection.schoolId } };
+  if (state.phase === "grade") {
+    return { ...state, phase: "bindingType", grades: [], selection: {} };
   }
-  if (state.phase === "review") return { ...state, phase: "location" };
-  if (state.phase === "locationType") return { ...state, phase: "school", selection: {} };
+  if (["class", "loadingClasses"].includes(state.phase)) {
+    return { ...state, phase: "grade", classes: [], selection: { bindType: 1 } };
+  }
+  if (state.phase === "publicClassroom") {
+    return { ...state, phase: "bindingType", selection: {} };
+  }
+  if (state.phase === "review") {
+    return { ...state, phase: state.selection.bindType === 2 ? "publicClassroom" : "class" };
+  }
   return state;
 }

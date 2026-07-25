@@ -17,7 +17,7 @@ export function createRuntimeState(snapshot = {}) {
     upload: snapshot.upload || "clear",
     health,
     pending: Number.isFinite(pending) ? pending : 0,
-    location: snapshot.location || null,
+    binding: snapshot.binding || null,
     safe,
   };
 }
