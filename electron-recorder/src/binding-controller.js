@@ -13,7 +13,11 @@ export class BindingController {
   }
 
   async createSession() {
-    const deviceNo = this.resolveDeviceNo();
+    const snapshot = this.getSnapshot() || {};
+    const persistedDeviceNo = typeof snapshot.binding?.deviceNo === "string"
+      ? snapshot.binding.deviceNo.trim()
+      : "";
+    const deviceNo = persistedDeviceNo || this.resolveDeviceNo();
     if (!deviceNo) {
       throw controllerError("DEVICE_IDENTITY_UNAVAILABLE", "未找到可用的物理网卡设备标识");
     }

@@ -44,6 +44,22 @@ test("controller creates a session for the resolved device identity", async () =
   assert.deepEqual(calls, [["createSession", { deviceNo: "AABBCCDDEEFF" }]]);
 });
 
+test("rebind session reuses the persisted identity instead of following the current resolver", async () => {
+  const { controller, calls } = createFixture({
+    controller: {
+      resolveDeviceNo: () => "112233445566",
+      getSnapshot: () => ({
+        recording: "idle",
+        binding: { deviceNo: "AABBCCDDEEFF", locationId: "room-101" },
+      }),
+    },
+  });
+
+  await controller.createSession();
+
+  assert.deepEqual(calls, [["createSession", { deviceNo: "AABBCCDDEEFF" }]]);
+});
+
 test("controller proxies session and catalog operations without exposing the worker", async () => {
   const { controller, calls } = createFixture();
 
