@@ -87,16 +87,59 @@ def test_success_uploads_then_registers_metadata(tmp_path):
             "format": "wav",
             "code": "device-1",
             "deviceNo": "device-1",
-            "schoolId": None,
-            "locationId": "room-101",
             "startTime": "2026-07-07T00:00:00Z",
             "endTime": "2026-07-07T00:05:00Z",
             "rate": 16000,
             "bits": 16,
             "channel": 1,
             "audioType": 1,
+            "uploadStatus": 1,
         }
     ]
+
+
+def test_upload_failure_reports_status_3_before_scheduling_retry(tmp_path):
+    store = seeded_store(tmp_path, ["one.wav"])
+    metadata = FakeMetadataClient()
+    service = UploadService(store, FakeUploader({"one.wav"}), metadata)
+
+    result = service.run_once("2026-07-07T00:00:00Z")
+
+    assert result.status == "failed"
+    assert metadata.payloads == [
+        {
+            "segmentIndex": 1,
+            "fileName": "one.wav",
+            "filePath": "",
+            "fileSize": 5,
+            "format": "wav",
+            "code": "device-1",
+            "deviceNo": "device-1",
+            "startTime": "2026-07-07T00:00:00Z",
+            "endTime": "2026-07-07T00:05:00Z",
+            "rate": 16000,
+            "bits": 16,
+            "channel": 1,
+            "audioType": 1,
+            "uploadStatus": 3,
+            "failReason": "offline",
+        }
+    ]
+
+
+def test_missing_file_still_reports_status_3_with_zero_size(tmp_path):
+    store = QueueStore(tmp_path / "queue.db")
+    missing = tmp_path / "missing.ogg"
+    store.enqueue(segment(missing))
+    metadata = FakeMetadataClient()
+
+    result = UploadService(
+        store, FakeUploader({"missing.ogg"}), metadata
+    ).run_once("2026-07-07T00:00:00Z")
+
+    assert result.status == "failed"
+    assert metadata.payloads[0]["uploadStatus"] == 3
+    assert metadata.payloads[0]["fileSize"] == 0
 
 
 def test_retry_schedule_is_bounded_and_persisted(tmp_path):

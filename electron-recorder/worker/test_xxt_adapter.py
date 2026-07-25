@@ -21,14 +21,7 @@ def test_upload_uses_wisdom_oss_contract_and_server_authorized_directory(tmp_pat
     def post(endpoint, payload, *, auth=True):
         calls.append((endpoint, payload, client.token, auth))
         if endpoint.endswith("device-auth"):
-            return {
-                "accessToken": "device-token",
-                "expireDate": 4102444800000,
-                "schoolId": 1,
-                "schoolName": "测试学校",
-                "groupId": 2,
-                "groupName": "测试班级",
-            }
+            return {"accessToken": "device-token"}
         return {
             "accessKeyId": "key-id",
             "accessKeySecret": "key-secret",
@@ -91,7 +84,7 @@ def test_audio_metadata_uses_confirmed_server_contract(monkeypatch):
     assert result == {"success": True}
     assert calls == [
         (
-            "/audio/save-audio-file-info",
+            "/ai-lesson-eval/audio/save-audio-file-info",
             {
                 "deviceNo": "device-1",
                 "segmentIndex": 3,
@@ -134,12 +127,7 @@ def test_uploaded_restart_authenticates_then_registers_without_upload(tmp_path, 
     def post(endpoint, payload, *, auth=True):
         observed.append((endpoint, client.token, auth))
         if endpoint.endswith("device-auth"):
-            return {
-                "accessToken": "fresh-token",
-                "expireDate": 4102444800000,
-                "schoolId": 1,
-                "groupId": 2,
-            }
+            return {"accessToken": "fresh-token"}
         return {"ok": True}
 
     monkeypatch.setattr(client, "_post_json", post)
@@ -160,5 +148,39 @@ def test_uploaded_restart_authenticates_then_registers_without_upload(tmp_path, 
     assert observed[0][0].endswith("device-auth")
     save_calls = [call for call in observed if "save-audio" in call[0]]
     assert save_calls == [
-        ("/audio/save-audio-file-info", "fresh-token", True)
+        ("/ai-lesson-eval/audio/save-audio-file-info", "fresh-token", True)
+    ]
+
+
+def test_metadata_registration_refreshes_device_auth_without_using_expiry_fields(monkeypatch):
+    client = XxtDeviceApiClient("https://example.test")
+    issued = iter(["token-1", "token-2"])
+    observed = []
+
+    def post(endpoint, payload, *, auth=True):
+        if endpoint.endswith("device-auth"):
+            return {"accessToken": next(issued)}
+        observed.append((endpoint, client.token))
+        return {"ok": True}
+
+    monkeypatch.setattr(client, "_post_json", post)
+    manager = XxtUploadManager(client, "device-1")
+    adapter = XxtProductionAdapter(client, manager)
+    payload = {
+        "deviceNo": "device-1",
+        "segmentIndex": 1,
+        "fileName": "one.ogg",
+        "filePath": "https://files.test/one.ogg",
+        "fileSize": 5,
+        "format": "ogg",
+        "startTime": "2026-07-25T00:00:00+00:00",
+        "endTime": "2026-07-25T00:05:00+00:00",
+    }
+
+    adapter.save_audio_file_info(payload)
+    adapter.save_audio_file_info(payload)
+
+    assert observed == [
+        ("/ai-lesson-eval/audio/save-audio-file-info", "token-1"),
+        ("/ai-lesson-eval/audio/save-audio-file-info", "token-2"),
     ]

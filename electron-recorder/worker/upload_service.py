@@ -44,13 +44,24 @@ class UploadService:
             self.store.mark_uploaded(item.id, uploaded_url)
             return UploadResult(item.id, "uploaded")
         except Exception as exc:
+            failure_message = str(exc).strip() or type(exc).__name__
+            try:
+                self.metadata_client.save_audio_file_info(
+                    _metadata_payload(
+                        item,
+                        upload_status=3,
+                        fail_reason=failure_message,
+                    )
+                )
+            except Exception:
+                pass
             retry_at = current + timedelta(seconds=retry_delay(item.attempts))
-            self.store.mark_failed(item.id, str(exc), retry_at)
+            self.store.mark_failed(item.id, failure_message, retry_at)
             return UploadResult(
                 item.id,
                 "failed",
                 int(retry_at.timestamp() * 1000),
-                str(exc),
+                failure_message,
             )
 
     def _register(self, item, current):
@@ -71,16 +82,25 @@ class UploadService:
             )
 
 
-def _metadata_payload(item) -> dict:
-    return {
+def _metadata_payload(
+    item,
+    *,
+    upload_status: int = 1,
+    fail_reason: str = "",
+) -> dict:
+    try:
+        file_size = Path(item.local_path).stat().st_size
+    except OSError:
+        if upload_status == 1:
+            raise
+        file_size = 0
+    payload = {
         "code": item.code,
         "deviceNo": item.device_no,
-        "schoolId": item.school_id,
-        "locationId": item.location_id,
         "segmentIndex": item.segment_index,
         "fileName": Path(item.local_path).name,
-        "filePath": item.uploaded_url,
-        "fileSize": Path(item.local_path).stat().st_size,
+        "filePath": item.uploaded_url if upload_status == 1 else "",
+        "fileSize": file_size,
         "format": item.audio_format,
         "startTime": item.start_time,
         "endTime": item.end_time,
@@ -88,7 +108,11 @@ def _metadata_payload(item) -> dict:
         "bits": item.bits,
         "channel": item.channel,
         "audioType": item.audio_type,
+        "uploadStatus": upload_status,
     }
+    if upload_status == 3:
+        payload["failReason"] = fail_reason
+    return payload
 
 
 def _utc_datetime(value: str | datetime) -> datetime:

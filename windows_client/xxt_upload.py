@@ -48,24 +48,10 @@ class XxtTokenState:
 @dataclass
 class DeviceAuth:
     access_token: str
-    expire_at: datetime
-    school_id: int
-    school_name: str
-    unit_id: int
-    unit_name: str
-    arc_key: str = ""
 
     @classmethod
     def from_response(cls, data: dict[str, Any]) -> "DeviceAuth":
-        return cls(
-            access_token=str(data["accessToken"]),
-            expire_at=_millis_to_datetime(int(data["expireDate"])),
-            school_id=int(data["schoolId"]),
-            school_name=str(data.get("schoolName") or ""),
-            unit_id=int(data["groupId"]),
-            unit_name=str(data.get("groupName") or ""),
-            arc_key=str(data.get("arcKey") or ""),
-        )
+        return cls(access_token=str(data["accessToken"]))
 
 
 @dataclass
@@ -159,7 +145,6 @@ class XxtUploadManager:
         self.oss_config: OssConfig | None = None
 
     def upload(self, local_path: str | Path) -> str:
-        self._ensure_device_auth()
         self._ensure_oss_config()
         object_key = build_oss_object_key(
             Path(local_path).name, self.oss_config.upload_dir
@@ -167,20 +152,20 @@ class XxtUploadManager:
         uploader = self.uploader_factory(self.oss_config)
         return uploader.upload(local_path, object_key)
 
-    def _ensure_device_auth(self) -> None:
-        state = XxtTokenState(expire_at=self.device_auth_data.expire_at if self.device_auth_data else None)
-        if state.needs_refresh():
+    def _ensure_device_auth(self, *, refresh: bool = False) -> None:
+        if refresh or self.device_auth_data is None:
             self.device_auth_data = self.api_client.device_auth(self.device_no)
 
     def ensure_device_auth(self) -> DeviceAuth:
-        self._ensure_device_auth()
+        # The confirmed response contract exposes only accessToken, so refresh
+        # before each authenticated metadata request instead of inferring TTL.
+        self._ensure_device_auth(refresh=True)
         return self.device_auth_data
 
     def _ensure_oss_config(self) -> None:
         state = XxtTokenState(expire_at=self.oss_config.expire_at if self.oss_config else None)
         if state.needs_refresh():
-            if not self.device_auth_data:
-                self._ensure_device_auth()
+            self._ensure_device_auth(refresh=True)
             self.oss_config = self.api_client.get_oss_upload_token(self.device_auth_data.access_token)
 
 
@@ -208,15 +193,17 @@ class XxtDeviceApiClient(ClassroomApiClient):
 
     def save_audio_file_info(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._post_json(
-            "/audio/save-audio-file-info", self._server_audio_metadata(payload)
+            "/ai-lesson-eval/audio/save-audio-file-info",
+            self._server_audio_metadata(payload),
         )
 
     @staticmethod
     def _server_audio_metadata(payload: dict[str, Any]) -> dict[str, Any]:
         start_time = _record_time(str(payload["startTime"]))
         end_time = _record_time(str(payload["endTime"]))
-        file_path = str(payload["filePath"])
-        return {
+        file_path = str(payload.get("filePath") or "")
+        upload_status = int(payload.get("uploadStatus") or 1)
+        metadata = {
             "deviceNo": str(payload["deviceNo"]),
             "segmentIndex": int(payload["segmentIndex"]),
             "fileName": str(
@@ -228,8 +215,11 @@ class XxtDeviceApiClient(ClassroomApiClient):
             "duration": max(0, int((end_time - start_time).total_seconds())),
             "recordStartTime": start_time.strftime("%Y-%m-%d %H:%M:%S"),
             "recordEndTime": end_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "uploadStatus": 1,
+            "uploadStatus": upload_status,
         }
+        if upload_status == 3:
+            metadata["failReason"] = str(payload.get("failReason") or "").strip()
+        return metadata
 
     def _post_json(self, path: str, payload: dict[str, Any], *, auth: bool = True) -> dict[str, Any]:
         # Production XXT APIs expect Device-Access-Token instead of Bearer.
