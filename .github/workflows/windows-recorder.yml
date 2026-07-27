@@ -6,6 +6,7 @@ on:
     branches:
       - master
     paths:
+      - ".gitattributes"
       - ".github/workflows/windows-recorder.yml"
       - "electron-recorder/**"
       - "windows_client/xxt_upload.py"
@@ -17,6 +18,7 @@ on:
     tags:
       - "recorder-v*"
     paths:
+      - ".gitattributes"
       - ".github/workflows/windows-recorder.yml"
       - "electron-recorder/**"
       - "windows_client/xxt_upload.py"

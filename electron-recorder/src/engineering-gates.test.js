@@ -70,3 +70,17 @@ test("hook tooling and CI use a compatible Node.js baseline", () => {
   assert.equal(packageJson.engines.node, ">=22.22.1");
   assert.match(workflow, /^\s{10}node-version: "22\.22\.1"\s*$/m);
 });
+
+test("Git normalizes text files to LF before cross-platform formatting checks", () => {
+  const attributes = fs.readFileSync(
+    path.join(repositoryDir, ".gitattributes"),
+    "utf8"
+  );
+  const workflow = fs.readFileSync(
+    path.join(repositoryDir, ".github", "workflows", "windows-recorder.yml"),
+    "utf8"
+  );
+
+  assert.match(attributes, /^\* text=auto eol=lf$/m);
+  assert.equal(workflow.match(/^\s{6}- "\.gitattributes"$/gm)?.length, 2);
+});
