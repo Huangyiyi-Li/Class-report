@@ -47,7 +47,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22.12.0"
+          node-version: "22.22.1"
           cache: npm
           cache-dependency-path: electron-recorder/package-lock.json
 
@@ -63,6 +63,9 @@ jobs:
 
       - name: Install Node.js dependencies
         run: npm ci
+
+      - name: Check quality-gate formatting
+        run: npx prettier --check ../.github/workflows/windows-recorder.yml ../.lintstagedrc ../.prettierrc package.json src/engineering-gates.test.js
 
       - name: Run Python checks
         run: python -m pytest worker ../windows_client/test_timeouts.py -q
@@ -147,6 +150,7 @@ jobs:
       - name: Publish GitHub pre-release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           $assets = Get-ChildItem release -Filter *.exe | ForEach-Object { $_.FullName }
           gh release create $env:GITHUB_REF_NAME $assets --verify-tag --prerelease --title "课堂录音采集助手 $env:GITHUB_REF_NAME" --notes "Windows 10/11 测试版。优先下载 Setup 安装版；Portable 为免安装版。"

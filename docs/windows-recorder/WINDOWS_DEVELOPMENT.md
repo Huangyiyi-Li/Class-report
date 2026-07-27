@@ -4,7 +4,7 @@
 
 - Windows 10/11 x64 真机，不使用 Windows 7。
 - 仓库放在 Windows 本地磁盘；若使用 WSL，只将它作为辅助 shell，不把 Windows 安装和录音测试放进 WSL。
-- Node.js `22.12.0` 或满足 `^20.19.0 || >=22.12.0` 的版本。
+- Node.js `22.22.1` 或更高版本。
 - Python `3.11`，与 GitHub workflow 一致。
 - Git、GitHub CLI、PowerShell 7 可选。
 - 一个真实可用麦克风和一个非系统盘，例如 `D:` 或 `E:`。

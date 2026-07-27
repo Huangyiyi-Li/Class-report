@@ -1,5 +1,4 @@
 set -e
-cd electron-recorder
-npx lint-staged
-npm test
-npm run build
+npm --prefix electron-recorder exec -- lint-staged --cwd . --config .lintstagedrc
+npm --prefix electron-recorder test
+npm --prefix electron-recorder run build

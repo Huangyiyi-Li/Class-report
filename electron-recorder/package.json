@@ -23,7 +23,7 @@
     "prepare": "cd .. && husky electron-recorder/.husky"
   },
   "engines": {
-    "node": "^20.19.0 || >=22.12.0"
+    "node": ">=22.22.1"
   },
   "dependencies": {
     "@audio/encode-opus": "^1.0.2",
