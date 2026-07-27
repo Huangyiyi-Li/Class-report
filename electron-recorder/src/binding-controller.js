@@ -5,30 +5,47 @@ function controllerError(code, message) {
 }
 
 export class BindingController {
-  constructor({ service, resolveDeviceNo, getSnapshot, sendWorkerCommand }) {
+  constructor({
+    service,
+    resolveDeviceNo,
+    getSnapshot,
+    sendWorkerCommand,
+    resetAuthentication = async () => {},
+  }) {
     this.service = service;
     this.resolveDeviceNo = resolveDeviceNo;
     this.getSnapshot = getSnapshot;
     this.sendWorkerCommand = sendWorkerCommand;
+    this.resetAuthentication = resetAuthentication;
   }
 
   async createSession({ replaceDevice = false } = {}) {
     const snapshot = this.getSnapshot() || {};
-    const persistedDeviceNo = typeof snapshot.binding?.deviceNo === "string"
-      ? snapshot.binding.deviceNo.trim()
-      : "";
+    const persistedDeviceNo =
+      typeof snapshot.binding?.deviceNo === "string"
+        ? snapshot.binding.deviceNo.trim()
+        : "";
     const resolvedDeviceNo = this.resolveDeviceNo();
     const deviceNo = replaceDevice
       ? resolvedDeviceNo
       : persistedDeviceNo || resolvedDeviceNo;
     if (!deviceNo) {
-      throw controllerError("DEVICE_IDENTITY_UNAVAILABLE", "未找到可用的物理网卡设备标识");
+      throw controllerError(
+        "DEVICE_IDENTITY_UNAVAILABLE",
+        "未找到可用的物理网卡设备标识"
+      );
     }
     return this.service.createSession({ deviceNo });
   }
 
   createReplacementSession() {
     return this.createSession({ replaceDevice: true });
+  }
+
+  async restartSession(sessionId, { replaceDevice = false } = {}) {
+    await this.service.cancelSession(sessionId);
+    await this.resetAuthentication();
+    return this.createSession({ replaceDevice });
   }
 
   getSession(sessionId) {
@@ -45,10 +62,20 @@ export class BindingController {
 
   async confirmBinding(sessionId, selection) {
     const snapshot = this.getSnapshot() || {};
-    const recording = snapshot.recordingState || snapshot.recording || snapshot.runtime?.recording || "idle";
+    const recording =
+      snapshot.recordingState ||
+      snapshot.recording ||
+      snapshot.runtime?.recording ||
+      "idle";
     const isRebinding = Boolean(snapshot.binding);
-    if (["starting", "recording"].includes(recording) || (isRebinding && recording !== "idle")) {
-      throw controllerError("BINDING_REQUIRES_IDLE", "请先停止录音，再重新绑定位置");
+    if (
+      ["starting", "recording"].includes(recording) ||
+      (isRebinding && recording !== "idle")
+    ) {
+      throw controllerError(
+        "BINDING_REQUIRES_IDLE",
+        "请先停止录音，再重新绑定位置"
+      );
     }
 
     const binding = await this.service.confirmBinding(sessionId, selection);
@@ -63,16 +90,25 @@ export class BindingController {
     }
     this.#requireIdle(snapshot);
     await this.sendWorkerCommand("prepare_unbind", {});
-    const session = await this.service.createSession({ deviceNo: snapshot.binding.deviceNo });
+    const session = await this.service.createSession({
+      deviceNo: snapshot.binding.deviceNo,
+    });
     await this.service.unbindDevice(session.id);
     await this.sendWorkerCommand("clear_binding", {});
     return { success: true };
   }
 
   #requireIdle(snapshot) {
-    const recording = snapshot.recordingState || snapshot.recording || snapshot.runtime?.recording || "idle";
+    const recording =
+      snapshot.recordingState ||
+      snapshot.recording ||
+      snapshot.runtime?.recording ||
+      "idle";
     if (recording !== "idle") {
-      throw controllerError("BINDING_REQUIRES_IDLE", "请先停止录音，再变更设备绑定");
+      throw controllerError(
+        "BINDING_REQUIRES_IDLE",
+        "请先停止录音，再变更设备绑定"
+      );
     }
   }
 }

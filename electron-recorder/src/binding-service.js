@@ -64,6 +64,12 @@ export class MockBindingService {
     return publicSession(this.#getSession(sessionId));
   }
 
+  async cancelSession(sessionId) {
+    this.#getSession(sessionId);
+    this.sessions.delete(String(sessionId));
+    return { success: true };
+  }
+
   async listGrades(sessionId) {
     this.#getSession(sessionId);
     return copy(MOCK_GRADES);
@@ -139,6 +145,9 @@ export class UnavailableRemoteBindingService {
   async getSession() {
     throw this.#unavailable();
   }
+  async cancelSession() {
+    throw this.#unavailable();
+  }
   async listGrades() {
     throw this.#unavailable();
   }
@@ -203,6 +212,12 @@ export class RemoteBindingService {
 
   async getSession(sessionId) {
     return publicSession(this.#getSession(sessionId));
+  }
+
+  async cancelSession(sessionId) {
+    this.#getSession(sessionId);
+    this.sessions.delete(String(sessionId));
+    return { success: true };
   }
 
   async listGrades(sessionId) {

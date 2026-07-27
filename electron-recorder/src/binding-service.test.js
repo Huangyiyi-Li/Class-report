@@ -122,6 +122,17 @@ test("remote mode uses the Passport identity for grade and class calls", async (
   ]);
 });
 
+test("cancelling a remote binding session prevents the old identity from being reused", async () => {
+  const service = remoteFixture([]);
+  const session = await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+
+  await service.cancelSession(session.id);
+
+  await assert.rejects(service.getSession(session.id), {
+    code: "BINDING_SESSION_NOT_FOUND",
+  });
+});
+
 test("remote classroom binding sends the confirmed request contract", async () => {
   const requests = [];
   const service = remoteFixture(requests);

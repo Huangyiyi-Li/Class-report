@@ -90,6 +90,24 @@ test("back navigation does not retain stale class or public data", () => {
   assert.equal(publicBack.phase, "publicClassroom");
 });
 
+test("switching Passport identity clears the unconfirmed binding flow", () => {
+  const switching = bindingFlowReducer(
+    {
+      ...initialBindingFlow,
+      phase: "grade",
+      session,
+      grades: [{ gradeCode: 1, gradeName: "一年级" }],
+      selection: { bindType: 1 },
+    },
+    { type: "SWITCH_IDENTITY" }
+  );
+
+  assert.deepEqual(switching, {
+    ...initialBindingFlow,
+    phase: "switchingIdentity",
+  });
+});
+
 test("confirmed binding is retained until the wizard closes", () => {
   const confirmed = bindingFlowReducer(
     { ...initialBindingFlow, phase: "confirming" },

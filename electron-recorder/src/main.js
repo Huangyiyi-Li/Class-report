@@ -84,10 +84,12 @@ function isScreenPoint(point) {
 
 function initializeBindingController() {
   let authenticate;
+  let resetAuthentication = async () => {};
   if (bindingServiceMode === "remote") {
     const passportSession = electronSession.fromPartition(
       "classroom-recorder-passport"
     );
+    resetAuthentication = () => passportSession.clearStorageData();
     authenticate = createPassportAuthenticator({
       browserSession: passportSession,
       createWindow: () => {
@@ -137,6 +139,7 @@ function initializeBindingController() {
       }
       return supervisor.sendCommand(command, payload);
     },
+    resetAuthentication,
   });
 }
 const hasSingleInstanceLock = configureSingleInstance(app, () => {
@@ -794,6 +797,9 @@ if (hasSingleInstanceLock)
     );
     ipcMain.handle("binding:get-session", (_event, sessionId) =>
       bindingController.getSession(sessionId)
+    );
+    ipcMain.handle("binding:restart-session", (_event, sessionId, options) =>
+      bindingController.restartSession(sessionId, options)
     );
     ipcMain.handle("binding:list-grades", (_event, sessionId) =>
       bindingController.listGrades(sessionId)

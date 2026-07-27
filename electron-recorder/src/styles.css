@@ -1194,6 +1194,40 @@ h1 {
   line-height: 1.55;
 }
 
+.binding-switch-identity {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 42px;
+  margin-top: -6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8f4ef;
+  cursor: pointer;
+  font-weight: 850;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.binding-switch-identity:hover {
+  border-color: rgba(74, 217, 117, 0.56);
+  background: rgba(74, 217, 117, 0.14);
+  transform: translateY(-1px);
+}
+
+.binding-switch-identity:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .binding-step-panel {
   min-width: 0;
   padding: 24px 30px 28px;

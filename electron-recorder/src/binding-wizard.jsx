@@ -100,6 +100,19 @@ export function BindingWizard({
     }
   };
 
+  const switchIdentity = async () => {
+    if (!state.session?.id || state.phase === "switchingIdentity") return;
+    dispatch({ type: "SWITCH_IDENTITY" });
+    try {
+      const session = await api.restartBindingSession(state.session.id, {
+        replaceDevice,
+      });
+      dispatch({ type: "SESSION_UPDATED", session });
+    } catch (error) {
+      fail(dispatch, error);
+    }
+  };
+
   if (!open) return null;
   return (
     <div className="modal-backdrop binding-backdrop" role="presentation">
@@ -147,7 +160,11 @@ export function BindingWizard({
           />
         ) : (
           <div className="binding-workbench">
-            <IdentityPanel state={state} mode={bindingServiceMode} />
+            <IdentityPanel
+              state={state}
+              mode={bindingServiceMode}
+              onSwitchIdentity={switchIdentity}
+            />
             <section
               className="binding-step-panel"
               data-binding-step={state.phase}
@@ -170,7 +187,7 @@ export function BindingWizard({
   );
 }
 
-function IdentityPanel({ state, mode }) {
+function IdentityPanel({ state, mode, onSwitchIdentity }) {
   const user = state.session?.user;
   return (
     <aside className="binding-identity-panel">
@@ -182,16 +199,27 @@ function IdentityPanel({ state, mode }) {
         <strong>{shortDevice(state.session?.deviceNo)}</strong>
       </div>
       {user ? (
-        <div className="binding-review">
-          <div>
-            <dt>当前学校</dt>
-            <dd>{user.schoolName}</dd>
+        <>
+          <div className="binding-review">
+            <div>
+              <dt>当前学校</dt>
+              <dd>{user.schoolName}</dd>
+            </div>
+            <div>
+              <dt>登录身份</dt>
+              <dd>{user.userName}</dd>
+            </div>
           </div>
-          <div>
-            <dt>登录身份</dt>
-            <dd>{user.userName}</dd>
-          </div>
-        </div>
+          <button
+            className="binding-switch-identity"
+            type="button"
+            onClick={onSwitchIdentity}
+            disabled={state.phase === "confirming"}
+          >
+            <RotateCcw size={16} />
+            更换账号或学校
+          </button>
+        </>
       ) : (
         <p>
           {mode === "mock"
@@ -229,14 +257,23 @@ function StepContent({
   onConfirm,
   onClose,
 }) {
-  if (state.phase === "creating") {
+  if (state.phase === "creating" || state.phase === "switchingIdentity") {
+    const switchingIdentity = state.phase === "switchingIdentity";
     return (
       <LoadingStep
-        title={mode === "mock" ? "正在准备模拟身份" : "等待 Passport 登录"}
+        title={
+          switchingIdentity
+            ? "正在退出当前身份"
+            : mode === "mock"
+              ? "正在准备模拟身份"
+              : "等待 Passport 登录"
+        }
         detail={
-          mode === "mock"
-            ? "正在载入学校身份…"
-            : "请在弹出的窗口登录，并选择本次要使用的学校身份。"
+          switchingIdentity
+            ? "即将重新打开 Passport，请重新登录并选择学校。"
+            : mode === "mock"
+              ? "正在载入学校身份…"
+              : "请在弹出的窗口登录，并选择本次要使用的学校身份。"
         }
       />
     );
@@ -547,7 +584,7 @@ function shortDevice(value) {
   return text.length > 8 ? `${text.slice(0, 4)} · ${text.slice(-4)}` : text;
 }
 function stepNumber(phase) {
-  if (phase === "creating") return 1;
+  if (["creating", "switchingIdentity"].includes(phase)) return 1;
   if (phase === "bindingType") return 2;
   if (
     [
