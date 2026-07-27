@@ -121,3 +121,25 @@ test("Windows distributions are separate direct artifacts and tags publish a pre
     /优先下载 Setup 安装版；Portable 仅用于临时免安装测试。/
   );
 });
+
+test("successful feature-branch pushes allocate a new beta tag and publish a prerelease", () => {
+  const workflow = fs.readFileSync(
+    path.join(repositoryDir, ".github", "workflows", "windows-recorder.yml"),
+    "utf8"
+  );
+
+  assert.match(
+    workflow,
+    /github\.event_name == 'push' && github\.ref == 'refs\/heads\/feat\/windows-recorder-production'/
+  );
+  assert.match(workflow, /^\s{6}- name: Determine release identity\s*$/m);
+  assert.match(workflow, /\$nextBeta = \$highestBeta \+ 1/);
+  assert.match(
+    workflow,
+    /npm version --no-git-tag-version "\$\{\{ steps\.release_meta\.outputs\.version \}\}"/
+  );
+  assert.match(
+    workflow,
+    /gh release create \$releaseTag \$assets --target \$env:GITHUB_SHA --prerelease/
+  );
+});

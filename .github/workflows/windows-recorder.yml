@@ -35,6 +35,9 @@ jobs:
   build-windows-installer:
     runs-on: windows-2022
     timeout-minutes: 45
+    outputs:
+      release_tag: ${{ steps.release_meta.outputs.tag }}
+      release_version: ${{ steps.release_meta.outputs.version }}
     defaults:
       run:
         shell: pwsh
@@ -45,6 +48,35 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Determine release identity
+        id: release_meta
+        run: |
+          $isAutomaticRelease = "${{ github.event_name == 'push' && github.ref == 'refs/heads/feat/windows-recorder-production' }}" -eq "true"
+          if (-not $isAutomaticRelease) {
+            if ($env:GITHUB_REF -like "refs/tags/recorder-v*") {
+              $version = $env:GITHUB_REF_NAME -replace "^recorder-v", ""
+              "tag=$env:GITHUB_REF_NAME" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            }
+            exit 0
+          }
+
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $baseVersion = $package.version -replace "-.*$", ""
+          $tagPattern = "^recorder-v$([regex]::Escape($baseVersion))-beta\.(\d+)$"
+          $highestBeta = 0
+          git tag --list "recorder-v$baseVersion-beta.*" | ForEach-Object {
+            if ($_ -match $tagPattern) {
+              $highestBeta = [Math]::Max($highestBeta, [int]$Matches[1])
+            }
+          }
+          $nextBeta = $highestBeta + 1
+          $version = "$baseVersion-beta.$nextBeta"
+          "tag=recorder-v$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -65,6 +97,10 @@ jobs:
 
       - name: Install Node.js dependencies
         run: npm ci
+
+      - name: Apply automatic release version
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feat/windows-recorder-production'
+        run: npm version --no-git-tag-version "${{ steps.release_meta.outputs.version }}"
 
       - name: Check quality-gate formatting
         run: npx prettier --check ../.github/workflows/windows-recorder.yml ../.lintstagedrc ../.prettierrc package.json src/engineering-gates.test.js
@@ -145,7 +181,7 @@ jobs:
           archive: false
 
   publish-github-prerelease:
-    if: startsWith(github.ref, 'refs/tags/recorder-v')
+    if: needs.build-windows-installer.outputs.release_tag != ''
     needs: build-windows-installer
     runs-on: windows-2022
     permissions:
@@ -169,6 +205,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.build-windows-installer.outputs.release_tag }}
         run: |
           $assets = Get-ChildItem release -Filter *.exe | ForEach-Object { $_.FullName }
-          gh release create $env:GITHUB_REF_NAME $assets --verify-tag --prerelease --title "课堂录音采集助手 $env:GITHUB_REF_NAME" --notes "Windows 10/11 测试版。优先下载 Setup 安装版；Portable 仅用于临时免安装测试。"
+          $releaseTag = $env:RELEASE_TAG
+          $title = "课堂录音采集助手 $releaseTag"
+          $notes = "Windows 10/11 测试版。优先下载 Setup 安装版；Portable 仅用于临时免安装测试。"
+          if ($env:GITHUB_REF -eq "refs/heads/feat/windows-recorder-production") {
+            gh release create $releaseTag $assets --target $env:GITHUB_SHA --prerelease --title $title --notes $notes
+          } else {
+            gh release create $releaseTag $assets --verify-tag --prerelease --title $title --notes $notes
+          }
