@@ -40,6 +40,8 @@ test("authenticated users can restart binding with a different Passport identity
   assert.match(wizard, /更换账号或学校/);
   assert.match(wizard, /api\.restartBindingSession/);
   assert.match(styles, /\.binding-switch-identity\s*\{/);
+  assert.match(styles, /@media \(max-height: 720px\) and/);
+  assert.match(styles, /\.qr-frame\s*\{[\s\S]*?width: 190px/);
   assert.match(preload, /restartBindingSession/);
   assert.match(main, /binding:restart-session/);
 });
