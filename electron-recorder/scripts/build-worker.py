@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+ENTRYPOINT = ROOT / "worker" / "recorder_worker.py"
+OUTPUT = ROOT / "build" / "worker"
+
+
+def main() -> int:
+    if sys.platform != "win32":
+        print("ClassroomRecorderWorker.exe must be built on Windows.", file=sys.stderr)
+        return 1
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            "--noconfirm",
+            "--clean",
+            "--onefile",
+            "--noconsole",
+            "--paths",
+            str(ROOT.parent),
+            "--hidden-import",
+            "sounddevice",
+            "--hidden-import",
+            "numpy",
+            "--hidden-import",
+            "windows_client.xxt_upload",
+            "--hidden-import",
+            "oss2",
+            "--collect-all",
+            "oss2",
+            "--copy-metadata",
+            "oss2",
+            "--name",
+            "ClassroomRecorderWorker",
+            "--distpath",
+            str(OUTPUT),
+            "--workpath",
+            str(ROOT / "worker" / "build"),
+            "--specpath",
+            str(ROOT / "worker"),
+            str(ENTRYPOINT),
+        ],
+        cwd=ROOT,
+        check=True,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

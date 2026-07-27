@@ -1,0 +1,4 @@
+set -e
+npm --prefix electron-recorder exec -- lint-staged --cwd . --config .lintstagedrc
+npm --prefix electron-recorder test
+npm --prefix electron-recorder run build
