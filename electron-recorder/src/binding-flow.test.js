@@ -11,7 +11,12 @@ const session = {
   id: "session-1",
   status: "authenticated",
   deviceNo: "AABBCCDDEEFF",
-  user: { schoolId: 1001, schoolName: "星河实验学校", userName: "黄老师", userType: 1 },
+  user: {
+    schoolId: 1001,
+    schoolName: "星河实验学校",
+    userName: "黄老师",
+    userType: 0,
+  },
 };
 
 test("authenticated Passport session advances directly to binding type", () => {
@@ -51,36 +56,54 @@ test("public classroom flow requires a trimmed name", () => {
   let state = { ...initialBindingFlow, phase: "bindingType", session };
   state = bindingFlowReducer(state, { type: "SELECT_BIND_TYPE", bindType: 2 });
   assert.equal(state.phase, "publicClassroom");
-  state = bindingFlowReducer(state, { type: "REVIEW_PUBLIC", classroom: "  多媒体教室录音设备  " });
+  state = bindingFlowReducer(state, {
+    type: "REVIEW_PUBLIC",
+    classroom: "  多媒体教室录音设备  ",
+  });
   assert.equal(state.phase, "review");
-  assert.deepEqual(state.selection, { bindType: 2, classroom: "多媒体教室录音设备" });
+  assert.deepEqual(state.selection, {
+    bindType: 2,
+    classroom: "多媒体教室录音设备",
+  });
 });
 
 test("back navigation does not retain stale class or public data", () => {
-  const classBack = bindingFlowReducer({
-    ...initialBindingFlow,
-    phase: "grade",
-    selection: { bindType: 1 },
-  }, { type: "BACK" });
+  const classBack = bindingFlowReducer(
+    {
+      ...initialBindingFlow,
+      phase: "grade",
+      selection: { bindType: 1 },
+    },
+    { type: "BACK" }
+  );
   assert.equal(classBack.phase, "bindingType");
   assert.deepEqual(classBack.selection, {});
 
-  const publicBack = bindingFlowReducer({
-    ...initialBindingFlow,
-    phase: "review",
-    selection: { bindType: 2, classroom: "多媒体教室录音设备" },
-  }, { type: "BACK" });
+  const publicBack = bindingFlowReducer(
+    {
+      ...initialBindingFlow,
+      phase: "review",
+      selection: { bindType: 2, classroom: "多媒体教室录音设备" },
+    },
+    { type: "BACK" }
+  );
   assert.equal(publicBack.phase, "publicClassroom");
 });
 
 test("confirmed binding is retained until the wizard closes", () => {
-  const confirmed = bindingFlowReducer({ ...initialBindingFlow, phase: "confirming" }, {
-    type: "CONFIRMED",
-    binding: { bindType: 1, classroom: "1.1班录音设备" },
-  });
+  const confirmed = bindingFlowReducer(
+    { ...initialBindingFlow, phase: "confirming" },
+    {
+      type: "CONFIRMED",
+      binding: { bindType: 1, classroom: "1.1班录音设备" },
+    }
+  );
   assert.equal(confirmed.phase, "confirmed");
   assert.equal(confirmed.binding.classroom, "1.1班录音设备");
-  assert.deepEqual(bindingFlowReducer(confirmed, { type: "CLOSE" }), initialBindingFlow);
+  assert.deepEqual(
+    bindingFlowReducer(confirmed, { type: "CLOSE" }),
+    initialBindingFlow
+  );
 });
 
 test("rebind is available only when the recorder is idle", () => {

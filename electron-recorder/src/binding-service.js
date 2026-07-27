@@ -4,7 +4,7 @@ const MOCK_USER = Object.freeze({
   schoolId: 1001,
   schoolName: "星河实验学校",
   userName: "测试教师",
-  userType: 1,
+  userType: 0,
 });
 const MOCK_GRADES = Object.freeze([
   { gradeCode: 1, gradeName: "一年级" },
@@ -78,7 +78,10 @@ export class MockBindingService {
   async confirmBinding(sessionId, selection = {}) {
     const session = this.#getSession(sessionId);
     if (session.status !== "authenticated") {
-      throw bindingError("BINDING_SESSION_INVALID_STATE", "binding session is already confirmed");
+      throw bindingError(
+        "BINDING_SESSION_INVALID_STATE",
+        "binding session is already confirmed"
+      );
     }
     const request = bindingRequest(session, selection);
     const classroomBinding = request.bindType === 1;
@@ -89,7 +92,9 @@ export class MockBindingService {
       bindType: request.bindType,
       classroom: request.classroom,
       classId: classroomBinding ? String(request.classId) : "",
-      className: classroomBinding ? requireNonEmptyString(selection.className, "className") : "",
+      className: classroomBinding
+        ? requireNonEmptyString(selection.className, "className")
+        : "",
       bindingSource: "mock",
       boundAt: new Date(this.now()).toISOString(),
     };
@@ -102,7 +107,10 @@ export class MockBindingService {
   async unbindDevice(sessionId) {
     const session = this.#getSession(sessionId);
     if (session.status !== "authenticated") {
-      throw bindingError("BINDING_SESSION_INVALID_STATE", "binding session is already confirmed");
+      throw bindingError(
+        "BINDING_SESSION_INVALID_STATE",
+        "binding session is already confirmed"
+      );
     }
     session.status = "confirmed";
     return { success: true };
@@ -111,7 +119,10 @@ export class MockBindingService {
   #getSession(sessionId) {
     const session = this.sessions.get(String(sessionId));
     if (!session) {
-      throw bindingError("BINDING_SESSION_NOT_FOUND", "binding session was not found");
+      throw bindingError(
+        "BINDING_SESSION_NOT_FOUND",
+        "binding session was not found"
+      );
     }
     return session;
   }
@@ -122,14 +133,27 @@ export class UnavailableRemoteBindingService {
     this.mode = "remote";
   }
 
-  async createSession() { throw this.#unavailable(); }
-  async getSession() { throw this.#unavailable(); }
-  async listGrades() { throw this.#unavailable(); }
-  async listClasses() { throw this.#unavailable(); }
-  async confirmBinding() { throw this.#unavailable(); }
+  async createSession() {
+    throw this.#unavailable();
+  }
+  async getSession() {
+    throw this.#unavailable();
+  }
+  async listGrades() {
+    throw this.#unavailable();
+  }
+  async listClasses() {
+    throw this.#unavailable();
+  }
+  async confirmBinding() {
+    throw this.#unavailable();
+  }
 
   #unavailable() {
-    return bindingError("BINDING_SERVICE_UNAVAILABLE", "binding service is not configured");
+    return bindingError(
+      "BINDING_SERVICE_UNAVAILABLE",
+      "binding service is not configured"
+    );
   }
 }
 
@@ -141,7 +165,10 @@ export class RemoteBindingService {
     restBaseUrl = "https://rest.xxt.cn",
   } = {}) {
     if (typeof authenticate !== "function") {
-      throw bindingError("BINDING_SERVICE_UNAVAILABLE", "binding service is not configured");
+      throw bindingError(
+        "BINDING_SERVICE_UNAVAILABLE",
+        "binding service is not configured"
+      );
     }
     this.mode = "remote";
     this.authenticate = authenticate;
@@ -156,7 +183,10 @@ export class RemoteBindingService {
     const authenticated = await this.authenticate();
     const user = normalizeAuthenticatedUser(authenticated?.user);
     if (typeof authenticated?.post !== "function") {
-      throw bindingError("PASSPORT_SESSION_INVALID", "登录会话不能调用绑定接口");
+      throw bindingError(
+        "PASSPORT_SESSION_INVALID",
+        "登录会话不能调用绑定接口"
+      );
     }
     const id = String(this.createId());
     const session = {
@@ -179,7 +209,7 @@ export class RemoteBindingService {
     const session = this.#getSession(sessionId);
     const response = await session.post(
       `${this.restBaseUrl}/ai-lesson-eval/basic-data/get-grade-list`,
-      {},
+      {}
     );
     return normalizeListResponse(response, "grade list").map((grade) => ({
       gradeCode: requirePositiveInteger(grade?.gradeCode, "gradeCode"),
@@ -192,7 +222,7 @@ export class RemoteBindingService {
     const normalizedGradeCode = requirePositiveInteger(gradeCode, "gradeCode");
     const response = await session.post(
       `${this.restBaseUrl}/ai-lesson-eval/basic-data/get-class-list`,
-      { gradeCode: normalizedGradeCode },
+      { gradeCode: normalizedGradeCode }
     );
     return normalizeListResponse(response, "class list").map((classroom) => ({
       classId: requirePositiveInteger(classroom?.classId, "classId"),
@@ -203,12 +233,15 @@ export class RemoteBindingService {
   async confirmBinding(sessionId, selection = {}) {
     const session = this.#getSession(sessionId);
     if (session.status !== "authenticated") {
-      throw bindingError("BINDING_SESSION_INVALID_STATE", "绑定会话已经使用，请重新登录");
+      throw bindingError(
+        "BINDING_SESSION_INVALID_STATE",
+        "绑定会话已经使用，请重新登录"
+      );
     }
     const request = bindingRequest(session, selection);
     const response = await session.post(
       `${this.restBaseUrl}/ai-lesson-eval/recording-device/bind-device`,
-      request,
+      request
     );
     requireSuccessfulMutation(response, "绑定失败");
     const classroomBinding = request.bindType === 1;
@@ -234,11 +267,14 @@ export class RemoteBindingService {
   async unbindDevice(sessionId) {
     const session = this.#getSession(sessionId);
     if (session.status !== "authenticated") {
-      throw bindingError("BINDING_SESSION_INVALID_STATE", "绑定会话已经使用，请重新登录");
+      throw bindingError(
+        "BINDING_SESSION_INVALID_STATE",
+        "绑定会话已经使用，请重新登录"
+      );
     }
     const response = await session.post(
       `${this.restBaseUrl}/ai-lesson-eval/recording-device/unbind-device`,
-      { deviceNo: session.deviceNo },
+      { deviceNo: session.deviceNo }
     );
     requireSuccessfulMutation(response, "解绑失败");
     session.status = "confirmed";
@@ -249,7 +285,10 @@ export class RemoteBindingService {
   #getSession(sessionId) {
     const session = this.sessions.get(String(sessionId));
     if (!session) {
-      throw bindingError("BINDING_SESSION_NOT_FOUND", "binding session was not found");
+      throw bindingError(
+        "BINDING_SESSION_NOT_FOUND",
+        "binding session was not found"
+      );
     }
     return session;
   }
@@ -257,22 +296,29 @@ export class RemoteBindingService {
 
 export function createBindingService(options = {}) {
   if (options.mode === "mock") return new MockBindingService(options);
-  if (typeof options.authenticate === "function") return new RemoteBindingService(options);
+  if (typeof options.authenticate === "function")
+    return new RemoteBindingService(options);
   return new UnavailableRemoteBindingService();
 }
 
 function normalizeAuthenticatedUser(value) {
   if (!value || typeof value !== "object") {
-    throw bindingError("PASSPORT_IDENTITY_INVALID", "未读取到 Passport 登录身份");
+    throw bindingError(
+      "PASSPORT_IDENTITY_INVALID",
+      "未读取到 Passport 登录身份"
+    );
   }
   const user = {
     schoolId: requirePositiveInteger(value.schoolId, "schoolId"),
     schoolName: requireNonEmptyString(value.schoolName, "schoolName"),
     userName: requireNonEmptyString(value.userName, "userName"),
-    userType: requirePositiveInteger(value.userType, "userType"),
+    userType: requireNonNegativeInteger(value.userType, "userType"),
   };
-  if (user.userType !== 1) {
-    throw bindingError("PASSPORT_ROLE_NOT_ALLOWED", "当前身份不是教师侧身份，不能绑定录音设备");
+  if (user.userType !== 0) {
+    throw bindingError(
+      "PASSPORT_ROLE_NOT_ALLOWED",
+      "当前身份不是教师侧身份，不能绑定录音设备"
+    );
   }
   return user;
 }
@@ -290,15 +336,19 @@ function publicSession(session) {
 function normalizeListResponse(value, field) {
   if (Array.isArray(value)) return value;
   if (Array.isArray(value?.data)) return value.data;
-  throw bindingError("BINDING_RESPONSE_INVALID", `${field} response is invalid`);
+  throw bindingError(
+    "BINDING_RESPONSE_INVALID",
+    `${field} response is invalid`
+  );
 }
 
 function requireSuccessfulMutation(value, fallback) {
-  const success = value === true || value?.success === true || value?.data?.success === true;
+  const success =
+    value === true || value?.success === true || value?.data?.success === true;
   if (!success) {
     throw bindingError(
       "BINDING_REJECTED",
-      requireOptionalMessage(value?.message || value?.data?.message) || fallback,
+      requireOptionalMessage(value?.message || value?.data?.message) || fallback
     );
   }
 }
@@ -312,7 +362,23 @@ function requirePositiveInteger(value, field) {
     value = Number(value);
   }
   if (!Number.isInteger(value) || value <= 0) {
-    throw bindingError("BINDING_REQUEST_INVALID", `${field} must be a positive integer`);
+    throw bindingError(
+      "BINDING_REQUEST_INVALID",
+      `${field} must be a positive integer`
+    );
+  }
+  return value;
+}
+
+function requireNonNegativeInteger(value, field) {
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) {
+    value = Number(value);
+  }
+  if (!Number.isInteger(value) || value < 0) {
+    throw bindingError(
+      "BINDING_REQUEST_INVALID",
+      `${field} must be a non-negative integer`
+    );
   }
   return value;
 }

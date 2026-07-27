@@ -172,3 +172,10 @@ test("NSIS and portable installers use distinct artifact names", () => {
   assert.match(pkg.build.portable.artifactName, /Portable/);
   assert.notEqual(pkg.build.nsis.artifactName, pkg.build.portable.artifactName);
 });
+
+test("Passport BrowserWindow applies the display-aware layout and zoom factor", () => {
+  const main = readFileSync(path.join(root, "src/main.js"), "utf8");
+  assert.match(main, /getPassportWindowLayout/);
+  assert.match(main, /workAreaSize/);
+  assert.match(main, /zoomFactor:\s*passportLayout\.zoomFactor/);
+});

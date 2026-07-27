@@ -6,6 +6,7 @@ import {
   CURRENT_USER_URL,
   PASSPORT_LOGIN_URL,
   createPassportAuthenticator,
+  getPassportWindowLayout,
   isPassportConsoleUrl,
 } from "./passport-login.js";
 
@@ -51,13 +52,24 @@ function response(body, { status = 200 } = {}) {
 }
 
 test("only the authenticated szjx console is a login completion URL", () => {
-  assert.equal(isPassportConsoleUrl("https://szjx-console.xxt.cn/user-data/home"), true);
+  assert.equal(
+    isPassportConsoleUrl("https://szjx-console.xxt.cn/user-data/home"),
+    true
+  );
   assert.equal(isPassportConsoleUrl("https://szjx.xxt.cn/"), false);
-  assert.equal(isPassportConsoleUrl("https://passport.xxt.cn/user-select-pre"), false);
-  assert.equal(isPassportConsoleUrl("https://szjx-console.xxt.cn.evil.test/user-data/home"), false);
+  assert.equal(
+    isPassportConsoleUrl("https://passport.xxt.cn/user-select-pre"),
+    false
+  );
+  assert.equal(
+    isPassportConsoleUrl(
+      "https://szjx-console.xxt.cn.evil.test/user-data/home"
+    ),
+    false
+  );
 });
 
-test("Passport authenticator waits for the console and reuses its session for REST calls", async () => {
+test("Passport authenticator accepts the live teacher userType and reuses its session", async () => {
   const window = new FakeWindow();
   const requests = [];
   const browserSession = {
@@ -68,7 +80,7 @@ test("Passport authenticator waits for the console and reuses its session for RE
           schoolId: 9001,
           schoolName: "众享中学",
           userName: "测试教师",
-          userType: 1,
+          userType: 0,
         });
       }
       return response({ success: true });
@@ -86,7 +98,7 @@ test("Passport authenticator waits for the console and reuses its session for RE
   window.webContents.emit(
     "did-redirect-navigation",
     {},
-    "https://szjx-console.xxt.cn/user-data/home",
+    "https://szjx-console.xxt.cn/user-data/home"
   );
   const authenticated = await login;
 
@@ -94,18 +106,39 @@ test("Passport authenticator waits for the console and reuses its session for RE
     schoolId: 9001,
     schoolName: "众享中学",
     userName: "测试教师",
-    userType: 1,
+    userType: 0,
   });
   assert.equal(window.destroyed, true);
-  await authenticated.post("https://rest.xxt.cn/ai-lesson-eval/basic-data/get-grade-list", {});
-  assert.deepEqual(requests.map(([url]) => url), [
-    CURRENT_USER_URL,
+  await authenticated.post(
     "https://rest.xxt.cn/ai-lesson-eval/basic-data/get-grade-list",
-  ]);
+    {}
+  );
+  assert.deepEqual(
+    requests.map(([url]) => url),
+    [
+      CURRENT_USER_URL,
+      "https://rest.xxt.cn/ai-lesson-eval/basic-data/get-grade-list",
+    ]
+  );
   assert.equal(requests[0][1].credentials, "include");
   assert.equal(requests[1][1].credentials, "include");
   assert.equal(requests[1][1].method, "POST");
   assert.equal(requests[1][1].body, "{}");
+});
+
+test("Passport window fits a desktop page into the available display area", () => {
+  assert.deepEqual(getPassportWindowLayout({ width: 1920, height: 1040 }), {
+    width: 1440,
+    height: 900,
+    zoomFactor: 1,
+  });
+
+  const compact = getPassportWindowLayout({ width: 1366, height: 728 });
+  assert.deepEqual(
+    { width: compact.width, height: compact.height },
+    { width: 1318, height: 680 }
+  );
+  assert.ok(compact.zoomFactor >= 0.75 && compact.zoomFactor <= 0.76);
 });
 
 test("closing the Passport window before console login rejects the session", async () => {

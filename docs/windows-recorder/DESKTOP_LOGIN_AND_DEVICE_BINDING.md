@@ -20,7 +20,7 @@
 2. 客户端打开现有数智家校 passport 登录页。
 3. 操作者通过 Passport 当前支持的账号密码或验证码完成登录。
 4. Passport 完成身份选择后跳转到 `https://szjx-console.xxt.cn/`；客户端只把该域视为登录完成，不能把中间页 `szjx.xxt.cn` 或 Passport 登录页当作成功。
-5. 客户端使用同一隔离 Cookie 会话请求 `GET https://szjx-console.xxt.cn/api/user-data-v2/user/get-user-info-by-login`，取得当前身份的 `schoolId`、`schoolName`、`userName` 和 `userType`。
+5. 客户端使用同一隔离 Cookie 会话请求 `GET https://szjx-console.xxt.cn/api/user-data-v2/user/get-user-info-by-login`，取得当前身份的 `schoolId`、`schoolName`、`userName` 和 `userType`。现网页教师侧身份的 `userType` 为 `0`；客户端接受 `0` 并拒绝学生侧身份。
 6. 操作者选择班级教室或公共教室。班级教室先调用年级列表，再按 `gradeCode` 调用班级列表；公共教室直接填写名称。
 7. 服务端保存设备当前绑定，客户端不解析绑定接口的其他返回字段，而是用本次请求和当前登录身份构造 worker 所需的本地绑定。
 8. 登录窗口结束；后续录音和上传只使用设备身份。
@@ -30,12 +30,12 @@ https://passport.xxt.cn/login?app=szjx&url=https%3A%2F%2Fszjx.xxt.cn%2F
 
 绑定记录至少包含：
 
-~~~text
+```text
 deviceNo + schoolId + bindType
 + classId（仅 bindType=1）
 + classroom（两种 bindType 均传展示名称）
 + boundByUserId + effectiveAt + revokedAt(可空)
-~~~
+```
 
 客户端和现有接口中不存在 `locationId`，不再把它作为产品或接口前提。公共教室在客户端只是一段用户填写的 `classroom` 名称，客户端不管理公共教室实体或主键。
 
@@ -43,13 +43,13 @@ deviceNo + schoolId + bindType
 
 Web 前端现有调用：
 
-~~~js
+```js
 http.request({
   url: "/login-v2/login/keep-login-alive",
   method: "post",
   params: {},
 });
-~~~
+```
 
 该调用没有查询参数和业务请求体，但浏览器仍会自动携带匹配域的 Cookie，服务端仍须返回 HTTP 状态。前端忽略响应内容不等于接口没有响应。
 
@@ -82,12 +82,12 @@ MAC 用作设备编号和绑定查找键，但不能单独作为上传凭证：
 
 绑定成功时由服务端生成随机 deviceSecret，客户端使用 Windows Credential Manager 或 DPAPI 保护。上传请求包含：
 
-~~~text
+```text
 Device-No
 Device-Timestamp
 Device-Nonce
 Device-Signature = HMAC(deviceSecret, method + path + bodyHash + timestamp + nonce)
-~~~
+```
 
 服务端验证设备有效、签名、时间窗口和 nonce，并限制文件类型、大小、频率和并发。这不是教师 access token，也不获得教师的平台权限。
 
@@ -166,14 +166,14 @@ Device-Signature = HMAC(deviceSecret, method + path + bodyHash + timestamp + non
 
 最新确认的绑定请求契约：
 
-|字段|规则|
-|---|---|
-|`schoolId`|必传，目标学校 ID|
-|`deviceNo`|必传，规范化物理网卡 MAC|
-|`deviceName`|删除，不传|
-|`bindType`|必传，`1=班级教室`，`2=公共教室`|
-|`classId`|`bindType=1` 时传；`bindType=2` 时不传|
-|`classroom`|两种类型均传。班级教室为“班级名+录音设备”，如“1.1班录音设备”；公共教室为用户自定义名称，如“多媒体教室录音设备”|
+| 字段         | 规则                                                                                                           |
+| ------------ | -------------------------------------------------------------------------------------------------------------- |
+| `schoolId`   | 必传，目标学校 ID                                                                                              |
+| `deviceNo`   | 必传，规范化物理网卡 MAC                                                                                       |
+| `deviceName` | 删除，不传                                                                                                     |
+| `bindType`   | 必传，`1=班级教室`，`2=公共教室`                                                                               |
+| `classId`    | `bindType=1` 时传；`bindType=2` 时不传                                                                         |
+| `classroom`  | 两种类型均传。班级教室为“班级名+录音设备”，如“1.1班录音设备”；公共教室为用户自定义名称，如“多媒体教室录音设备” |
 
 客户端只负责提交公共教室名称，不管理公共教室实体、主键、重命名或合并模型。
 

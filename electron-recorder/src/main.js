@@ -1,19 +1,44 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, screen, session as electronSession, shell as electronShell, Tray } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  powerSaveBlocker,
+  screen,
+  session as electronSession,
+  shell as electronShell,
+  Tray,
+} from "electron";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
 import { WorkerClient } from "./worker-client.js";
-import { bootstrapWorkerConfig, loadWorkerLocator } from "./worker-bootstrap.js";
+import {
+  bootstrapWorkerConfig,
+  loadWorkerLocator,
+} from "./worker-bootstrap.js";
 import { applyWorkerSettings } from "./worker-settings.js";
 import { createRuntimeState } from "./runtime-state.js";
 import { configureSingleInstance } from "./single-instance.js";
 import { writeDiagnosticFile } from "./diagnostics.js";
-import { applyAutoLaunch, loadSettings, loadWorkerCoreSettings, saveSettings as persistSettings, validateAutoLaunchValue, validateSettingsPatch } from "./settings.js";
+import {
+  applyAutoLaunch,
+  loadSettings,
+  loadWorkerCoreSettings,
+  saveSettings as persistSettings,
+  validateAutoLaunchValue,
+  validateSettingsPatch,
+} from "./settings.js";
 import { setAutoLaunchAfterBootstrap } from "./settings-save.js";
 import { createBindingService } from "./binding-service.js";
 import { BindingController } from "./binding-controller.js";
-import { createPassportAuthenticator } from "./passport-login.js";
+import {
+  createPassportAuthenticator,
+  getPassportWindowLayout,
+} from "./passport-login.js";
 import { resolveDeviceNo } from "./backend.js";
 import { clampFloatingPosition } from "./floating-drag.js";
 
@@ -29,11 +54,27 @@ let floatingBallReady = false;
 let pendingFloatingShow = false;
 let recordingPowerBlockerId = null;
 let supervisor;
-let workerSnapshot = { recording: "idle", upload: "clear", health: "healthy", pending: 0 };
-let settings = { autoLaunch: false, autoRecordEnabled: true, inputDevice: "default", dataRoot: "" };
-let autoLaunchStatus = { desired: false, actual: null, status: "unverified", error: null };
+let workerSnapshot = {
+  recording: "idle",
+  upload: "clear",
+  health: "healthy",
+  pending: 0,
+};
+let settings = {
+  autoLaunch: false,
+  autoRecordEnabled: true,
+  inputDevice: "default",
+  dataRoot: "",
+};
+let autoLaunchStatus = {
+  desired: false,
+  actual: null,
+  status: "unverified",
+  error: null,
+};
 let workerLocation = null;
-const bindingServiceMode = process.env.BINDING_SERVICE_MODE === "mock" ? "mock" : "remote";
+const bindingServiceMode =
+  process.env.BINDING_SERVICE_MODE === "mock" ? "mock" : "remote";
 let bindingService;
 let bindingController;
 
@@ -44,30 +85,49 @@ function isScreenPoint(point) {
 function initializeBindingController() {
   let authenticate;
   if (bindingServiceMode === "remote") {
-    const passportSession = electronSession.fromPartition("classroom-recorder-passport");
+    const passportSession = electronSession.fromPartition(
+      "classroom-recorder-passport"
+    );
     authenticate = createPassportAuthenticator({
       browserSession: passportSession,
-      createWindow: () => new BrowserWindow({
-        width: 1080,
-        height: 760,
-        parent: mainWindow,
-        modal: false,
-        show: true,
-        title: "登录众享教育 Passport",
-        autoHideMenuBar: true,
-        webPreferences: {
-          partition: "classroom-recorder-passport",
-          contextIsolation: true,
-          nodeIntegration: false,
-          sandbox: true,
-        },
-      }),
+      createWindow: () => {
+        const parentBounds = mainWindow?.getBounds();
+        const display = parentBounds
+          ? screen.getDisplayMatching(parentBounds)
+          : screen.getPrimaryDisplay();
+        const passportLayout = getPassportWindowLayout(display.workAreaSize);
+
+        return new BrowserWindow({
+          width: passportLayout.width,
+          height: passportLayout.height,
+          useContentSize: true,
+          resizable: true,
+          maximizable: true,
+          center: true,
+          parent: mainWindow,
+          modal: false,
+          show: true,
+          title: "登录众享教育 Passport",
+          autoHideMenuBar: true,
+          webPreferences: {
+            partition: "classroom-recorder-passport",
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+            zoomFactor: passportLayout.zoomFactor,
+          },
+        });
+      },
     });
   }
-  bindingService = createBindingService({ mode: bindingServiceMode, authenticate });
+  bindingService = createBindingService({
+    mode: bindingServiceMode,
+    authenticate,
+  });
   bindingController = new BindingController({
     service: bindingService,
-    resolveDeviceNo: () => process.env.ELECTRON_SMOKE_TEST ? "SMOKEDEVICE001" : resolveDeviceNo(),
+    resolveDeviceNo: () =>
+      process.env.ELECTRON_SMOKE_TEST ? "SMOKEDEVICE001" : resolveDeviceNo(),
     getSnapshot: () => workerSnapshot,
     sendWorkerCommand: (command, payload) => {
       if (!supervisor) {
@@ -100,13 +160,16 @@ function getPreloadPath() {
 
 function getIconPath() {
   const iconName = process.platform === "win32" ? "icon.ico" : "icon.png";
-  if (app.isPackaged) return path.join(process.resourcesPath, "build", iconName);
+  if (app.isPackaged)
+    return path.join(process.resourcesPath, "build", iconName);
   return path.join(__dirname, "../build", iconName);
 }
 
 function getTrayIcon() {
   const icon = nativeImage.createFromPath(getIconPath());
-  return icon.isEmpty() ? nativeImage.createEmpty() : icon.resize({ width: 18, height: 18 });
+  return icon.isEmpty()
+    ? nativeImage.createEmpty()
+    : icon.resize({ width: 18, height: 18 });
 }
 
 function createMainWindow() {
@@ -139,7 +202,6 @@ function createMainWindow() {
       showFloatingBallWindow();
     }
   });
-
 }
 
 function createFloatingBallWindow() {
@@ -176,7 +238,10 @@ function createFloatingBallWindow() {
   if (rendererUrl) {
     floatingBallWindow.loadURL(`${rendererUrl}/#floating-ball`);
   } else {
-    floatingBallWindow.loadFile(path.join(__dirname, "../dist/renderer/index.html"), { hash: "floating-ball" });
+    floatingBallWindow.loadFile(
+      path.join(__dirname, "../dist/renderer/index.html"),
+      { hash: "floating-ball" }
+    );
   }
 
   floatingBallWindow.webContents.once("did-finish-load", () => {
@@ -184,7 +249,9 @@ function createFloatingBallWindow() {
     floatingBallWindow?.setFocusable(false);
     floatingBallWindow?.setBackgroundColor("#00000000");
     applyFloatingBallShape();
-    floatingBallWindow?.webContents.executeJavaScript("document.title = ''").catch(() => {});
+    floatingBallWindow?.webContents
+      .executeJavaScript("document.title = ''")
+      .catch(() => {});
     floatingBallReady = true;
     if (pendingFloatingShow) {
       pendingFloatingShow = false;
@@ -206,13 +273,13 @@ function showFloatingBallWindow() {
     if (focusedBounds) {
       floatingBallWindow.setPosition(
         focusedBounds.x + focusedBounds.width - FLOATING_BALL_SIZE - 22,
-        focusedBounds.y + 128,
+        focusedBounds.y + 128
       );
     } else {
       const { workArea } = screen.getPrimaryDisplay();
       floatingBallWindow.setPosition(
         workArea.x + workArea.width - FLOATING_BALL_SIZE - 22,
-        workArea.y + 128,
+        workArea.y + 128
       );
     }
     applyFloatingBallShape();
@@ -226,7 +293,8 @@ function showFloatingBallWindow() {
 }
 
 function applyFloatingBallShape() {
-  if (!floatingBallWindow || typeof floatingBallWindow.setShape !== "function") return;
+  if (!floatingBallWindow || typeof floatingBallWindow.setShape !== "function")
+    return;
   const radius = Math.floor(FLOATING_BALL_SIZE / 2);
   const center = radius;
   const rects = [];
@@ -289,9 +357,21 @@ function updateTray() {
         },
       },
       { type: "separator" },
-      { label: "开始录音", enabled: recorderState !== "recording", click: () => supervisor?.send("start") },
-      { label: "暂停录音", enabled: recorderState === "recording", click: () => supervisor?.send("pause") },
-      { label: "停止录音", enabled: recorderState !== "idle", click: () => supervisor?.send("stop") },
+      {
+        label: "开始录音",
+        enabled: recorderState !== "recording",
+        click: () => supervisor?.send("start"),
+      },
+      {
+        label: "暂停录音",
+        enabled: recorderState === "recording",
+        click: () => supervisor?.send("pause"),
+      },
+      {
+        label: "停止录音",
+        enabled: recorderState !== "idle",
+        click: () => supervisor?.send("stop"),
+      },
       { label: "补传队列", click: () => supervisor?.send("flush_queue") },
       { type: "separator" },
       {
@@ -301,7 +381,7 @@ function updateTray() {
           app.quit();
         },
       },
-    ]),
+    ])
   );
 }
 
@@ -309,9 +389,21 @@ function showFloatingBallMenu() {
   Menu.buildFromTemplate([
     { label: "打开主界面", click: showMainWindow },
     { type: "separator" },
-    { label: "开始录音", enabled: recorderState !== "recording", click: () => supervisor?.send("start") },
-    { label: "暂停录音", enabled: recorderState === "recording", click: () => supervisor?.send("pause") },
-    { label: "停止录音", enabled: recorderState !== "idle", click: () => supervisor?.send("stop") },
+    {
+      label: "开始录音",
+      enabled: recorderState !== "recording",
+      click: () => supervisor?.send("start"),
+    },
+    {
+      label: "暂停录音",
+      enabled: recorderState === "recording",
+      click: () => supervisor?.send("pause"),
+    },
+    {
+      label: "停止录音",
+      enabled: recorderState !== "idle",
+      click: () => supervisor?.send("stop"),
+    },
     { type: "separator" },
     {
       label: "退出",
@@ -343,23 +435,33 @@ function releaseRecordingAwake() {
 }
 
 function spawnRecorderWorker() {
-  if (!workerLocation?.configPath) throw new Error("worker configuration is not bootstrapped");
+  if (!workerLocation?.configPath)
+    throw new Error("worker configuration is not bootstrapped");
   const configPath = workerLocation.configPath;
   let child;
   if (app.isPackaged) {
-    child = spawn(path.join(process.resourcesPath, "worker", "ClassroomRecorderWorker.exe"), [], {
-      cwd: path.join(process.resourcesPath, "ffmpeg"),
-      env: { ...process.env, RECORDER_CONFIG_PATH: configPath },
-      detached: true,
-      stdio: "ignore",
-    });
+    child = spawn(
+      path.join(process.resourcesPath, "worker", "ClassroomRecorderWorker.exe"),
+      [],
+      {
+        cwd: path.join(process.resourcesPath, "ffmpeg"),
+        env: { ...process.env, RECORDER_CONFIG_PATH: configPath },
+        detached: true,
+        stdio: "ignore",
+      }
+    );
   } else {
-    child = spawn(process.env.RECORDER_PYTHON || (process.platform === "win32" ? "python" : "python3"), ["-m", "worker.recorder_worker"], {
-      cwd: path.join(__dirname, ".."),
-      env: { ...process.env, RECORDER_CONFIG_PATH: configPath },
-      detached: true,
-      stdio: "ignore",
-    });
+    child = spawn(
+      process.env.RECORDER_PYTHON ||
+        (process.platform === "win32" ? "python" : "python3"),
+      ["-m", "worker.recorder_worker"],
+      {
+        cwd: path.join(__dirname, ".."),
+        env: { ...process.env, RECORDER_CONFIG_PATH: configPath },
+        detached: true,
+        stdio: "ignore",
+      }
+    );
   }
   child.unref();
   return child;
@@ -372,7 +474,15 @@ function publishSnapshot(snapshot) {
   if (workerSnapshot.recording === "recording") keepRecordingAwake();
   else releaseRecordingAwake();
   updateTray();
-  broadcast("recorder:snapshot", { ...workerSnapshot, runtime, settings, autoLaunchStatus, dataRootLocked: Boolean(workerLocation), bindingServiceMode, appVersion: app.getVersion() });
+  broadcast("recorder:snapshot", {
+    ...workerSnapshot,
+    runtime,
+    settings,
+    autoLaunchStatus,
+    dataRootLocked: Boolean(workerLocation),
+    bindingServiceMode,
+    appVersion: app.getVersion(),
+  });
 }
 
 function waitForWindowLoad(win) {
@@ -387,7 +497,10 @@ async function runSmokeTest() {
   if (!process.env.ELECTRON_SMOKE_TEST) return;
 
   try {
-    await Promise.all([waitForWindowLoad(mainWindow), waitForWindowLoad(floatingBallWindow)]);
+    await Promise.all([
+      waitForWindowLoad(mainWindow),
+      waitForWindowLoad(floatingBallWindow),
+    ]);
 
     const mainResult = await mainWindow.webContents.executeJavaScript(`
       Promise.resolve({
@@ -414,7 +527,8 @@ async function runSmokeTest() {
       })
     `);
 
-    const floatingResult = await floatingBallWindow.webContents.executeJavaScript(`
+    const floatingResult = await floatingBallWindow.webContents
+      .executeJavaScript(`
       Promise.resolve({
         bridge: Boolean(window.recorderShell),
         hasMainShell: Boolean(document.querySelector(".app-shell")),
@@ -514,18 +628,26 @@ async function runSmokeTest() {
       floatingResult.bubbleRole === "" &&
       floatingResult.scrollWidth <= FLOATING_BALL_SIZE &&
       floatingResult.scrollHeight <= FLOATING_BALL_SIZE &&
-      (bindingResult.skipped || (
-        bindingResult.hasOpenButton &&
-        bindingResult.hasWizard &&
-        bindingResult.hasIdentityIcon &&
-        bindingResult.hasMockBadge &&
-        bindingResult.reachedBindingType &&
-        bindingResult.overflowing.length === 0
-      )) &&
+      (bindingResult.skipped ||
+        (bindingResult.hasOpenButton &&
+          bindingResult.hasWizard &&
+          bindingResult.hasIdentityIcon &&
+          bindingResult.hasMockBadge &&
+          bindingResult.reachedBindingType &&
+          bindingResult.overflowing.length === 0)) &&
       settingsResult.hasModal &&
       settingsResult.footerVisible;
 
-    console.log("[electron-smoke]", JSON.stringify({ main: mainResult, floating: floatingResult, binding: bindingResult, settings: settingsResult, passed }));
+    console.log(
+      "[electron-smoke]",
+      JSON.stringify({
+        main: mainResult,
+        floating: floatingResult,
+        binding: bindingResult,
+        settings: settingsResult,
+        passed,
+      })
+    );
     app.isQuitting = true;
     if (passed) app.quit();
     else app.exit(1);
@@ -536,199 +658,298 @@ async function runSmokeTest() {
   }
 }
 
-if (hasSingleInstanceLock) app.whenReady().then(() => {
-  const userDataDir = app.getPath("userData");
-  initializeBindingController();
-  workerLocation = loadWorkerLocator(app.getPath("userData"));
-  settings = {
-    ...loadSettings(workerLocation?.configPath),
-    ...(workerLocation ? loadWorkerCoreSettings(workerLocation.configPath) : {}),
-    dataRoot: workerLocation?.dataRoot || "",
-  };
+if (hasSingleInstanceLock)
+  app.whenReady().then(() => {
+    const userDataDir = app.getPath("userData");
+    initializeBindingController();
+    workerLocation = loadWorkerLocator(app.getPath("userData"));
+    settings = {
+      ...loadSettings(workerLocation?.configPath),
+      ...(workerLocation
+        ? loadWorkerCoreSettings(workerLocation.configPath)
+        : {}),
+      dataRoot: workerLocation?.dataRoot || "",
+    };
 
-  const attachWorkerClient = (client) => {
-    supervisor?.disconnect();
-    supervisor = client;
-    supervisor.on("ready", publishSnapshot);
-    supervisor.on("snapshot", publishSnapshot);
-    supervisor.on("error", (error) => {
-      workerSnapshot = { ...workerSnapshot, latestError: error.message };
-      publishSnapshot({});
-    });
-    publishSnapshot({ health: "blocked", latestError: "正在连接录音服务" });
-    supervisor.start().catch((error) => {
-      if (!app.isQuitting) publishSnapshot({ health: "blocked", latestError: error.message });
-    });
-  };
-
-  if (process.env.ELECTRON_SMOKE_TEST) {
-    const smokeBindingMode = bindingServiceMode === "mock";
-    let smokeWorkerSnapshot = smokeBindingMode
-      ? { recording: "error", health: "binding_required", binding: null, dataRoot: "D:/SmokeRecorderData" }
-      : { recording: "idle", health: "healthy" };
-    attachWorkerClient(new WorkerClient({
-        runtimeDir: "",
-        readEndpoint: async () => ({ host: "127.0.0.1", port: 0, token: "smoke" }),
-        openSocket: async () => {
-          const socket = new EventEmitter();
-          socket.write = (value) => {
-            const message = JSON.parse(value);
-            if (message.token) {
-              queueMicrotask(() => socket.emit("data", Buffer.from(`${JSON.stringify({ event: "ready", payload: smokeWorkerSnapshot })}\n`)));
-            } else if (message.command) {
-              if (message.command === "apply_binding") {
-                smokeWorkerSnapshot = { ...smokeWorkerSnapshot, recording: "idle", health: "healthy", binding: message.payload };
-                queueMicrotask(() => socket.emit("data", Buffer.from(`${JSON.stringify({ event: "snapshot", payload: smokeWorkerSnapshot })}\n`)));
-              }
-              queueMicrotask(() => socket.emit("data", Buffer.from(`${JSON.stringify({ event: "command_result", payload: { id: message.id, success: true } })}\n`)));
-            }
-          };
-          socket.end = () => socket.emit("close");
-          return socket;
-        },
-        launchWorker: () => {},
-      }));
-  } else if (workerLocation) {
-    attachWorkerClient(new WorkerClient({
-        runtimeDir: workerLocation.runtimeDir,
-        launchWorker: spawnRecorderWorker,
-      }));
-  }
-  autoLaunchStatus = setAutoLaunchAfterBootstrap({
-    workerLocation, desired: settings.autoLaunch,
-    apply: (desired) => applyAutoLaunch({ desired, app }),
-  });
-
-  createMainWindow();
-  createFloatingBallWindow();
-  createTray();
-  showFloatingBallWindow();
-  runSmokeTest();
-
-  if (!supervisor) publishSnapshot({ health: "blocked", latestError: "请先选择非系统盘录音目录" });
-
-  ipcMain.handle("recorder:get-snapshot", () => ({ ...workerSnapshot, runtime: createRuntimeState(workerSnapshot), settings, autoLaunchStatus, dataRootLocked: Boolean(workerLocation), bindingServiceMode, appVersion: app.getVersion() }));
-  ipcMain.handle("binding:create-session", () => bindingController.createSession());
-  ipcMain.handle("binding:create-replacement-session", () => bindingController.createReplacementSession());
-  ipcMain.handle("binding:get-session", (_event, sessionId) => bindingController.getSession(sessionId));
-  ipcMain.handle("binding:list-grades", (_event, sessionId) => bindingController.listGrades(sessionId));
-  ipcMain.handle("binding:list-classes", (_event, sessionId, query) => bindingController.listClasses(sessionId, query));
-  ipcMain.handle("binding:confirm", (_event, sessionId, selection) => bindingController.confirmBinding(sessionId, selection));
-  ipcMain.handle("binding:unbind", () => bindingController.unbindDevice());
-  ipcMain.handle("recorder:start", () => supervisor?.send("start") ?? false);
-  ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
-  ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);
-  ipcMain.handle("recorder:flush", () => supervisor?.send("flush_queue") ?? false);
-  ipcMain.handle("recorder:update-settings", async (_event, patch) => {
-    const validatedPatch = validateSettingsPatch(patch);
-    const result = await applyWorkerSettings({
-      settings, patch: validatedPatch, workerLocation, supervisor,
-      persistBootstrap: (candidate) => bootstrapWorkerConfig({ userDataDir: app.getPath("userData"), patch: candidate }),
-      attach: (location) => {
-        workerLocation = location;
-        attachWorkerClient(new WorkerClient({ runtimeDir: location.runtimeDir, launchWorker: spawnRecorderWorker }));
-      },
-    });
-    settings = result.settings;
-    workerLocation = result.workerLocation;
-    persistSettings(workerLocation.configPath, {
-      autoLaunch: settings.autoLaunch,
-      autoRecordEnabled: settings.autoRecordEnabled,
-      inputDevice: settings.inputDevice,
-    });
-    publishSnapshot({});
-    return settings;
-  });
-  ipcMain.handle("app:set-auto-launch", async (_event, enabled) => {
-    const desired = validateAutoLaunchValue(enabled);
-    const guarded = setAutoLaunchAfterBootstrap({
-      workerLocation, desired,
-      apply: (value) => applyAutoLaunch({ desired: value, app }),
-    });
-    if (guarded.status === "failed" && !workerLocation) return guarded;
-    settings = { ...settings, autoLaunch: desired };
-    persistSettings(workerLocation.configPath, {
-      autoLaunch: desired,
-      autoRecordEnabled: settings.autoRecordEnabled,
-      inputDevice: settings.inputDevice,
-    });
-    autoLaunchStatus = guarded;
-    publishSnapshot({});
-    return autoLaunchStatus;
-  });
-  ipcMain.handle("recorder:open-data-dir", () => {
-    const dataDir = workerSnapshot.dataRoot || settings.dataRoot;
-    if (dataDir) electronShell.openPath(dataDir);
-    return true;
-  });
-  ipcMain.handle("recorder:export-diagnostics", async () => {
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: "导出诊断信息",
-      defaultPath: `classroom-recorder-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
-    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-    try {
-      writeDiagnosticFile(result.filePath, {
-        snapshot: workerSnapshot,
-        settings,
-        autoLaunchStatus,
-        workerLocation,
-        exportedAt: new Date().toISOString(),
-        appVersion: app.getVersion(),
+    const attachWorkerClient = (client) => {
+      supervisor?.disconnect();
+      supervisor = client;
+      supervisor.on("ready", publishSnapshot);
+      supervisor.on("snapshot", publishSnapshot);
+      supervisor.on("error", (error) => {
+        workerSnapshot = { ...workerSnapshot, latestError: error.message };
+        publishSnapshot({});
       });
-      await dialog.showMessageBox(mainWindow, { type: "info", message: "诊断信息导出成功", detail: result.filePath });
-      return { ok: true, filePath: result.filePath };
-    } catch (error) {
-      await dialog.showMessageBox(mainWindow, { type: "error", message: "诊断信息导出失败", detail: error.message });
-      return { ok: false, error: error.message };
-    }
-  });
-  ipcMain.handle("window:minimize-to-tray", () => {
-    mainWindow?.hide();
-    showFloatingBallWindow();
-    return true;
-  });
-  ipcMain.handle("window:show-main", () => {
-    showMainWindow();
-    return true;
-  });
-  ipcMain.handle("window:show-float", () => {
-    showFloatingBallWindow();
-    return true;
-  });
-  ipcMain.handle("settings:open", () => {
-    broadcast("settings:open", {});
-    return true;
-  });
-  ipcMain.handle("floating:show-menu", () => {
-    showFloatingBallMenu();
-    return true;
-  });
-  ipcMain.handle("floating:drag-start", (_event, point) => {
-    if (!floatingBallWindow || !isScreenPoint(point)) return false;
-    const bounds = floatingBallWindow.getBounds();
-    floatingDragOffset = { x: point.x - bounds.x, y: point.y - bounds.y };
-    return true;
-  });
-  ipcMain.handle("floating:drag-move", (_event, point) => {
-    if (!floatingBallWindow || !floatingDragOffset || !isScreenPoint(point)) return false;
-    const bounds = floatingBallWindow.getBounds();
-    const workArea = screen.getDisplayNearestPoint(point).workArea;
-    const position = clampFloatingPosition({ point, offset: floatingDragOffset, bounds, workArea });
-    floatingBallWindow.setPosition(position.x, position.y, false);
-    return true;
-  });
-  ipcMain.handle("floating:drag-end", () => {
-    floatingDragOffset = null;
-    return true;
-  });
+      publishSnapshot({ health: "blocked", latestError: "正在连接录音服务" });
+      supervisor.start().catch((error) => {
+        if (!app.isQuitting)
+          publishSnapshot({ health: "blocked", latestError: error.message });
+      });
+    };
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
-    mainWindow?.show();
+    if (process.env.ELECTRON_SMOKE_TEST) {
+      const smokeBindingMode = bindingServiceMode === "mock";
+      let smokeWorkerSnapshot = smokeBindingMode
+        ? {
+            recording: "error",
+            health: "binding_required",
+            binding: null,
+            dataRoot: "D:/SmokeRecorderData",
+          }
+        : { recording: "idle", health: "healthy" };
+      attachWorkerClient(
+        new WorkerClient({
+          runtimeDir: "",
+          readEndpoint: async () => ({
+            host: "127.0.0.1",
+            port: 0,
+            token: "smoke",
+          }),
+          openSocket: async () => {
+            const socket = new EventEmitter();
+            socket.write = (value) => {
+              const message = JSON.parse(value);
+              if (message.token) {
+                queueMicrotask(() =>
+                  socket.emit(
+                    "data",
+                    Buffer.from(
+                      `${JSON.stringify({ event: "ready", payload: smokeWorkerSnapshot })}\n`
+                    )
+                  )
+                );
+              } else if (message.command) {
+                if (message.command === "apply_binding") {
+                  smokeWorkerSnapshot = {
+                    ...smokeWorkerSnapshot,
+                    recording: "idle",
+                    health: "healthy",
+                    binding: message.payload,
+                  };
+                  queueMicrotask(() =>
+                    socket.emit(
+                      "data",
+                      Buffer.from(
+                        `${JSON.stringify({ event: "snapshot", payload: smokeWorkerSnapshot })}\n`
+                      )
+                    )
+                  );
+                }
+                queueMicrotask(() =>
+                  socket.emit(
+                    "data",
+                    Buffer.from(
+                      `${JSON.stringify({ event: "command_result", payload: { id: message.id, success: true } })}\n`
+                    )
+                  )
+                );
+              }
+            };
+            socket.end = () => socket.emit("close");
+            return socket;
+          },
+          launchWorker: () => {},
+        })
+      );
+    } else if (workerLocation) {
+      attachWorkerClient(
+        new WorkerClient({
+          runtimeDir: workerLocation.runtimeDir,
+          launchWorker: spawnRecorderWorker,
+        })
+      );
+    }
+    autoLaunchStatus = setAutoLaunchAfterBootstrap({
+      workerLocation,
+      desired: settings.autoLaunch,
+      apply: (desired) => applyAutoLaunch({ desired, app }),
+    });
+
+    createMainWindow();
+    createFloatingBallWindow();
+    createTray();
+    showFloatingBallWindow();
+    runSmokeTest();
+
+    if (!supervisor)
+      publishSnapshot({
+        health: "blocked",
+        latestError: "请先选择非系统盘录音目录",
+      });
+
+    ipcMain.handle("recorder:get-snapshot", () => ({
+      ...workerSnapshot,
+      runtime: createRuntimeState(workerSnapshot),
+      settings,
+      autoLaunchStatus,
+      dataRootLocked: Boolean(workerLocation),
+      bindingServiceMode,
+      appVersion: app.getVersion(),
+    }));
+    ipcMain.handle("binding:create-session", () =>
+      bindingController.createSession()
+    );
+    ipcMain.handle("binding:create-replacement-session", () =>
+      bindingController.createReplacementSession()
+    );
+    ipcMain.handle("binding:get-session", (_event, sessionId) =>
+      bindingController.getSession(sessionId)
+    );
+    ipcMain.handle("binding:list-grades", (_event, sessionId) =>
+      bindingController.listGrades(sessionId)
+    );
+    ipcMain.handle("binding:list-classes", (_event, sessionId, query) =>
+      bindingController.listClasses(sessionId, query)
+    );
+    ipcMain.handle("binding:confirm", (_event, sessionId, selection) =>
+      bindingController.confirmBinding(sessionId, selection)
+    );
+    ipcMain.handle("binding:unbind", () => bindingController.unbindDevice());
+    ipcMain.handle("recorder:start", () => supervisor?.send("start") ?? false);
+    ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
+    ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);
+    ipcMain.handle(
+      "recorder:flush",
+      () => supervisor?.send("flush_queue") ?? false
+    );
+    ipcMain.handle("recorder:update-settings", async (_event, patch) => {
+      const validatedPatch = validateSettingsPatch(patch);
+      const result = await applyWorkerSettings({
+        settings,
+        patch: validatedPatch,
+        workerLocation,
+        supervisor,
+        persistBootstrap: (candidate) =>
+          bootstrapWorkerConfig({
+            userDataDir: app.getPath("userData"),
+            patch: candidate,
+          }),
+        attach: (location) => {
+          workerLocation = location;
+          attachWorkerClient(
+            new WorkerClient({
+              runtimeDir: location.runtimeDir,
+              launchWorker: spawnRecorderWorker,
+            })
+          );
+        },
+      });
+      settings = result.settings;
+      workerLocation = result.workerLocation;
+      persistSettings(workerLocation.configPath, {
+        autoLaunch: settings.autoLaunch,
+        autoRecordEnabled: settings.autoRecordEnabled,
+        inputDevice: settings.inputDevice,
+      });
+      publishSnapshot({});
+      return settings;
+    });
+    ipcMain.handle("app:set-auto-launch", async (_event, enabled) => {
+      const desired = validateAutoLaunchValue(enabled);
+      const guarded = setAutoLaunchAfterBootstrap({
+        workerLocation,
+        desired,
+        apply: (value) => applyAutoLaunch({ desired: value, app }),
+      });
+      if (guarded.status === "failed" && !workerLocation) return guarded;
+      settings = { ...settings, autoLaunch: desired };
+      persistSettings(workerLocation.configPath, {
+        autoLaunch: desired,
+        autoRecordEnabled: settings.autoRecordEnabled,
+        inputDevice: settings.inputDevice,
+      });
+      autoLaunchStatus = guarded;
+      publishSnapshot({});
+      return autoLaunchStatus;
+    });
+    ipcMain.handle("recorder:open-data-dir", () => {
+      const dataDir = workerSnapshot.dataRoot || settings.dataRoot;
+      if (dataDir) electronShell.openPath(dataDir);
+      return true;
+    });
+    ipcMain.handle("recorder:export-diagnostics", async () => {
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: "导出诊断信息",
+        defaultPath: `classroom-recorder-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+      if (result.canceled || !result.filePath)
+        return { ok: false, canceled: true };
+      try {
+        writeDiagnosticFile(result.filePath, {
+          snapshot: workerSnapshot,
+          settings,
+          autoLaunchStatus,
+          workerLocation,
+          exportedAt: new Date().toISOString(),
+          appVersion: app.getVersion(),
+        });
+        await dialog.showMessageBox(mainWindow, {
+          type: "info",
+          message: "诊断信息导出成功",
+          detail: result.filePath,
+        });
+        return { ok: true, filePath: result.filePath };
+      } catch (error) {
+        await dialog.showMessageBox(mainWindow, {
+          type: "error",
+          message: "诊断信息导出失败",
+          detail: error.message,
+        });
+        return { ok: false, error: error.message };
+      }
+    });
+    ipcMain.handle("window:minimize-to-tray", () => {
+      mainWindow?.hide();
+      showFloatingBallWindow();
+      return true;
+    });
+    ipcMain.handle("window:show-main", () => {
+      showMainWindow();
+      return true;
+    });
+    ipcMain.handle("window:show-float", () => {
+      showFloatingBallWindow();
+      return true;
+    });
+    ipcMain.handle("settings:open", () => {
+      broadcast("settings:open", {});
+      return true;
+    });
+    ipcMain.handle("floating:show-menu", () => {
+      showFloatingBallMenu();
+      return true;
+    });
+    ipcMain.handle("floating:drag-start", (_event, point) => {
+      if (!floatingBallWindow || !isScreenPoint(point)) return false;
+      const bounds = floatingBallWindow.getBounds();
+      floatingDragOffset = { x: point.x - bounds.x, y: point.y - bounds.y };
+      return true;
+    });
+    ipcMain.handle("floating:drag-move", (_event, point) => {
+      if (!floatingBallWindow || !floatingDragOffset || !isScreenPoint(point))
+        return false;
+      const bounds = floatingBallWindow.getBounds();
+      const workArea = screen.getDisplayNearestPoint(point).workArea;
+      const position = clampFloatingPosition({
+        point,
+        offset: floatingDragOffset,
+        bounds,
+        workArea,
+      });
+      floatingBallWindow.setPosition(position.x, position.y, false);
+      return true;
+    });
+    ipcMain.handle("floating:drag-end", () => {
+      floatingDragOffset = null;
+      return true;
+    });
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+      mainWindow?.show();
+    });
   });
-});
 
 app.on("window-all-closed", (event) => {
   event.preventDefault();
