@@ -17,13 +17,17 @@ from .api_client import ClassroomApiClient, REQUEST_TIMEOUT_SECONDS
 SERVER_TIMEZONE = timezone(timedelta(hours=8))
 
 
-def device_sign(device_no: str) -> str:
-    return hashlib.sha1(f"{device_no}{device_no}".encode("utf-8")).hexdigest()
+def device_sign(device_no: str, credential: str | int) -> str:
+    return hashlib.sha1(f"{device_no}{credential}".encode("utf-8")).hexdigest()
 
 
 def build_device_auth_payload(device_no: str, timestamp: int | None = None) -> dict[str, Any]:
     timestamp = timestamp if timestamp is not None else int(datetime.now().timestamp() * 1000)
-    return {"deviceNo": device_no, "sign": device_sign(device_no), "timestamp": timestamp}
+    return {
+        "deviceNo": device_no,
+        "sign": device_sign(device_no, timestamp),
+        "timestamp": timestamp,
+    }
 
 
 def build_oss_object_key(file_name: str, upload_dir: str) -> str:

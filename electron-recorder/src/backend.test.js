@@ -16,11 +16,49 @@ test("formatLocalDateTime emits Java Date-compatible local ISO time", () => {
   assert.equal(value.includes("Z"), false);
 });
 
+test("device auth signs the device number with the timestamp credential", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  let requestBody;
+  Date.now = () => 1722067200123;
+  globalThis.fetch = async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return {
+      ok: true,
+      text: async () => JSON.stringify({ accessToken: "device-token" }),
+    };
+  };
+
+  try {
+    const backend = new RecorderBackend({
+      userDataPath: path.join(
+        os.tmpdir(),
+        `classroom-recorder-auth-test-${Date.now()}`
+      ),
+    });
+    backend.config.deviceNo = "AABBCCDDEEFF";
+    await backend.ensureDeviceAuth(true);
+
+    assert.deepEqual(requestBody, {
+      deviceNo: "AABBCCDDEEFF",
+      sign: "ad7d2bcdcc2dd1cfea4e1b3fbbadf598dd18ad2a",
+      timestamp: 1722067200123,
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalDateNow;
+  }
+});
+
 test("deriveDeviceNoFromNetworkInterfaces skips virtual adapters and returns uppercase physical MAC", () => {
   const value = deriveDeviceNoFromNetworkInterfaces({
     lo0: [{ internal: true, mac: "00:00:00:00:00:00" }],
-    "vEthernet (Default Switch)": [{ internal: false, mac: "08:00:58:00:00:01" }],
-    "VirtualBox Host-Only Network": [{ internal: false, mac: "0A:00:27:00:00:12" }],
+    "vEthernet (Default Switch)": [
+      { internal: false, mac: "08:00:58:00:00:01" },
+    ],
+    "VirtualBox Host-Only Network": [
+      { internal: false, mac: "0A:00:27:00:00:12" },
+    ],
     ethernet: [{ internal: false, mac: "8C:88:4B:07:68:9D" }],
   });
 
@@ -28,15 +66,25 @@ test("deriveDeviceNoFromNetworkInterfaces skips virtual adapters and returns upp
 });
 
 test("resolveDeviceNo prefers a normalized physical MAC and falls back to interfaces", () => {
-  assert.equal(resolveDeviceNo({
-    physicalMacResolver: () => "8c-88-4b-07-68-9d",
-    networkInterfaces: () => ({ ethernet: [{ internal: false, mac: "AA:BB:CC:DD:EE:FF" }] }),
-  }), "8C884B07689D");
+  assert.equal(
+    resolveDeviceNo({
+      physicalMacResolver: () => "8c-88-4b-07-68-9d",
+      networkInterfaces: () => ({
+        ethernet: [{ internal: false, mac: "AA:BB:CC:DD:EE:FF" }],
+      }),
+    }),
+    "8C884B07689D"
+  );
 
-  assert.equal(resolveDeviceNo({
-    physicalMacResolver: () => "",
-    networkInterfaces: () => ({ ethernet: [{ internal: false, mac: "AA:BB:CC:DD:EE:FF" }] }),
-  }), "AABBCCDDEEFF");
+  assert.equal(
+    resolveDeviceNo({
+      physicalMacResolver: () => "",
+      networkInterfaces: () => ({
+        ethernet: [{ internal: false, mac: "AA:BB:CC:DD:EE:FF" }],
+      }),
+    }),
+    "AABBCCDDEEFF"
+  );
 });
 
 test("selectPhysicalMacFromWindowsAdapters prefers active PCI or USB hardware adapters", () => {
@@ -64,10 +112,15 @@ test("selectPhysicalMacFromWindowsAdapters prefers active PCI or USB hardware ad
 
 test("init prefers Windows physical adapter MAC over network interface enumeration", async () => {
   const backend = new RecorderBackend({
-    userDataPath: path.join(os.tmpdir(), `classroom-recorder-test-${Date.now()}`),
+    userDataPath: path.join(
+      os.tmpdir(),
+      `classroom-recorder-test-${Date.now()}`
+    ),
     physicalMacResolver: () => "8C-88-4B-07-68-9D",
     networkInterfaces: () => ({
-      "vEthernet (Default Switch)": [{ internal: false, mac: "08:00:58:00:00:01" }],
+      "vEthernet (Default Switch)": [
+        { internal: false, mac: "08:00:58:00:00:01" },
+      ],
     }),
   });
 
@@ -81,7 +134,10 @@ test("init prefers Windows physical adapter MAC over network interface enumerati
 
 test("updateConfig keeps device numbers MAC-based and persists auto launch preference", async () => {
   const backend = new RecorderBackend({
-    userDataPath: path.join(os.tmpdir(), `classroom-recorder-test-${Date.now()}`),
+    userDataPath: path.join(
+      os.tmpdir(),
+      `classroom-recorder-test-${Date.now()}`
+    ),
     physicalMacResolver: () => "",
     networkInterfaces: () => ({
       wifi: [{ internal: false, mac: "AA-BB-CC-DD-EE-FF" }],
@@ -102,7 +158,10 @@ test("updateConfig keeps device numbers MAC-based and persists auto launch prefe
 
 test("audio segment metadata stores timezone-qualified local time strings", async () => {
   const backend = new RecorderBackend({
-    userDataPath: path.join(os.tmpdir(), `classroom-recorder-test-${Date.now()}`),
+    userDataPath: path.join(
+      os.tmpdir(),
+      `classroom-recorder-test-${Date.now()}`
+    ),
   });
   await backend.init();
   backend.flushQueue = async () => [];
@@ -118,7 +177,10 @@ test("audio segment metadata stores timezone-qualified local time strings", asyn
     endTime: new Date(2026, 5, 1, 11, 26, 8).toISOString(),
   });
 
-  assert.match(backend.queue[0].startTime, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000[+-]\d{2}:\d{2}$/);
+  assert.match(
+    backend.queue[0].startTime,
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000[+-]\d{2}:\d{2}$/
+  );
   assert.equal(backend.queue[0].startTime.includes("Z"), false);
   assert.equal(backend.queue[0].format, "ogg");
   assert.equal(backend.queue[0].codec, "opus");
@@ -129,7 +191,10 @@ test("audio segment metadata stores timezone-qualified local time strings", asyn
 
 test("audio file info payload normalizes old local queue timestamps", async () => {
   const backend = new RecorderBackend({
-    userDataPath: path.join(os.tmpdir(), `classroom-recorder-test-${Date.now()}`),
+    userDataPath: path.join(
+      os.tmpdir(),
+      `classroom-recorder-test-${Date.now()}`
+    ),
   });
   await backend.init();
 
@@ -158,7 +223,10 @@ test("audio file info payload normalizes old local queue timestamps", async () =
 
 test("flushQueue keeps paused status after uploading pre-pause audio", async () => {
   const backend = new RecorderBackend({
-    userDataPath: path.join(os.tmpdir(), `classroom-recorder-test-${Date.now()}`),
+    userDataPath: path.join(
+      os.tmpdir(),
+      `classroom-recorder-test-${Date.now()}`
+    ),
   });
   await backend.init();
   backend.queue = [
@@ -182,7 +250,10 @@ test("flushQueue keeps paused status after uploading pre-pause audio", async () 
 
 test("flushQueue uploads and registers supported ogg opus queue items", async () => {
   const backend = new RecorderBackend({
-    userDataPath: path.join(os.tmpdir(), `classroom-recorder-test-${Date.now()}`),
+    userDataPath: path.join(
+      os.tmpdir(),
+      `classroom-recorder-test-${Date.now()}`
+    ),
   });
   await backend.init();
   backend.queue = [
@@ -216,7 +287,10 @@ test("flushQueue uploads and registers supported ogg opus queue items", async ()
 
 test("flushQueue does not upload unsupported webm queue items", async () => {
   const backend = new RecorderBackend({
-    userDataPath: path.join(os.tmpdir(), `classroom-recorder-test-${Date.now()}`),
+    userDataPath: path.join(
+      os.tmpdir(),
+      `classroom-recorder-test-${Date.now()}`
+    ),
   });
   await backend.init();
   backend.queue = [

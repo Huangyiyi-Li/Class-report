@@ -5,10 +5,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from datetime import datetime, timezone
 
-from windows_client.xxt_upload import XxtDeviceApiClient, XxtUploadManager
+from windows_client.xxt_upload import (
+    XxtDeviceApiClient,
+    XxtUploadManager,
+    build_device_auth_payload,
+)
 from worker.queue_store import QueueStore
 from worker.recorder_worker import XxtProductionAdapter
 from worker.upload_service import UploadService
+
+
+def test_device_auth_signs_device_number_with_timestamp_credential():
+    payload = build_device_auth_payload("AABBCCDDEEFF", timestamp=1722067200123)
+
+    assert payload == {
+        "deviceNo": "AABBCCDDEEFF",
+        "sign": "ad7d2bcdcc2dd1cfea4e1b3fbbadf598dd18ad2a",
+        "timestamp": 1722067200123,
+    }
 
 
 def test_upload_uses_wisdom_oss_contract_and_server_authorized_directory(tmp_path, monkeypatch):

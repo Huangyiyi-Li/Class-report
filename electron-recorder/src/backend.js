@@ -74,8 +74,14 @@ export class RecorderBackend extends EventEmitter {
   }
 
   getSnapshot() {
-    const pending = this.queue?.filter((item) => !["metadata_saved", "unsupported_format"].includes(item.status)).length ?? 0;
-    const completed = this.queue?.filter((item) => item.status === "metadata_saved").length ?? 0;
+    const pending =
+      this.queue?.filter(
+        (item) =>
+          !["metadata_saved", "unsupported_format"].includes(item.status)
+      ).length ?? 0;
+    const completed =
+      this.queue?.filter((item) => item.status === "metadata_saved").length ??
+      0;
     return {
       status: this.status,
       level: this.level,
@@ -110,7 +116,8 @@ export class RecorderBackend extends EventEmitter {
     const line = `[${new Date().toLocaleTimeString("zh-CN", { hour12: false })}] ${message}`;
     if (options.diagnostic) {
       this.diagnosticLines.push(line);
-      if (this.diagnosticLines.length > 240) this.diagnosticLines = this.diagnosticLines.slice(-240);
+      if (this.diagnosticLines.length > 240)
+        this.diagnosticLines = this.diagnosticLines.slice(-240);
     } else {
       this.logLines.push(line);
       if (this.logLines.length > 200) this.logLines = this.logLines.slice(-200);
@@ -122,16 +129,21 @@ export class RecorderBackend extends EventEmitter {
   async updateConfig(patch = {}) {
     const next = { ...this.config };
     for (const key of ["schoolId", "unitId", "segmentSeconds"]) {
-      if (patch[key] !== undefined && patch[key] !== "") next[key] = Number(patch[key]);
+      if (patch[key] !== undefined && patch[key] !== "")
+        next[key] = Number(patch[key]);
     }
-    if (patch.mirrorEnabled !== undefined) next.mirrorEnabled = Boolean(patch.mirrorEnabled);
-    if (patch.autoLaunchEnabled !== undefined) next.autoLaunchEnabled = Boolean(patch.autoLaunchEnabled);
+    if (patch.mirrorEnabled !== undefined)
+      next.mirrorEnabled = Boolean(patch.mirrorEnabled);
+    if (patch.autoLaunchEnabled !== undefined)
+      next.autoLaunchEnabled = Boolean(patch.autoLaunchEnabled);
     this.config = next;
     this.applyMacDeviceNo();
     const normalized = { ...this.config };
-    if (!Number.isFinite(next.schoolId)) next.schoolId = DEFAULT_CONFIG.schoolId;
+    if (!Number.isFinite(next.schoolId))
+      next.schoolId = DEFAULT_CONFIG.schoolId;
     if (!Number.isFinite(next.unitId)) next.unitId = DEFAULT_CONFIG.unitId;
-    if (!Number.isFinite(next.segmentSeconds) || next.segmentSeconds < 30) next.segmentSeconds = DEFAULT_CONFIG.segmentSeconds;
+    if (!Number.isFinite(next.segmentSeconds) || next.segmentSeconds < 30)
+      next.segmentSeconds = DEFAULT_CONFIG.segmentSeconds;
     normalized.schoolId = next.schoolId;
     normalized.unitId = next.unitId;
     normalized.segmentSeconds = next.segmentSeconds;
@@ -162,11 +174,22 @@ export class RecorderBackend extends EventEmitter {
   async verifyBinding() {
     this.log("正在校验设备与班级绑定");
     const result = await this.ensureDeviceAuth(true);
-    this.log(`绑定校验成功：${this.config.schoolName} · ${this.config.className}`);
+    this.log(
+      `绑定校验成功：${this.config.schoolName} · ${this.config.className}`
+    );
     return result;
   }
 
-  async enqueueAudioSegment({ bytes, mimeType, codec, rate, bits, channel, startTime, endTime }) {
+  async enqueueAudioSegment({
+    bytes,
+    mimeType,
+    codec,
+    rate,
+    bits,
+    channel,
+    startTime,
+    endTime,
+  }) {
     const started = parseInputDate(startTime);
     const ended = parseInputDate(endTime);
     const segmentIndex = await this.nextSegmentIndex(started);
@@ -212,7 +235,8 @@ export class RecorderBackend extends EventEmitter {
     const previousStatus = this.status;
     this.setStatus(STATUS.UPLOADING);
     for (const item of this.queue) {
-      if (["metadata_saved", "unsupported_format"].includes(item.status)) continue;
+      if (["metadata_saved", "unsupported_format"].includes(item.status))
+        continue;
       try {
         if (!this.isSupportedAudioFormat(item.format)) {
           item.status = "unsupported_format";
@@ -234,7 +258,9 @@ export class RecorderBackend extends EventEmitter {
           await this.saveAudioFileInfo(item);
           item.status = "metadata_saved";
           item.lastError = "";
-          this.lastSyncTime = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+          this.lastSyncTime = new Date().toLocaleTimeString("zh-CN", {
+            hour12: false,
+          });
           await this.saveQueue();
           this.log(`分段 ${item.segmentIndex} 上传并登记成功`);
         }
@@ -242,14 +268,22 @@ export class RecorderBackend extends EventEmitter {
         item.status = "failed";
         item.lastError = error.message;
         await this.saveQueue();
-        this.log(`分段 ${item.segmentIndex} 上传失败，将自动重试：${error.message}`);
+        this.log(
+          `分段 ${item.segmentIndex} 上传失败，将自动重试：${error.message}`
+        );
         touched.push(item);
         this.setStatus(STATUS.NETWORK_ERROR);
         throw error;
       }
       touched.push(item);
     }
-    this.setStatus([STATUS.RECORDING, STATUS.PAUSED, STATUS.NETWORK_ERROR].includes(previousStatus) ? previousStatus : STATUS.IDLE);
+    this.setStatus(
+      [STATUS.RECORDING, STATUS.PAUSED, STATUS.NETWORK_ERROR].includes(
+        previousStatus
+      )
+        ? previousStatus
+        : STATUS.IDLE
+    );
     return touched;
   }
 
@@ -259,7 +293,12 @@ export class RecorderBackend extends EventEmitter {
     const objectKey = `test/${this.formatDay(parseInputDate(item.startTime))}/${path.basename(item.localPath)}`;
     const body = await fs.readFile(item.localPath);
     this.log(`正在上传分段 ${item.segmentIndex} 音频文件`);
-    await putObjectToOss({ ossConfig, objectKey, body, contentType: item.mimeType || "application/octet-stream" });
+    await putObjectToOss({
+      ossConfig,
+      objectKey,
+      body,
+      contentType: item.mimeType || "application/octet-stream",
+    });
     this.log(`分段 ${item.segmentIndex} 音频文件上传完成`);
     return `https://${ossConfig.bucket}.${ossConfig.endPoint}/${objectKey}`;
   }
@@ -268,9 +307,13 @@ export class RecorderBackend extends EventEmitter {
     const token = (await this.ensureDeviceAuth()).accessToken;
     const payload = await this.buildAudioFileInfoPayload(item);
     try {
-      await postJson(`${this.config.baseUrl}/book-reading/audio/save-audio-file-info`, payload, {
-        "Device-Access-Token": token,
-      });
+      await postJson(
+        `${this.config.baseUrl}/book-reading/audio/save-audio-file-info`,
+        payload,
+        {
+          "Device-Access-Token": token,
+        }
+      );
     } catch (error) {
       const legacyPayload = {
         code: payload.code,
@@ -281,9 +324,13 @@ export class RecorderBackend extends EventEmitter {
         startTime: new Date(payload.startTime).getTime(),
         endTime: new Date(payload.endTime).getTime(),
       };
-      await postJson(`${this.config.baseUrl}/book-reading/audio/save-audio-file-info`, legacyPayload, {
-        "Device-Access-Token": token,
-      });
+      await postJson(
+        `${this.config.baseUrl}/book-reading/audio/save-audio-file-info`,
+        legacyPayload,
+        {
+          "Device-Access-Token": token,
+        }
+      );
     }
     await this.tryMirrorMetadata(payload);
   }
@@ -311,18 +358,26 @@ export class RecorderBackend extends EventEmitter {
   }
 
   async tryMirrorMetadata(payload) {
-    if (!this.config.mirrorServerUrl || this.config.mirrorEnabled === false) return;
+    if (!this.config.mirrorServerUrl || this.config.mirrorEnabled === false)
+      return;
     try {
       if (!this.mirrorToken) {
-        const login = await postJson(`${this.config.mirrorServerUrl}/api/login`, {
-          username: this.config.mirrorUsername,
-          password: this.config.mirrorPassword,
-        });
+        const login = await postJson(
+          `${this.config.mirrorServerUrl}/api/login`,
+          {
+            username: this.config.mirrorUsername,
+            password: this.config.mirrorPassword,
+          }
+        );
         this.mirrorToken = login.token || "";
       }
-      await postJson(`${this.config.mirrorServerUrl}/book-reading/audio/save-audio-file-info`, payload, {
-        Authorization: `Bearer ${this.mirrorToken}`,
-      });
+      await postJson(
+        `${this.config.mirrorServerUrl}/book-reading/audio/save-audio-file-info`,
+        payload,
+        {
+          Authorization: `Bearer ${this.mirrorToken}`,
+        }
+      );
       this.log("本地报告服务镜像完成", { diagnostic: true });
     } catch (error) {
       this.log(`本地报告服务镜像失败：${error.message}`, { diagnostic: true });
@@ -330,16 +385,27 @@ export class RecorderBackend extends EventEmitter {
   }
 
   async ensureDeviceAuth(force = false) {
-    if (!force && this.deviceAuth && new Date(this.deviceAuth.expireDate).getTime() - Date.now() > 30 * 60 * 1000) {
+    if (
+      !force &&
+      this.deviceAuth &&
+      new Date(this.deviceAuth.expireDate).getTime() - Date.now() >
+        30 * 60 * 1000
+    ) {
       return this.deviceAuth;
     }
     const timestamp = Date.now();
-    const sign = crypto.createHash("sha1").update(`${this.config.deviceNo}${this.config.deviceNo}`).digest("hex");
-    const result = await postJson(`${this.config.baseUrl}/wisdom/book-reading/device-auth`, {
-      deviceNo: this.config.deviceNo,
-      sign,
-      timestamp,
-    });
+    const sign = crypto
+      .createHash("sha1")
+      .update(`${this.config.deviceNo}${timestamp}`, "utf8")
+      .digest("hex");
+    const result = await postJson(
+      `${this.config.baseUrl}/wisdom/book-reading/device-auth`,
+      {
+        deviceNo: this.config.deviceNo,
+        sign,
+        timestamp,
+      }
+    );
     if (!result.accessToken) throw new Error(result.message || "设备认证失败");
     this.deviceAuth = result;
     this.config.schoolId = Number(result.schoolId || this.config.schoolId);
@@ -351,14 +417,19 @@ export class RecorderBackend extends EventEmitter {
   }
 
   async ensureOssConfig(accessToken) {
-    if (this.ossConfig && Number(this.ossConfig.expiration) - Date.now() > 30 * 60 * 1000) return this.ossConfig;
+    if (
+      this.ossConfig &&
+      Number(this.ossConfig.expiration) - Date.now() > 30 * 60 * 1000
+    )
+      return this.ossConfig;
     this.log("正在获取上传凭证");
     const result = await postJson(
       `${this.config.baseUrl}/book-reading/ali-oss/get-ali-oss-upload-token`,
       {},
-      { "Device-Access-Token": accessToken },
+      { "Device-Access-Token": accessToken }
     );
-    if (!result.accessKeyId) throw new Error(result.message || "获取 OSS 上传凭证失败");
+    if (!result.accessKeyId)
+      throw new Error(result.message || "获取 OSS 上传凭证失败");
     this.ossConfig = result;
     return this.ossConfig;
   }
@@ -366,8 +437,15 @@ export class RecorderBackend extends EventEmitter {
   startAutoRetry() {
     if (this.retryTimer) clearInterval(this.retryTimer);
     this.retryTimer = setInterval(() => {
-      const hasPending = this.queue?.some((item) => item.status !== "metadata_saved");
-      if (!hasPending || this.status === STATUS.RECORDING || this.status === STATUS.UPLOADING) return;
+      const hasPending = this.queue?.some(
+        (item) => item.status !== "metadata_saved"
+      );
+      if (
+        !hasPending ||
+        this.status === STATUS.RECORDING ||
+        this.status === STATUS.UPLOADING
+      )
+        return;
       this.flushQueue().catch((error) => {
         this.log(`后台补传暂未成功：${error.message}`, { diagnostic: true });
       });
@@ -454,7 +532,10 @@ export function formatLocalDateTime(date) {
 export function deriveDeviceNoFromNetworkInterfaces(networkInterfaces = {}) {
   const physicalCandidates = Object.entries(networkInterfaces)
     .filter(([name]) => !isVirtualInterfaceName(name))
-    .sort(([leftName], [rightName]) => interfacePriority(leftName) - interfacePriority(rightName));
+    .sort(
+      ([leftName], [rightName]) =>
+        interfacePriority(leftName) - interfacePriority(rightName)
+    );
 
   for (const [, entries] of physicalCandidates) {
     for (const entry of entries || []) {
@@ -470,12 +551,16 @@ export function resolveDeviceNo({
   physicalMacResolver = resolveWindowsPhysicalMac,
   networkInterfaces = os.networkInterfaces,
 } = {}) {
-  return normalizeMacAddress(physicalMacResolver()) ||
-    deriveDeviceNoFromNetworkInterfaces(networkInterfaces());
+  return (
+    normalizeMacAddress(physicalMacResolver()) ||
+    deriveDeviceNoFromNetworkInterfaces(networkInterfaces())
+  );
 }
 
 function normalizeMacAddress(mac) {
-  const normalized = String(mac || "").replace(/[^0-9a-f]/gi, "").toUpperCase();
+  const normalized = String(mac || "")
+    .replace(/[^0-9a-f]/gi, "")
+    .toUpperCase();
   if (!normalized || /^0+$/.test(normalized)) return "";
   return normalized;
 }
@@ -489,11 +574,20 @@ function resolveWindowsPhysicalMac() {
   try {
     const output = execFileSync(
       "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
-      { encoding: "utf8", timeout: 5000, windowsHide: true },
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        script,
+      ],
+      { encoding: "utf8", timeout: 5000, windowsHide: true }
     ).trim();
     const parsed = JSON.parse(output || "[]");
-    return selectPhysicalMacFromWindowsAdapters(Array.isArray(parsed) ? parsed : [parsed]);
+    return selectPhysicalMacFromWindowsAdapters(
+      Array.isArray(parsed) ? parsed : [parsed]
+    );
   } catch {
     return "";
   }
@@ -504,20 +598,29 @@ export function selectPhysicalMacFromWindowsAdapters(adapters = []) {
     .filter((adapter) => adapter?.PhysicalAdapter === true)
     .filter((adapter) => normalizeMacAddress(adapter?.MACAddress))
     .filter((adapter) => !isVirtualWindowsAdapter(adapter));
-  const hardwareBus = physical.filter((adapter) => /^(PCI|USB)\\/i.test(String(adapter?.PNPDeviceID || "")));
+  const hardwareBus = physical.filter((adapter) =>
+    /^(PCI|USB)\\/i.test(String(adapter?.PNPDeviceID || ""))
+  );
   const candidates = hardwareBus.length ? hardwareBus : physical;
   candidates.sort((left, right) => {
-    const activeDifference = adapterActivePriority(left) - adapterActivePriority(right);
+    const activeDifference =
+      adapterActivePriority(left) - adapterActivePriority(right);
     if (activeDifference) return activeDifference;
     const busDifference = adapterBusPriority(left) - adapterBusPriority(right);
     if (busDifference) return busDifference;
-    return Number(left?.InterfaceIndex || Number.MAX_SAFE_INTEGER) - Number(right?.InterfaceIndex || Number.MAX_SAFE_INTEGER);
+    return (
+      Number(left?.InterfaceIndex || Number.MAX_SAFE_INTEGER) -
+      Number(right?.InterfaceIndex || Number.MAX_SAFE_INTEGER)
+    );
   });
   return normalizeMacAddress(candidates[0]?.MACAddress);
 }
 
 function adapterActivePriority(adapter) {
-  return adapter?.NetEnabled === true || Number(adapter?.NetConnectionStatus) === 2 ? 0 : 1;
+  return adapter?.NetEnabled === true ||
+    Number(adapter?.NetConnectionStatus) === 2
+    ? 0
+    : 1;
 }
 
 function adapterBusPriority(adapter) {
@@ -530,17 +633,21 @@ function adapterBusPriority(adapter) {
 function isVirtualWindowsAdapter(adapter) {
   const name = String(adapter?.Name || "");
   const pnpDeviceId = String(adapter?.PNPDeviceID || "");
-  return isVirtualInterfaceName(name) || /^(ROOT|SWD|HTREE)\\/i.test(pnpDeviceId);
+  return (
+    isVirtualInterfaceName(name) || /^(ROOT|SWD|HTREE)\\/i.test(pnpDeviceId)
+  );
 }
 
 function isVirtualInterfaceName(name) {
   return /virtual|vethernet|hyper-v|vmware|virtualbox|loopback|tunnel|tap|tun|vpn|docker|wsl|npcap|teredo|isatap|bluetooth|本地连接\*|虚拟|蓝牙|桥接/i.test(
-    String(name || ""),
+    String(name || "")
   );
 }
 
 function interfacePriority(name) {
-  return /^(ethernet|以太网|wi-?fi|wlan|无线)/i.test(String(name || "")) ? 0 : 1;
+  return /^(ethernet|以太网|wi-?fi|wlan|无线)/i.test(String(name || ""))
+    ? 0
+    : 1;
 }
 
 function parseInputDate(value) {
@@ -602,10 +709,11 @@ function putObjectToOss({ ossConfig, objectKey, body, contentType }) {
       (response) => {
         response.resume();
         response.on("end", () => {
-          if (response.statusCode >= 200 && response.statusCode < 300) resolve();
+          if (response.statusCode >= 200 && response.statusCode < 300)
+            resolve();
           else reject(new Error(`OSS 上传失败: HTTP ${response.statusCode}`));
         });
-      },
+      }
     );
     request.on("error", reject);
     request.end(body);

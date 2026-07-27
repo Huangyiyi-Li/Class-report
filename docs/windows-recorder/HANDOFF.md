@@ -66,7 +66,7 @@ git switch feat/windows-recorder-production
 - `deviceNo` 使用规范化物理网卡 MAC；卸载重装后同一网卡编号不变，更换网卡视为新设备。设备编号不能代替上传凭证，正式接口仍须提供设备证明。
 - 多网卡按有线物理网卡、Wi-Fi 物理网卡的顺序选择，排除蓝牙、虚拟机、VPN 和回环设备；首次选定后即使网卡暂时离线也不漂移，实际更换后才视为新设备。
 - 普通重绑沿用已持久化的 MAC；只有用户明确选择“网卡已更换”才按当前物理网卡创建新设备。
-- `/wisdom/book-reading/device-auth` 的客户端只消费 `accessToken`；其他返回字段不用于恢复学校或教室绑定，也不要求为公共教室新增返回字段。
+- `/wisdom/book-reading/device-auth` 的请求签名固定为 `SHA1(deviceNo + String(timestamp))`，按 UTF-8 计算并输出 40 位小写十六进制；其中服务端 `checkSign` 的 `credential` 就是请求中的 `timestamp`。客户端只消费返回的 `accessToken`；其他返回字段不用于恢复学校或教室绑定，也不要求为公共教室新增返回字段。
 - 音频信息使用 `POST /ai-lesson-eval/audio/save-audio-file-info`；`schoolId` 非必填且客户端不传，由服务端根据设备认证上下文获取。
 - `filePath` 传完整 URL；状态 `3` 时 URL 可空且 `failReason` 必填，同一分片重试成功后允许更新为状态 `1`。
 - 重绑前录制、重绑后补传的文件按上传时的当前绑定归属。
