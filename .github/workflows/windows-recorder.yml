@@ -44,17 +44,17 @@ jobs:
 
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22.22.1"
           cache: npm
           cache-dependency-path: electron-recorder/package-lock.json
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -128,13 +128,21 @@ jobs:
           if (-not $app) { throw "Packaged desktop executable is missing" }
           & ./scripts/test-packaged-normal-start.ps1 -AppPath $app.FullName
 
-      - name: Upload Windows installers
-        uses: actions/upload-artifact@v4
+      - name: Upload Windows Setup
+        uses: actions/upload-artifact@v7
         with:
-          name: classroom-recorder-windows-${{ github.sha }}
-          path: electron-recorder/release/*.exe
+          path: electron-recorder/release/*-Setup-x64.exe
           if-no-files-found: error
           retention-days: 14
+          archive: false
+
+      - name: Upload Windows Portable
+        uses: actions/upload-artifact@v7
+        with:
+          path: electron-recorder/release/*-Portable-x64.exe
+          if-no-files-found: error
+          retention-days: 14
+          archive: false
 
   publish-github-prerelease:
     if: startsWith(github.ref, 'refs/tags/recorder-v')
@@ -143,11 +151,19 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download Windows installers
-        uses: actions/download-artifact@v4
+      - name: Download Windows Setup
+        uses: actions/download-artifact@v8
         with:
-          name: classroom-recorder-windows-${{ github.sha }}
+          pattern: "*-Setup-x64.exe"
           path: release
+          merge-multiple: true
+
+      - name: Download Windows Portable
+        uses: actions/download-artifact@v8
+        with:
+          pattern: "*-Portable-x64.exe"
+          path: release
+          merge-multiple: true
 
       - name: Publish GitHub pre-release
         env:
@@ -155,4 +171,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           $assets = Get-ChildItem release -Filter *.exe | ForEach-Object { $_.FullName }
-          gh release create $env:GITHUB_REF_NAME $assets --verify-tag --prerelease --title "课堂录音采集助手 $env:GITHUB_REF_NAME" --notes "Windows 10/11 测试版。优先下载 Setup 安装版；Portable 为免安装版。"
+          gh release create $env:GITHUB_REF_NAME $assets --verify-tag --prerelease --title "课堂录音采集助手 $env:GITHUB_REF_NAME" --notes "Windows 10/11 测试版。优先下载 Setup 安装版；Portable 仅用于临时免安装测试。"

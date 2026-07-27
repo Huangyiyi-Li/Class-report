@@ -84,3 +84,40 @@ test("Git normalizes text files to LF before cross-platform formatting checks", 
   assert.match(attributes, /^\* text=auto eol=lf$/m);
   assert.equal(workflow.match(/^\s{6}- "\.gitattributes"$/gm)?.length, 2);
 });
+
+test("Windows distributions are separate direct artifacts and tags publish a prerelease", () => {
+  const workflow = fs.readFileSync(
+    path.join(repositoryDir, ".github", "workflows", "windows-recorder.yml"),
+    "utf8"
+  );
+
+  assert.match(workflow, /uses: actions\/checkout@v7/);
+  assert.match(workflow, /uses: actions\/setup-node@v7/);
+  assert.match(workflow, /uses: actions\/setup-python@v7/);
+  assert.equal(workflow.match(/uses: actions\/upload-artifact@v7/g)?.length, 2);
+  assert.equal(
+    workflow.match(/uses: actions\/download-artifact@v8/g)?.length,
+    2
+  );
+  assert.doesNotMatch(
+    workflow,
+    /uses: actions\/(?:checkout@v4|setup-node@v4|setup-python@v[56]|upload-artifact@v4|download-artifact@v[47])/
+  );
+
+  assert.match(workflow, /^\s{6}- name: Upload Windows Setup\s*$/m);
+  assert.match(workflow, /^\s{10}path: .*\*-Setup-x64\.exe\s*$/m);
+  assert.match(workflow, /^\s{6}- name: Upload Windows Portable\s*$/m);
+  assert.match(workflow, /^\s{10}path: .*\*-Portable-x64\.exe\s*$/m);
+  assert.equal(workflow.match(/^\s{10}archive: false\s*$/gm)?.length, 2);
+
+  assert.match(workflow, /^\s{6}- name: Download Windows Setup\s*$/m);
+  assert.match(workflow, /^\s{10}pattern: "\*-Setup-x64\.exe"\s*$/m);
+  assert.match(workflow, /^\s{6}- name: Download Windows Portable\s*$/m);
+  assert.match(workflow, /^\s{10}pattern: "\*-Portable-x64\.exe"\s*$/m);
+  assert.equal(workflow.match(/^\s{10}merge-multiple: true\s*$/gm)?.length, 2);
+  assert.match(workflow, /\bgh release create\b.*\s--prerelease\b/);
+  assert.match(
+    workflow,
+    /优先下载 Setup 安装版；Portable 仅用于临时免安装测试。/
+  );
+});

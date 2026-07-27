@@ -127,7 +127,7 @@ test("generated worker and FFmpeg inputs are explicitly ignored", () => {
   assert.match(gitignore, /^electron-recorder\/build\/ffmpeg\/$/m);
 });
 
-test("GitHub Windows workflow builds and uploads installer artifacts", () => {
+test("GitHub Windows workflow builds and validates installer artifacts", () => {
   const workflow = readFileSync(
     path.join(repositoryRoot, ".github/workflows/windows-recorder.yml"),
     "utf8"
@@ -148,10 +148,6 @@ test("GitHub Windows workflow builds and uploads installer artifacts", () => {
   assert.match(workflow, /RedirectStandardOutput/);
   assert.match(workflow, /RedirectStandardError/);
   assert.match(workflow, /FFMPEG_EXE/);
-  assert.match(workflow, /actions\/upload-artifact@v4/);
-  assert.match(workflow, /gh release create/);
-  assert.match(workflow, /--prerelease/);
-  assert.match(workflow, /release\/\*\.exe/);
 });
 
 test("packaged normal-start gate launches the real worker without smoke mode", () => {
