@@ -5,9 +5,9 @@
 - 仓库：`https://github.com/Huangyiyi-Li/Class-report.git`
 - 工作分支：`feat/windows-recorder-production`
 - Draft PR：`https://github.com/Huangyiyi-Li/Class-report/pull/1`
-- 当前源码版本：`0.1.19-beta.1`（仅本地候选，未创建标签或 Release）
-- 最新候选标签：`recorder-v0.1.18-beta.2`
-- 最新状态：`WIN-REC-002` 已在 Windows 10 x64 真机完成本地修复验收；最新公开候选仍是不可交付的 `recorder-v0.1.18-beta.2`
+- 当前源码版本：`0.1.19-beta.2`
+- 最新候选标签：`recorder-v0.1.19-beta.2`
+- 最新状态：`0.1.19-beta.2` 新增 Passport 教师身份兼容和登录窗口自适应；服务端 `rest.xxt.cn/ai-lesson-eval/...` 尚未上线，真实绑定接口仍不可联调
 
 ## 1. 新 Windows 电脑接手步骤
 
