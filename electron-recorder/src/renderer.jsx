@@ -23,6 +23,12 @@ import { saveSettings } from "./settings-save.js";
 import { canRebind } from "./binding-flow.js";
 import { BindingWizard } from "./binding-wizard.jsx";
 import { createFloatingDragController } from "./floating-drag.js";
+import {
+  API_ROUTE_DEFINITIONS,
+  PRODUCTION_API_ROUTES,
+  TEST_API_ROUTES,
+  detectApiEnvironment,
+} from "./api-routes.js";
 import "./styles.css";
 
 const shell = window.recorderShell;
@@ -63,153 +69,159 @@ function App() {
 
 function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
   const [bindingOpen, setBindingOpen] = useState(false);
-  const recording = getRecordingMeta(runtime.recording);
-  const upload = getUploadMeta(runtime.upload);
-  const health = getHealthMeta(runtime.health);
-  const location = formatBinding(snapshot.binding || runtime.binding);
-  const canStart = runtime.safe && runtime.recording !== "recording";
+  const home = getHomeState(snapshot, runtime);
+  const binding = snapshot.binding || runtime.binding;
+  const uploadAttention =
+    runtime.pending > 0 ||
+    ["failed", "metadata_failed", "network_error", "waiting_network"].includes(
+      runtime.upload
+    );
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">{location}</p>
-          <div className="title-row">
-            <h1>课堂录音采集助手</h1>
-            <span className="version-badge">
-              v{snapshot.appVersion || "--"}
-            </span>
-          </div>
+      <header className="desktop-header">
+        <div className="app-identity">
+          <span className="app-mark">
+            <Mic size={15} />
+          </span>
+          <strong>课堂录音采集助手</strong>
         </div>
-        <div className="top-actions">
-          <StatusPill
-            icon={<UploadCloud />}
-            label={`${upload.label} · ${runtime.pending} 段`}
-            tone={upload.tone}
-          />
-          <StatusPill
-            icon={<HardDrive />}
-            label={health.label}
-            tone={health.tone}
-          />
+        <div className="window-tools">
           <button
-            className="ghost-button"
+            className="header-action"
             onClick={() => shell?.minimizeToTray?.()}
           >
-            <ChevronUp size={18} />
+            <ChevronUp size={16} />
             最小化常驻
           </button>
           <button
-            className="icon-button"
+            className="header-icon"
             aria-label="维护设置"
             onClick={() => setSettingsOpen(true)}
           >
-            <Settings size={21} />
+            <Settings size={19} />
           </button>
         </div>
       </header>
-      {!shell ? (
-        <section className="bridge-warning">
-          <AlertTriangle size={20} />
-          客户端控制通道未连接，请重新安装最新版安装包。
+
+      {binding ? (
+        <section className="location-strip">
+          <span>当前教室</span>
+          <strong>
+            {binding.schoolName || "学校未命名"} · {binding.classroom}
+          </strong>
+          <em>{binding.bindType === 2 ? "公共教室" : "班级教室"}</em>
         </section>
       ) : null}
-      {snapshot.binding || runtime.health === "binding_required" ? (
-        <BindingBanner
-          snapshot={snapshot}
-          runtime={runtime}
-          onOpen={() => setBindingOpen(true)}
-        />
+
+      {!shell ? (
+        <section className="inline-notice danger">
+          <AlertTriangle size={18} />
+          客户端控制通道未连接，请重新启动客户端。
+        </section>
       ) : null}
-      <section className="layout">
-        <section className={`record-card tone-${recording.tone}`}>
-          <div className="card-label">当前课堂录音</div>
-          <div className="hero-row">
-            <span
-              className={`record-dot ${runtime.recording === "recording" ? "live" : ""}`}
-            />
-            <div>
-              <h2>{recording.label}</h2>
-              <p>{recording.helper}</p>
-            </div>
+
+      <section className={`home-state tone-${home.tone}`}>
+        <div className="state-heading">
+          <span className="state-symbol">{home.icon}</span>
+          <div>
+            <h1>{home.title}</h1>
+            <p>{home.description}</p>
           </div>
-          <div className="state-grid">
-            <InfoTile
-              icon={<Mic />}
-              title="录音状态"
-              value={recording.label}
-              tone={runtime.safe ? "green" : "orange"}
-            />
-            <InfoTile
-              icon={<UploadCloud />}
-              title="上传状态"
-              value={`${upload.label} · ${runtime.pending} 段`}
-              tone={runtime.pending ? "orange" : "green"}
-            />
-            <InfoTile
-              icon={<Check />}
-              title="设备健康"
-              value={health.label}
-              tone={runtime.safe ? "green" : "orange"}
-            />
+        </div>
+
+        {home.notice ? (
+          <div className={`inline-notice ${home.noticeTone || ""}`}>
+            <AlertTriangle size={18} />
+            <span>{home.notice}</span>
           </div>
-          <div className="primary-actions">
-            {runtime.recording === "recording" ? (
-              <button
-                className="danger-action"
-                onClick={() => shell?.pauseRecording?.()}
-              >
-                <Pause size={24} />
-                暂停录音
-              </button>
-            ) : (
-              <button
-                className="primary-action"
-                disabled={!canStart}
-                onClick={() => shell?.startRecording?.()}
-              >
-                <Play size={25} />
-                开始录音
-              </button>
-            )}
+        ) : null}
+
+        <div className="home-actions">
+          {home.primary === "bind" ? (
             <button
-              className="secondary-action"
+              className="home-primary"
+              onClick={() => setBindingOpen(true)}
+              data-testid="open-binding"
+            >
+              登录并绑定设备
+            </button>
+          ) : null}
+          {home.primary === "pause" ? (
+            <button
+              className="home-primary"
+              onClick={() => shell?.pauseRecording?.()}
+            >
+              <Pause size={20} />
+              暂停录音
+            </button>
+          ) : null}
+          {home.primary === "start" ? (
+            <button
+              className="home-primary"
+              onClick={() => shell?.startRecording?.()}
+            >
+              <Play size={20} />
+              {runtime.recording === "paused" ? "继续录音" : "开始录音"}
+            </button>
+          ) : null}
+          {home.primary === "settings" ? (
+            <button
+              className="home-primary"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <Settings size={19} />
+              打开设置
+            </button>
+          ) : null}
+          {home.primary === "clock" ? (
+            <>
+              <button
+                className="home-primary"
+                onClick={() => shell?.openSystemTimeSettings?.()}
+              >
+                打开系统时间设置
+              </button>
+              <button
+                className="home-secondary"
+                onClick={() => shell?.recheckRecording?.()}
+              >
+                <RefreshCcw size={18} />
+                重新检测
+              </button>
+            </>
+          ) : null}
+          {home.showStop ? (
+            <button
+              className="home-secondary"
               onClick={() => shell?.stopRecording?.()}
             >
-              <Power size={22} />
+              <Power size={19} />
               停止录音
             </button>
-            <button
-              className="quiet-action"
-              onClick={() => shell?.flushQueue?.()}
-            >
-              <RefreshCcw size={20} />
-              重新上传待传文件
-            </button>
-          </div>
-        </section>
-        <aside className="side-panel">
-          <section className="soft-card">
-            <div className="section-title">
-              <Cloud size={22} />
-              上传队列
-            </div>
-            <p>{upload.label}</p>
-            <strong>{runtime.pending} 段待处理</strong>
-          </section>
-          <section className="soft-card alert-card">
-            <div className="section-title">
-              <AlertTriangle size={22} />
-              设备健康
-            </div>
-            <p>{health.label}</p>
-          </section>
-          <section className="soft-card history-card">
-            <div className="section-title">最近错误</div>
-            <p>{snapshot.latestError || "暂无错误"}</p>
-          </section>
-        </aside>
+          ) : null}
+        </div>
       </section>
+
+      <footer className={`upload-footer ${uploadAttention ? "attention" : ""}`}>
+        <div>
+          <UploadCloud size={17} />
+          <span>
+            {runtime.pending > 0
+              ? `待上传 ${runtime.pending} 段`
+              : "待上传 0 段 · 队列已清空"}
+          </span>
+          {snapshot.bindingServiceMode === "mock" ? <em>模拟数据</em> : null}
+        </div>
+        {uploadAttention ? (
+          <button
+            className="footer-retry"
+            onClick={() => shell?.flushQueue?.()}
+          >
+            立即重试
+          </button>
+        ) : null}
+      </footer>
       {settingsOpen ? (
         <SettingsModal
           snapshot={snapshot}
@@ -226,6 +238,112 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
       />
     </main>
   );
+}
+
+function getHomeState(snapshot, runtime) {
+  const auth = snapshot.authIssue;
+  if (auth?.reason === "clock_invalid") {
+    return {
+      tone: "danger",
+      icon: <AlertTriangle size={29} />,
+      title: "设备时间不正确",
+      description: "当前设备时间与服务器时间不一致，暂时无法录音。",
+      notice: "请将 Windows 时间调整为北京时间，返回客户端后重新检测。",
+      noticeTone: "danger",
+      primary: "clock",
+    };
+  }
+  if (auth?.reason === "signature_invalid") {
+    return {
+      tone: "danger",
+      icon: <AlertTriangle size={29} />,
+      title: "暂时无法完成设备认证",
+      description: "录音服务已停止。",
+      notice: "请联系市场人员并提交维修工单。",
+      noticeTone: "danger",
+      primary: "settings",
+    };
+  }
+  if (auth?.rebindRequired) {
+    return {
+      tone: "danger",
+      icon: <AlertTriangle size={29} />,
+      title: "设备需要重新绑定",
+      description: "当前设备归属已失效，暂时无法录音。",
+      notice: "请重新完成设备初始化绑定。",
+      noticeTone: "danger",
+      primary: "bind",
+    };
+  }
+  if (!snapshot.binding && runtime.health === "binding_required") {
+    return {
+      tone: "idle",
+      icon: <Mic size={29} />,
+      title: "尚未绑定教室",
+      description: "登录并选择教室后，录音服务会立即启用。",
+      primary: "bind",
+    };
+  }
+  if (
+    ["microphone_unavailable", "mic_error"].includes(runtime.health) ||
+    runtime.recording === "microphone_unavailable"
+  ) {
+    return {
+      tone: "danger",
+      icon: <Mic size={29} />,
+      title: "暂不可录音",
+      description: "保存的麦克风当前不可用。",
+      notice: "录音已停止。请在设置中重新选择麦克风后再开始录音。",
+      noticeTone: "danger",
+      primary: "settings",
+    };
+  }
+  if (runtime.recording === "recording") {
+    return {
+      tone: "recording",
+      icon: <span className="live-dot" />,
+      title: "录音中",
+      description: "采集服务正在持续写入本地文件。",
+      primary: "pause",
+      showStop: true,
+    };
+  }
+  if (runtime.recording === "paused") {
+    return {
+      tone: "paused",
+      icon: <Pause size={29} />,
+      title: "已暂停",
+      description: "采集已暂停，已写入的文件仍会继续补传。",
+      notice: "当前没有新的音频写入，请记得在下课前继续录音。",
+      primary: "start",
+      showStop: true,
+    };
+  }
+  if (runtime.recording === "starting") {
+    return {
+      tone: "preparing",
+      icon: <RefreshCcw size={29} />,
+      title: "正在准备录音",
+      description: "采集服务正在启动，请稍候，不要重复操作。",
+    };
+  }
+  if (["blocked", "error"].includes(runtime.health)) {
+    return {
+      tone: "danger",
+      icon: <AlertTriangle size={29} />,
+      title: "暂时无法确认录音状态",
+      description: "正在连接录音服务。",
+      notice: "客户端正在尝试恢复连接，界面会在服务恢复后自动更新。",
+      primary: "settings",
+    };
+  }
+  return {
+    tone: "idle",
+    icon: <Mic size={29} />,
+    title: "未开始录音",
+    description: "录音由本机采集服务负责，音频会先安全写入本地。",
+    primary: "start",
+  };
 }
 
 function BindingBanner({ snapshot, runtime, onOpen }) {
@@ -376,10 +494,16 @@ function SettingsModal({ snapshot, runtime, onClose }) {
     autoRecordEnabled: Boolean(initial.autoRecordEnabled),
     inputDevice: initial.inputDevice || "default",
     dataRoot: initial.dataRoot || snapshot.dataRoot || "",
+    apiRoutes: initial.apiRoutes || TEST_API_ROUTES,
   });
   const [saveError, setSaveError] = useState("");
   const update = (key, value) =>
     setForm((current) => ({ ...current, [key]: value }));
+  const updateRoute = (key, value) =>
+    setForm((current) => ({
+      ...current,
+      apiRoutes: { ...current.apiRoutes, [key]: value },
+    }));
   const save = async () => {
     setSaveError("");
     const { autoLaunch, ...workerSettings } = form;
@@ -504,6 +628,48 @@ function SettingsModal({ snapshot, runtime, onClose }) {
             <p>上传：{runtime.upload}</p>
             <p>健康：{runtime.health}</p>
           </details>
+          <section className="api-routes-section">
+            <div className="api-routes-heading">
+              <div>
+                <h3>接口路由</h3>
+                <p>
+                  当前环境：
+                  {safeApiEnvironment(form.apiRoutes) === "test"
+                    ? "测试环境"
+                    : safeApiEnvironment(form.apiRoutes) === "production"
+                      ? "正式环境"
+                      : "自定义"}
+                </p>
+              </div>
+              <div className="route-presets">
+                <button
+                  className="home-secondary"
+                  onClick={() => update("apiRoutes", TEST_API_ROUTES)}
+                >
+                  使用测试环境
+                </button>
+                <button
+                  className="home-secondary"
+                  onClick={() => update("apiRoutes", PRODUCTION_API_ROUTES)}
+                >
+                  使用正式环境
+                </button>
+              </div>
+            </div>
+            <div className="api-route-list">
+              {API_ROUTE_DEFINITIONS.map((route) => (
+                <label key={route.key}>
+                  <span>{route.label}</span>
+                  <input
+                    value={form.apiRoutes[route.key] || ""}
+                    onChange={(event) =>
+                      updateRoute(route.key, event.target.value)
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          </section>
         </div>
         <footer className="modal-footer">
           {saveError && (
@@ -585,6 +751,14 @@ function formatAutoLaunchStatus(value) {
   return value.actual === null
     ? value.error || "未验证"
     : `未验证（实际${value.actual ? "已开启" : "未开启"}）`;
+}
+
+function safeApiEnvironment(routes) {
+  try {
+    return detectApiEnvironment(routes);
+  } catch {
+    return "custom";
+  }
 }
 
 createRoot(document.getElementById("root")).render(<App />);

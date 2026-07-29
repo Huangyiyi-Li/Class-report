@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createBindingService } from "./binding-service.js";
+import { PRODUCTION_API_ROUTES, TEST_API_ROUTES } from "./api-routes.js";
 
 const NOW = Date.parse("2026-07-15T08:00:00.000Z");
 
@@ -90,17 +91,23 @@ function remoteFixture(requests) {
       },
       post: async (url, payload) => {
         requests.push([url, payload]);
-        if (url.endsWith("/get-grade-list"))
-          return [{ gradeCode: 7, gradeName: "七年级" }];
-        if (url.endsWith("/get-class-list"))
-          return [{ classId: 701, className: "七年级一班" }];
+        if (url.endsWith("/grade-class-list"))
+          return [
+            {
+              gradeCode: 7,
+              gradeName: "七年级",
+              groupId: 701,
+              groupName: "七年级一班",
+            },
+          ];
         return { success: true };
       },
     }),
+    getApiRoutes: () => TEST_API_ROUTES,
   });
 }
 
-test("remote mode uses the Passport identity for grade and class calls", async () => {
+test("remote mode loads grades and classes from the shared grade-class-list API", async () => {
   const requests = [];
   const service = remoteFixture(requests);
   const session = await service.createSession({ deviceNo: "AABBCCDDEEFF" });
@@ -114,12 +121,44 @@ test("remote mode uses the Passport identity for grade and class calls", async (
     { classId: 701, className: "七年级一班" },
   ]);
   assert.deepEqual(requests, [
-    ["https://rest.xxt.cn/ai-lesson-eval/basic-data/get-grade-list", {}],
     [
-      "https://rest.xxt.cn/ai-lesson-eval/basic-data/get-class-list",
-      { gradeCode: 7 },
+      "http://rest-test.xxt.cn/wisdom/group/grade-class-list",
+      { schoolId: 9001 },
     ],
   ]);
+});
+
+test("remote mode reads a newly saved route map without recreating the service", async () => {
+  const requests = [];
+  let routes = TEST_API_ROUTES;
+  const service = createBindingService({
+    mode: "remote",
+    createId: () => "session-routes",
+    getApiRoutes: () => routes,
+    authenticate: async () => ({
+      user: {
+        schoolId: 9001,
+        schoolName: "众享中学",
+        userName: "测试教师",
+        userType: 0,
+      },
+      post: async (url, payload) => {
+        requests.push([url, payload]);
+        return [
+          {
+            gradeCode: 7,
+            gradeName: "七年级",
+            groupId: 701,
+            groupName: "一班",
+          },
+        ];
+      },
+    }),
+  });
+  const session = await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+  routes = PRODUCTION_API_ROUTES;
+  await service.listGrades(session.id);
+  assert.equal(requests[0][0], PRODUCTION_API_ROUTES.gradeClassList);
 });
 
 test("remote classroom binding sends the confirmed request contract", async () => {
@@ -132,7 +171,7 @@ test("remote classroom binding sends the confirmed request contract", async () =
     className: "七年级一班",
   });
   assert.deepEqual(requests[0], [
-    "https://rest.xxt.cn/ai-lesson-eval/recording-device/bind-device",
+    TEST_API_ROUTES.bindDevice,
     {
       schoolId: 9001,
       deviceNo: "AABBCCDDEEFF",
@@ -214,7 +253,7 @@ test("remote public classroom omits classId and unbind only sends deviceNo", asy
   await unbindService.createSession({ deviceNo: "AABBCCDDEEFF" });
   await unbindService.unbindDevice("passport-session-1");
   assert.deepEqual(requests[1], [
-    "https://rest.xxt.cn/ai-lesson-eval/recording-device/unbind-device",
+    TEST_API_ROUTES.unbindDevice,
     { deviceNo: "AABBCCDDEEFF" },
   ]);
 });

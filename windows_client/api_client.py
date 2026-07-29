@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib import request
 from urllib.error import HTTPError
+from urllib.parse import urlparse
 
 
 REQUEST_TIMEOUT_SECONDS = 30
@@ -62,10 +63,18 @@ class ClassroomApiClient:
         headers = {"Content-Type": "application/json"}
         if auth and self.token:
             headers["Authorization"] = f"Bearer {self.token}"
-        req = request.Request(f"{self.server_url}{path}", data=body, headers=headers, method="POST")
+        req = request.Request(
+            self._request_url(path), data=body, headers=headers, method="POST"
+        )
         try:
             with request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
                 return json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="ignore")
             raise RuntimeError(f"HTTP {exc.code}: {detail}") from exc
+
+    def _request_url(self, path: str) -> str:
+        parsed = urlparse(str(path))
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return str(path)
+        return f"{self.server_url}{path}"

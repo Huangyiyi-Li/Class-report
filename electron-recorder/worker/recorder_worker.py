@@ -313,6 +313,7 @@ class RecorderWorker:
             "health": "healthy",
             "recovered": 0,
             "latestError": "",
+            "authIssue": None,
         }
         self.session: CaptureSession | None = None
         self._state_lock = threading.Lock()
@@ -343,6 +344,7 @@ class RecorderWorker:
             self.state["upload"] = "mock_blocked"
         elif self.upload_service is None and self.upload_service_factory is not None:
             self.upload_service = self.upload_service_factory(self.config, self.queue_store)
+        self._configure_upload_service(self.upload_service)
         self.start_uploading()
         self.maybe_auto_start()
 
@@ -395,6 +397,8 @@ class RecorderWorker:
                 self._stop_session("idle")
         elif command.command == "flush_queue":
             self._flush_queue()
+        elif command.command == "check_device_auth":
+            self._check_device_auth()
         elif command.command == "update_settings":
             if self.state["recording"] == "recording":
                 self._command_error("录音中不允许变更运行设置")
@@ -605,6 +609,7 @@ class RecorderWorker:
                 "deviceNo": self.config.device_no,
                 "schoolId": self.config.school_id,
                 "schoolName": self.config.school_name,
+                "userType": self.config.user_type,
                 "bindType": self.config.bind_type,
                 "classroom": self.config.classroom,
                 "classId": self.config.class_id,
@@ -643,6 +648,7 @@ class RecorderWorker:
             replacement_upload_service = None if candidate.binding_source == "mock" else self.upload_service
             if candidate.binding_source != "mock" and self.upload_service_factory is not None:
                 replacement_upload_service = self.upload_service_factory(candidate, queue_store)
+                self._configure_upload_service(replacement_upload_service)
 
             candidate.save_atomic(self.config_path)
             with self._upload_lock:
@@ -696,6 +702,7 @@ class RecorderWorker:
                 self.config,
                 school_id=None,
                 school_name="",
+                user_type=None,
                 bind_type=None,
                 classroom="",
                 class_id="",
@@ -737,18 +744,99 @@ class RecorderWorker:
             while self.upload_service.run_once(datetime.now(timezone.utc)) is not None:
                 pass
 
+    def _check_device_auth(self) -> None:
+        if self.upload_service is None:
+            raise CommandRejected("当前设备尚未完成绑定")
+        try:
+            with self._upload_lock:
+                self.upload_service.check_device_auth()
+        except Exception as exc:
+            raise CommandRejected(str(exc)) from exc
+
     def _update_settings(self, payload: dict) -> None:
         changes = validate_settings_patch(payload, self.system_drive)
         requested_root = changes.pop("data_root", None)
         if requested_root and requested_root != self.config.data_root:
             raise CommandRejected("录音数据目录首次部署后不可修改，需重新部署")
         candidate = replace(self.config, **changes)
+        routes_changed = candidate.api_routes != self.config.api_routes
         if candidate.data_root != self.config.data_root:
             self._rebind_storage(candidate)
         else:
             if self.config_path is not None:
                 candidate.save_atomic(self.config_path)
             self.config = candidate
+        if routes_changed and self.upload_service_factory is not None and self.queue_store is not None:
+            replacement = self.upload_service_factory(candidate, self.queue_store)
+            self._configure_upload_service(replacement)
+            self._stop_uploading()
+            with self._upload_lock:
+                self.upload_service = replacement
+            self.start_uploading()
+
+    def _configure_upload_service(self, service) -> None:
+        if service is not None and hasattr(service, "set_device_auth_listener"):
+            service.set_device_auth_listener(
+                self._device_auth_succeeded,
+                self._device_auth_failed,
+            )
+
+    def _device_auth_succeeded(self, auth) -> None:
+        if self.config_path is None:
+            return
+        candidate = replace(
+            self.config,
+            school_id=auth.school_id,
+            school_name=auth.school_name,
+            user_type=auth.user_type,
+            bind_type=auth.user_type,
+            class_id=auth.class_id,
+            class_name=auth.classroom if auth.user_type == 1 else "",
+            classroom=auth.classroom,
+        )
+        candidate.save_atomic(self.config_path)
+        self.config = candidate
+        self.state["authIssue"] = None
+        if self.state["health"] in {"device_auth_failed", "clock_invalid", "signature_invalid"}:
+            self.state["health"] = "healthy"
+            self.state["latestError"] = ""
+        self.emit_event("snapshot", self.snapshot())
+
+    def _device_auth_failed(self, error) -> None:
+        issue = {
+            "reason": getattr(error, "reason", "device_auth_failed"),
+            "message": str(error),
+            "rebindRequired": bool(getattr(error, "rebind_required", False)),
+        }
+        self.state["authIssue"] = issue
+        reason = issue["reason"]
+        if issue["rebindRequired"] or reason in {"clock_invalid", "signature_invalid"}:
+            with self._capture_transition_lock:
+                self._desired_recording = False
+                self._capture_generation += 1
+                self._cancel_capture_retry()
+                self._stop_session("error")
+            self.state["health"] = (
+                "binding_required" if issue["rebindRequired"] else reason
+            )
+            self.state["latestError"] = issue["message"]
+            if issue["rebindRequired"] and self.config_path is not None:
+                candidate = replace(
+                    self.config,
+                    school_id=None,
+                    school_name="",
+                    user_type=None,
+                    bind_type=None,
+                    classroom="",
+                    class_id="",
+                    class_name="",
+                    binding_source="",
+                    bound_at="",
+                    unbind_pending=False,
+                )
+                candidate.save_atomic(self.config_path)
+                self.config = candidate
+        self.emit_event("snapshot", self.snapshot())
 
     def _rebind_storage(self, candidate: WorkerConfig) -> None:
         gate = self.startup_gate(candidate, self.system_drive)
@@ -809,14 +897,53 @@ class XxtProductionAdapter:
     def __init__(self, api_client, upload_manager):
         self.api_client = api_client
         self.upload_manager = upload_manager
+        self._on_auth_success = None
+        self._on_auth_failure = None
+        self.upload_manager.on_device_auth = self._device_auth_succeeded
+
+    def set_device_auth_listener(self, on_success, on_failure):
+        self._on_auth_success = on_success
+        self._on_auth_failure = on_failure
+
+    def _device_auth_succeeded(self, auth):
+        if self._on_auth_success is not None:
+            self._on_auth_success(auth)
+
+    def _device_auth_failed(self, error):
+        if self._on_auth_failure is not None:
+            self._on_auth_failure(error)
 
     def upload(self, path):
-        return self.upload_manager.upload(path)
+        try:
+            return self.upload_manager.upload(path)
+        except Exception as exc:
+            from windows_client.xxt_upload import DeviceAuthError
+
+            if isinstance(exc, DeviceAuthError):
+                self._device_auth_failed(exc)
+            raise
 
     def save_audio_file_info(self, payload):
-        auth = self.upload_manager.ensure_device_auth()
-        self.api_client.token = auth.access_token
-        return self.api_client.save_audio_file_info(payload)
+        try:
+            auth = self.upload_manager.ensure_device_auth()
+            self.api_client.token = auth.access_token
+            return self.api_client.save_audio_file_info(payload)
+        except Exception as exc:
+            from windows_client.xxt_upload import DeviceAuthError
+
+            if isinstance(exc, DeviceAuthError):
+                self._device_auth_failed(exc)
+            raise
+
+    def check_device_auth(self):
+        try:
+            return self.upload_manager.ensure_device_auth()
+        except Exception as exc:
+            from windows_client.xxt_upload import DeviceAuthError
+
+            if isinstance(exc, DeviceAuthError):
+                self._device_auth_failed(exc)
+            raise
 
 
 def create_upload_service(config: WorkerConfig, store: QueueStore):
@@ -824,7 +951,7 @@ def create_upload_service(config: WorkerConfig, store: QueueStore):
         return None
     from windows_client.xxt_upload import XxtDeviceApiClient, XxtUploadManager
 
-    api_client = XxtDeviceApiClient(config.base_url)
+    api_client = XxtDeviceApiClient(config.base_url, api_routes=config.api_routes)
     upload_manager = XxtUploadManager(api_client, config.device_no)
     adapter = XxtProductionAdapter(api_client, upload_manager)
     return UploadService(store, adapter, adapter)

@@ -28,6 +28,15 @@ class UploadService:
         self.uploader = uploader
         self.metadata_client = metadata_client
 
+    def set_device_auth_listener(self, on_success, on_failure) -> None:
+        if hasattr(self.metadata_client, "set_device_auth_listener"):
+            self.metadata_client.set_device_auth_listener(on_success, on_failure)
+
+    def check_device_auth(self):
+        if not hasattr(self.metadata_client, "check_device_auth"):
+            raise RuntimeError("当前上传服务不支持重新检测设备认证")
+        return self.metadata_client.check_device_auth()
+
     def run_once(self, now: str | datetime) -> UploadResult | None:
         current = _utc_datetime(now)
         item = self.store.claim_next(current)

@@ -4,13 +4,37 @@ import json
 import os
 import shutil
 import tempfile
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
+from urllib.parse import urlparse
 
 
 LOW_SPACE_BYTES = 5 * 1024**3
-RUNTIME_SETTING_KEYS = {"autoRecordEnabled", "inputDevice", "dataRoot"}
+API_ROUTE_KEYS = frozenset(
+    {
+        "deviceAuth",
+        "gradeClassList",
+        "bindDevice",
+        "unbindDevice",
+        "ossToken",
+        "saveAudioFileInfo",
+    }
+)
+DEFAULT_API_ROUTES = {
+    "deviceAuth": "http://rest-test.xxt.cn/wisdom/book-reading/device-auth",
+    "gradeClassList": "http://rest-test.xxt.cn/wisdom/group/grade-class-list",
+    "bindDevice": "http://rest-test.xxt.cn/ai-lesson-eval/recording-device/bind-device",
+    "unbindDevice": "http://rest-test.xxt.cn/ai-lesson-eval/recording-device/unbind-device",
+    "ossToken": "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+    "saveAudioFileInfo": "http://rest-test.xxt.cn/ai-lesson-eval/audio/save-audio-file-info",
+}
+RUNTIME_SETTING_KEYS = {
+    "autoRecordEnabled",
+    "inputDevice",
+    "dataRoot",
+    "apiRoutes",
+}
 BINDING_FIELD_MAP = {
     "deviceNo": "device_no",
     "schoolId": "school_id",
@@ -34,10 +58,14 @@ class StartupGate:
 @dataclass(frozen=True)
 class WorkerConfig:
     data_root: str = ""
-    base_url: str = "https://rest.xxt.cn"
+    base_url: str = "http://rest-test.xxt.cn"
+    api_routes: dict[str, str] = field(
+        default_factory=lambda: dict(DEFAULT_API_ROUTES)
+    )
     device_no: str = ""
     school_id: int | None = None
     school_name: str = ""
+    user_type: int | None = None
     bind_type: int | None = None
     classroom: str = ""
     class_id: str = ""
@@ -108,7 +136,40 @@ def validate_settings_patch(patch: object, system_drive: str = "C:") -> dict:
             raise ValueError("dataRoot is invalid")
         validate_data_root(value, system_drive)
         changes["data_root"] = value
+    if "apiRoutes" in patch:
+        changes["api_routes"] = validate_api_routes(patch["apiRoutes"])
     return changes
+
+
+def validate_api_routes(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise ValueError("apiRoutes must be an object")
+    supplied = set(value)
+    if supplied != API_ROUTE_KEYS:
+        missing = sorted(API_ROUTE_KEYS - supplied)
+        unknown = sorted(supplied - API_ROUTE_KEYS)
+        detail = missing[0] if missing else unknown[0]
+        raise ValueError(f"apiRoutes fields are invalid: {detail}")
+    routes = {}
+    for key in API_ROUTE_KEYS:
+        route = value[key]
+        if not isinstance(route, str):
+            raise ValueError(f"apiRoutes.{key} must be a string")
+        route = route.strip()
+        parsed = urlparse(route)
+        if (
+            not route
+            or len(route) > 2048
+            or any(character in route for character in ("\0", "\r", "\n"))
+            or parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
+        ):
+            raise ValueError(f"apiRoutes.{key} must be an http/https URL")
+        routes[key] = route.rstrip("/")
+    return routes
 
 
 def validate_binding_payload(payload: object) -> dict:

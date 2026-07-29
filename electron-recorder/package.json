@@ -1,6 +1,6 @@
 {
   "name": "classroom-recorder-electron",
-  "version": "0.1.19-beta.2",
+  "version": "0.2.0-codex.1",
   "private": true,
   "description": "课堂录音采集助手 Windows 客户端",
   "author": "XXT",
@@ -54,6 +54,7 @@
       "src/worker-client.js",
       "src/single-instance.js",
       "src/worker-bootstrap.js",
+      "src/api-routes.js",
       "src/worker-settings.js",
       "src/runtime-state.js",
       "src/settings.js",

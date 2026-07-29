@@ -215,6 +215,24 @@ def test_worker_validates_core_settings_patch_strictly():
     }
 
 
+def test_worker_validates_complete_editable_api_routes():
+    routes = {
+        "deviceAuth": "http://rest-test.xxt.cn/wisdom/book-reading/device-auth",
+        "gradeClassList": "http://rest-test.xxt.cn/wisdom/group/grade-class-list",
+        "bindDevice": "http://rest-test.xxt.cn/ai-lesson-eval/recording-device/bind-device",
+        "unbindDevice": "http://rest-test.xxt.cn/ai-lesson-eval/recording-device/unbind-device",
+        "ossToken": "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+        "saveAudioFileInfo": "http://rest-test.xxt.cn/ai-lesson-eval/audio/save-audio-file-info",
+    }
+    assert validate_settings_patch({"apiRoutes": routes}) == {
+        "api_routes": routes
+    }
+    with pytest.raises(ValueError):
+        validate_settings_patch(
+            {"apiRoutes": {**routes, "deviceAuth": "file:///tmp/auth"}}
+        )
+
+
 def test_worker_validates_safe_windows_data_root_in_patch():
     assert validate_settings_patch({"dataRoot": "D:/Recorder"}, system_drive="C:") == {
         "data_root": "D:/Recorder",

@@ -63,10 +63,145 @@ class FakeUploadService:
         self.store = store
         self.config = config
         self.calls = 0
+        self.auth_checks = 0
+        self.on_auth_success = None
+        self.on_auth_failure = None
 
     def run_once(self, now):
         self.calls += 1
         return None
+
+    def set_device_auth_listener(self, on_success, on_failure):
+        self.on_auth_success = on_success
+        self.on_auth_failure = on_failure
+
+    def check_device_auth(self):
+        self.auth_checks += 1
+        return None
+
+
+def test_device_auth_refresh_updates_local_binding_fields(tmp_path: Path):
+    config_path = tmp_path / "worker-config.json"
+    config = WorkerConfig(
+        data_root=str(tmp_path),
+        device_no="AABBCCDDEEFF",
+        school_id=1001,
+        school_name="旧学校",
+        user_type=1,
+        bind_type=1,
+        classroom="旧班级",
+        class_id="1",
+        class_name="旧班级",
+        binding_source="remote",
+    )
+    config.save_atomic(config_path)
+    service = FakeUploadService(None, config)
+    worker = RecorderWorker(
+        config,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=allow_startup,
+        upload_service=service,
+        upload_poll_seconds=10,
+        session_factory=lambda **_: FakeSession(),
+    )
+    worker.startup()
+
+    service.on_auth_success(
+        SimpleNamespace(
+            school_id=9001,
+            school_name="星河实验学校",
+            user_type=1,
+            class_id="301",
+            classroom="一年级一班",
+        )
+    )
+
+    saved = WorkerConfig.load(config_path)
+    assert saved.school_id == 9001
+    assert saved.school_name == "星河实验学校"
+    assert saved.user_type == 1
+    assert saved.bind_type == 1
+    assert saved.class_id == "301"
+    assert saved.classroom == "一年级一班"
+    assert worker.snapshot()["binding"]["userType"] == 1
+    worker.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("reason", "rebind_required", "expected_health"),
+    [
+        ("device_not_found", True, "binding_required"),
+        ("signature_invalid", False, "signature_invalid"),
+        ("clock_invalid", False, "clock_invalid"),
+    ],
+)
+def test_fatal_device_auth_errors_block_recording(
+    tmp_path: Path, reason: str, rebind_required: bool, expected_health: str
+):
+    from windows_client.xxt_upload import DeviceAuthError
+
+    config_path = tmp_path / "worker-config.json"
+    config = WorkerConfig(
+        data_root=str(tmp_path),
+        device_no="AABBCCDDEEFF",
+        school_id=1001,
+        school_name="旧学校",
+        bind_type=1,
+        classroom="旧教室",
+        class_id="1",
+        class_name="旧班级",
+        binding_source="remote",
+    )
+    config.save_atomic(config_path)
+    service = FakeUploadService(None, config)
+    worker = RecorderWorker(
+        config,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=allow_startup,
+        upload_service=service,
+        upload_poll_seconds=10,
+        session_factory=lambda **_: FakeSession(),
+    )
+    worker.startup()
+    worker.execute_command(command("start"))
+    assert worker.state["recording"] == "recording"
+
+    service.on_auth_failure(
+        DeviceAuthError(reason, "设备认证失败", rebind_required=rebind_required)
+    )
+
+    assert worker.state["recording"] == "error"
+    assert worker.state["health"] == expected_health
+    assert worker.snapshot()["authIssue"]["reason"] == reason
+    if rebind_required:
+        assert worker.snapshot()["binding"] is None
+        assert WorkerConfig.load(config_path).device_no == "AABBCCDDEEFF"
+    else:
+        assert worker.snapshot()["binding"] is not None
+    worker.shutdown()
+
+
+def test_recheck_command_delegates_to_upload_service(tmp_path: Path):
+    config = WorkerConfig(data_root=str(tmp_path))
+    service = FakeUploadService(None, config)
+    worker = RecorderWorker(
+        config,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=allow_startup,
+        upload_service=service,
+        upload_poll_seconds=10,
+    )
+    worker.startup()
+
+    worker.execute_command(command("check_device_auth"))
+
+    assert service.auth_checks == 1
+    worker.shutdown()
 
 
 def test_apply_binding_activates_initially_blocked_worker_without_restart(tmp_path: Path):
@@ -797,7 +932,7 @@ def test_update_settings_rejects_unknown_fields_without_persisting_partial_chang
     saved = WorkerConfig.load(config_path)
     assert saved.auto_record_enabled is False
     assert saved.input_device == ""
-    assert saved.base_url == "https://rest.xxt.cn"
+    assert saved.base_url == "http://rest-test.xxt.cn"
     assert any(name == "error" and "forbidden field" in payload["message"] for name, payload in events)
 
 

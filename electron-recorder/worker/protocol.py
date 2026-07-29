@@ -12,6 +12,9 @@ ALLOWED_COMMANDS = {
     "flush_queue",
     "update_settings",
     "apply_binding",
+    "prepare_unbind",
+    "clear_binding",
+    "check_device_auth",
 }
 
 

@@ -6,9 +6,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from datetime import datetime, timezone
 
 from windows_client.xxt_upload import (
+    DeviceAuthError,
     XxtDeviceApiClient,
     XxtUploadManager,
     build_device_auth_payload,
+    classify_device_auth_error,
 )
 from worker.queue_store import QueueStore
 from worker.recorder_worker import XxtProductionAdapter
@@ -23,6 +25,74 @@ def test_device_auth_signs_device_number_with_timestamp_credential():
         "sign": "ad7d2bcdcc2dd1cfea4e1b3fbbadf598dd18ad2a",
         "timestamp": 1722067200123,
     }
+
+
+def test_device_auth_maps_server_binding_fields_for_local_refresh(monkeypatch):
+    client = XxtDeviceApiClient(
+        "https://unused.test",
+        api_routes={
+            "deviceAuth": "http://rest-test.xxt.cn/custom/device-auth",
+            "ossToken": "http://rest-test.xxt.cn/custom/oss-token",
+            "saveAudioFileInfo": "http://rest-test.xxt.cn/custom/save-audio",
+        },
+    )
+    calls = []
+
+    def post(endpoint, payload, *, auth=True):
+        calls.append((endpoint, auth))
+        return {
+            "accessToken": "token",
+            "schoolId": 9001,
+            "schoolName": "众享中学",
+            "groupId": 701,
+            "groupName": "七年级一班",
+        }
+
+    monkeypatch.setattr(client, "_post_json", post)
+    auth = client.device_auth("AABBCCDDEEFF")
+
+    assert calls == [
+        ("http://rest-test.xxt.cn/custom/device-auth", False)
+    ]
+    assert auth.school_id == 9001
+    assert auth.school_name == "众享中学"
+    assert auth.user_type == 1
+    assert auth.class_id == "701"
+    assert auth.classroom == "七年级一班"
+
+
+def test_device_auth_maps_group_zero_to_public_classroom(monkeypatch):
+    client = XxtDeviceApiClient("https://example.test")
+    monkeypatch.setattr(
+        client,
+        "_post_json",
+        lambda *_args, **_kwargs: {
+            "accessToken": "token",
+            "schoolId": 9001,
+            "schoolName": "众享中学",
+            "groupId": 0,
+            "groupName": "公共录播室",
+        },
+    )
+    auth = client.device_auth("AABBCCDDEEFF")
+    assert auth.user_type == 2
+    assert auth.class_id == "0"
+    assert auth.classroom == "公共录播室"
+
+
+def test_device_auth_classifies_server_failures_for_ui_recovery():
+    cases = {
+        "设备不存在": ("device_not_found", True),
+        "设备未绑定班级或者教室": ("device_unbound", True),
+        "签名无效": ("signature_invalid", False),
+        "设备时间与服务器时间不一致": ("clock_invalid", False),
+        "学校不存在": ("school_not_found", True),
+        "班级不存在": ("class_not_found", True),
+    }
+    for message, expected in cases.items():
+        error = classify_device_auth_error({"message": message})
+        assert isinstance(error, DeviceAuthError)
+        assert (error.reason, error.rebind_required) == expected
 
 
 def test_upload_uses_wisdom_oss_contract_and_server_authorized_directory(tmp_path, monkeypatch):

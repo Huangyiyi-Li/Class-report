@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { TEST_API_ROUTES, validateApiRoutes } from "./api-routes.js";
 
 const MOCK_USER = Object.freeze({
   schoolId: 1001,
@@ -162,7 +163,7 @@ export class RemoteBindingService {
     authenticate,
     createId = randomUUID,
     now = Date.now,
-    restBaseUrl = "https://rest.xxt.cn",
+    getApiRoutes = () => TEST_API_ROUTES,
   } = {}) {
     if (typeof authenticate !== "function") {
       throw bindingError(
@@ -174,7 +175,7 @@ export class RemoteBindingService {
     this.authenticate = authenticate;
     this.createId = createId;
     this.now = now;
-    this.restBaseUrl = String(restBaseUrl).replace(/\/+$/, "");
+    this.getApiRoutes = getApiRoutes;
     this.sessions = new Map();
   }
 
@@ -196,6 +197,7 @@ export class RemoteBindingService {
       user,
       post: authenticated.post,
       binding: null,
+      gradeClassCatalog: null,
     };
     this.sessions.set(id, session);
     return publicSession(session);
@@ -207,27 +209,32 @@ export class RemoteBindingService {
 
   async listGrades(sessionId) {
     const session = this.#getSession(sessionId);
-    const response = await session.post(
-      `${this.restBaseUrl}/ai-lesson-eval/basic-data/get-grade-list`,
-      {}
-    );
-    return normalizeListResponse(response, "grade list").map((grade) => ({
-      gradeCode: requirePositiveInteger(grade?.gradeCode, "gradeCode"),
-      gradeName: requireNonEmptyString(grade?.gradeName, "gradeName"),
-    }));
+    const catalog = await this.#loadGradeClassCatalog(session);
+    return copy([
+      ...new Map(
+        catalog.map((item) => [
+          item.gradeCode,
+          {
+            gradeCode: item.gradeCode,
+            gradeName: item.gradeName,
+          },
+        ])
+      ).values(),
+    ]);
   }
 
   async listClasses(sessionId, { gradeCode } = {}) {
     const session = this.#getSession(sessionId);
     const normalizedGradeCode = requirePositiveInteger(gradeCode, "gradeCode");
-    const response = await session.post(
-      `${this.restBaseUrl}/ai-lesson-eval/basic-data/get-class-list`,
-      { gradeCode: normalizedGradeCode }
+    const catalog = await this.#loadGradeClassCatalog(session);
+    return copy(
+      catalog
+        .filter((item) => item.gradeCode === normalizedGradeCode)
+        .map((item) => ({
+          classId: item.classId,
+          className: item.className,
+        }))
     );
-    return normalizeListResponse(response, "class list").map((classroom) => ({
-      classId: requirePositiveInteger(classroom?.classId, "classId"),
-      className: requireNonEmptyString(classroom?.className, "className"),
-    }));
   }
 
   async confirmBinding(sessionId, selection = {}) {
@@ -239,10 +246,8 @@ export class RemoteBindingService {
       );
     }
     const request = bindingRequest(session, selection);
-    const response = await session.post(
-      `${this.restBaseUrl}/ai-lesson-eval/recording-device/bind-device`,
-      request
-    );
+    const routes = validateApiRoutes(this.getApiRoutes());
+    const response = await session.post(routes.bindDevice, request);
     requireSuccessfulMutation(response, "绑定失败");
     const classroomBinding = request.bindType === 1;
     const binding = {
@@ -272,10 +277,10 @@ export class RemoteBindingService {
         "绑定会话已经使用，请重新登录"
       );
     }
-    const response = await session.post(
-      `${this.restBaseUrl}/ai-lesson-eval/recording-device/unbind-device`,
-      { deviceNo: session.deviceNo }
-    );
+    const routes = validateApiRoutes(this.getApiRoutes());
+    const response = await session.post(routes.unbindDevice, {
+      deviceNo: session.deviceNo,
+    });
     requireSuccessfulMutation(response, "解绑失败");
     session.status = "confirmed";
     this.sessions.delete(String(sessionId));
@@ -291,6 +296,16 @@ export class RemoteBindingService {
       );
     }
     return session;
+  }
+
+  async #loadGradeClassCatalog(session) {
+    if (session.gradeClassCatalog) return session.gradeClassCatalog;
+    const routes = validateApiRoutes(this.getApiRoutes());
+    const response = await session.post(routes.gradeClassList, {
+      schoolId: session.user.schoolId,
+    });
+    session.gradeClassCatalog = normalizeGradeClassCatalog(response);
+    return session.gradeClassCatalog;
   }
 }
 
@@ -340,6 +355,69 @@ function normalizeListResponse(value, field) {
     "BINDING_RESPONSE_INVALID",
     `${field} response is invalid`
   );
+}
+
+function normalizeGradeClassCatalog(value) {
+  const rows = normalizeCatalogRows(value);
+  const catalog = [];
+  for (const row of rows) {
+    const gradeCode = requirePositiveInteger(
+      row?.gradeCode ?? row?.gradeId,
+      "gradeCode"
+    );
+    const gradeName = requireNonEmptyString(
+      row?.gradeName ?? row?.grade,
+      "gradeName"
+    );
+    const groups = [row?.classes, row?.groups, row?.classList].find(
+      Array.isArray
+    );
+    if (groups) {
+      for (const group of groups) {
+        catalog.push(normalizeCatalogClass(group, { gradeCode, gradeName }));
+      }
+      continue;
+    }
+    catalog.push(normalizeCatalogClass(row, { gradeCode, gradeName }));
+  }
+  if (!catalog.length) {
+    throw bindingError(
+      "BINDING_RESPONSE_INVALID",
+      "grade class list response is empty"
+    );
+  }
+  return catalog;
+}
+
+function normalizeCatalogRows(value) {
+  if (Array.isArray(value)) return value;
+  for (const candidate of [
+    value?.data,
+    value?.data?.list,
+    value?.data?.records,
+    value?.list,
+    value?.records,
+  ]) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+  throw bindingError(
+    "BINDING_RESPONSE_INVALID",
+    "grade class list response is invalid"
+  );
+}
+
+function normalizeCatalogClass(value, grade) {
+  return {
+    ...grade,
+    classId: requirePositiveInteger(
+      value?.classId ?? value?.groupId,
+      "classId"
+    ),
+    className: requireNonEmptyString(
+      value?.className ?? value?.groupName,
+      "className"
+    ),
+  };
 }
 
 function requireSuccessfulMutation(value, fallback) {

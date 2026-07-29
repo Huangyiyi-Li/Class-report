@@ -65,6 +65,7 @@ let settings = {
   autoRecordEnabled: true,
   inputDevice: "default",
   dataRoot: "",
+  apiRoutes: {},
 };
 let autoLaunchStatus = {
   desired: false,
@@ -123,6 +124,7 @@ function initializeBindingController() {
   bindingService = createBindingService({
     mode: bindingServiceMode,
     authenticate,
+    getApiRoutes: () => settings.apiRoutes,
   });
   bindingController = new BindingController({
     service: bindingService,
@@ -174,11 +176,13 @@ function getTrayIcon() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 800,
+    width: 1024,
+    height: 640,
+    minWidth: 880,
+    minHeight: 560,
     useContentSize: true,
-    resizable: false,
-    maximizable: false,
+    resizable: true,
+    maximizable: true,
     title: "课堂录音采集助手",
     backgroundColor: "#f6f8fb",
     autoHideMenuBar: true,
@@ -661,7 +665,6 @@ async function runSmokeTest() {
 if (hasSingleInstanceLock)
   app.whenReady().then(() => {
     const userDataDir = app.getPath("userData");
-    initializeBindingController();
     workerLocation = loadWorkerLocator(app.getPath("userData"));
     settings = {
       ...loadSettings(workerLocation?.configPath),
@@ -670,6 +673,7 @@ if (hasSingleInstanceLock)
         : {}),
       dataRoot: workerLocation?.dataRoot || "",
     };
+    initializeBindingController();
 
     const attachWorkerClient = (client) => {
       supervisor?.disconnect();
@@ -809,6 +813,15 @@ if (hasSingleInstanceLock)
     ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
     ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);
     ipcMain.handle(
+      "recorder:recheck",
+      () => supervisor?.send("check_device_auth") ?? false
+    );
+    ipcMain.handle("system:open-date-time", async () => {
+      if (process.platform !== "win32") return false;
+      await electronShell.openExternal("ms-settings:dateandtime");
+      return true;
+    });
+    ipcMain.handle(
       "recorder:flush",
       () => supervisor?.send("flush_queue") ?? false
     );
@@ -840,6 +853,7 @@ if (hasSingleInstanceLock)
         autoLaunch: settings.autoLaunch,
         autoRecordEnabled: settings.autoRecordEnabled,
         inputDevice: settings.inputDevice,
+        apiRoutes: settings.apiRoutes,
       });
       publishSnapshot({});
       return settings;
@@ -857,6 +871,7 @@ if (hasSingleInstanceLock)
         autoLaunch: desired,
         autoRecordEnabled: settings.autoRecordEnabled,
         inputDevice: settings.inputDevice,
+        apiRoutes: settings.apiRoutes,
       });
       autoLaunchStatus = guarded;
       publishSnapshot({});

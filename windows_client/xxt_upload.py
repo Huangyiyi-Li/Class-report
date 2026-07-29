@@ -52,10 +52,92 @@ class XxtTokenState:
 @dataclass
 class DeviceAuth:
     access_token: str
+    school_id: int | None = None
+    school_name: str = ""
+    user_type: int | None = None
+    class_id: str = ""
+    classroom: str = ""
 
     @classmethod
     def from_response(cls, data: dict[str, Any]) -> "DeviceAuth":
-        return cls(access_token=str(data["accessToken"]))
+        group_id = data.get("groupId")
+        normalized_group_id = int(group_id) if group_id is not None else None
+        return cls(
+            access_token=str(data["accessToken"]),
+            school_id=int(data["schoolId"]) if data.get("schoolId") is not None else None,
+            school_name=str(data.get("schoolName") or "").strip(),
+            user_type=(
+                1 if normalized_group_id != 0 else 2
+            ) if normalized_group_id is not None else None,
+            class_id=str(normalized_group_id) if normalized_group_id is not None else "",
+            classroom=str(data.get("groupName") or "").strip(),
+        )
+
+
+class DeviceAuthError(RuntimeError):
+    def __init__(self, reason: str, message: str, *, rebind_required: bool):
+        super().__init__(message)
+        self.reason = reason
+        self.rebind_required = rebind_required
+
+
+def classify_device_auth_error(value: Any) -> DeviceAuthError:
+    if isinstance(value, DeviceAuthError):
+        return value
+    if isinstance(value, dict):
+        code = str(value.get("code") or value.get("errorCode") or "")
+        message = str(
+            value.get("message")
+            or value.get("msg")
+            or value.get("error")
+            or value
+        )
+    else:
+        code = ""
+        message = str(value)
+    source = f"{code} {message}".lower()
+    cases = (
+        (
+            "clock_invalid",
+            False,
+            ("设备时间与服务器时间不一致", "时间不一致", "北京时间", "timestamp"),
+        ),
+        (
+            "signature_invalid",
+            False,
+            ("签名无效", "签名错误", "invalid signature", "sign_invalid"),
+        ),
+        (
+            "device_unbound",
+            True,
+            ("未绑定班级", "未绑定教室", "未绑定班级或者教室", "device_unbound"),
+        ),
+        (
+            "device_not_found",
+            True,
+            ("设备不存在", "device_not_found", "device not found"),
+        ),
+        (
+            "school_not_found",
+            True,
+            ("学校不存在", "school_not_found", "school not found"),
+        ),
+        (
+            "class_not_found",
+            True,
+            ("班级不存在", "class_not_found", "class not found"),
+        ),
+    )
+    for reason, rebind_required, keywords in cases:
+        if any(keyword in source for keyword in keywords):
+            return DeviceAuthError(
+                reason, message or "设备认证失败", rebind_required=rebind_required
+            )
+    return DeviceAuthError(
+        "device_auth_failed",
+        message or "设备认证失败",
+        rebind_required=False,
+    )
 
 
 @dataclass
@@ -141,10 +223,17 @@ class AliOssUploader:
 class XxtUploadManager:
     """Coordinates Android-style device auth, OSS token refresh, and upload."""
 
-    def __init__(self, api_client: "XxtDeviceApiClient", device_no: str, uploader_factory=AliOssUploader):
+    def __init__(
+        self,
+        api_client: "XxtDeviceApiClient",
+        device_no: str,
+        uploader_factory=AliOssUploader,
+        on_device_auth=None,
+    ):
         self.api_client = api_client
         self.device_no = device_no
         self.uploader_factory = uploader_factory
+        self.on_device_auth = on_device_auth
         self.device_auth_data: DeviceAuth | None = None
         self.oss_config: OssConfig | None = None
 
@@ -159,6 +248,8 @@ class XxtUploadManager:
     def _ensure_device_auth(self, *, refresh: bool = False) -> None:
         if refresh or self.device_auth_data is None:
             self.device_auth_data = self.api_client.device_auth(self.device_no)
+            if self.on_device_auth is not None:
+                self.on_device_auth(self.device_auth_data)
 
     def ensure_device_auth(self) -> DeviceAuth:
         # The confirmed response contract exposes only accessToken, so refresh
@@ -176,18 +267,49 @@ class XxtUploadManager:
 class XxtDeviceApiClient(ClassroomApiClient):
     """Client for the Android recorder's production API shape."""
 
+    def __init__(
+        self,
+        server_url: str,
+        token: str = "",
+        *,
+        api_routes: dict[str, str] | None = None,
+    ):
+        super().__init__(server_url, token)
+        self.api_routes = dict(api_routes or {})
+
+    def _route(self, key: str, fallback: str) -> str:
+        return str(self.api_routes.get(key) or fallback)
+
     def device_auth(self, device_no: str) -> DeviceAuth:
-        response = self._post_json("/wisdom/book-reading/device-auth", build_device_auth_payload(device_no), auth=False)
-        if "accessToken" not in response:
-            raise RuntimeError(response.get("message") or f"设备认证失败: {response}")
-        return DeviceAuth.from_response(response)
+        try:
+            response = self._post_json(
+                self._route(
+                    "deviceAuth", "/wisdom/book-reading/device-auth"
+                ),
+                build_device_auth_payload(device_no),
+                auth=False,
+            )
+        except Exception as exc:
+            raise classify_device_auth_error(exc) from exc
+        payload = (
+            response.get("data")
+            if isinstance(response, dict) and isinstance(response.get("data"), dict)
+            else response
+        )
+        if not isinstance(payload, dict) or "accessToken" not in payload:
+            raise classify_device_auth_error(response)
+        return DeviceAuth.from_response(payload)
 
     def get_oss_upload_token(self, access_token: str) -> OssConfig:
         original_token = self.token
         self.token = access_token
         try:
             response = self._post_json(
-                "/wisdom/ali-oss/get-ali-oss-upload-token", {}
+                self._route(
+                    "ossToken",
+                    "/wisdom/ali-oss/get-ali-oss-upload-token",
+                ),
+                {},
             )
             if "accessKeyId" not in response:
                 raise RuntimeError(response.get("message") or f"获取 OSS token 失败: {response}")
@@ -197,7 +319,10 @@ class XxtDeviceApiClient(ClassroomApiClient):
 
     def save_audio_file_info(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self._post_json(
-            "/ai-lesson-eval/audio/save-audio-file-info",
+            self._route(
+                "saveAudioFileInfo",
+                "/ai-lesson-eval/audio/save-audio-file-info",
+            ),
             self._server_audio_metadata(payload),
         )
 
@@ -240,7 +365,9 @@ class XxtDeviceApiClient(ClassroomApiClient):
             "Accept": "application/json",
             "Device-Access-Token": self.token,
         }
-        req = request.Request(f"{self.server_url}{path}", data=body, headers=headers, method="POST")
+        req = request.Request(
+            self._request_url(path), data=body, headers=headers, method="POST"
+        )
         try:
             with request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as response:
                 return json.loads(response.read().decode("utf-8"))
