@@ -16,7 +16,7 @@ test("formatLocalDateTime emits Java Date-compatible local ISO time", () => {
   assert.equal(value.includes("Z"), false);
 });
 
-test("device auth signs the device number with the timestamp credential", async () => {
+test("device auth signs the device number with its persisted device credential", async () => {
   const originalFetch = globalThis.fetch;
   const originalDateNow = Date.now;
   let requestBody;
@@ -41,7 +41,7 @@ test("device auth signs the device number with the timestamp credential", async 
 
     assert.deepEqual(requestBody, {
       deviceNo: "AABBCCDDEEFF",
-      sign: "ad7d2bcdcc2dd1cfea4e1b3fbbadf598dd18ad2a",
+      sign: "fcd4bc1c48094cd152812f6ac2619f857ab11918",
       timestamp: 1722067200123,
     });
   } finally {

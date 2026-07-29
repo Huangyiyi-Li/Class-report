@@ -396,7 +396,7 @@ export class RecorderBackend extends EventEmitter {
     const timestamp = Date.now();
     const sign = crypto
       .createHash("sha1")
-      .update(`${this.config.deviceNo}${timestamp}`, "utf8")
+      .update(`${this.config.deviceNo}${this.config.deviceNo}`, "utf8")
       .digest("hex");
     const result = await postJson(
       `${this.config.baseUrl}/wisdom/book-reading/device-auth`,

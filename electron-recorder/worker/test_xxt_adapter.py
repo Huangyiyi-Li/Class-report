@@ -17,12 +17,12 @@ from worker.recorder_worker import XxtProductionAdapter
 from worker.upload_service import UploadService
 
 
-def test_device_auth_signs_device_number_with_timestamp_credential():
+def test_device_auth_signs_device_number_with_persisted_device_credential():
     payload = build_device_auth_payload("AABBCCDDEEFF", timestamp=1722067200123)
 
     assert payload == {
         "deviceNo": "AABBCCDDEEFF",
-        "sign": "ad7d2bcdcc2dd1cfea4e1b3fbbadf598dd18ad2a",
+        "sign": "fcd4bc1c48094cd152812f6ac2619f857ab11918",
         "timestamp": 1722067200123,
     }
 
@@ -82,17 +82,27 @@ def test_device_auth_maps_group_zero_to_public_classroom(monkeypatch):
 
 def test_device_auth_classifies_server_failures_for_ui_recovery():
     cases = {
-        "设备不存在": ("device_not_found", True),
-        "设备未绑定班级或者教室": ("device_unbound", True),
-        "签名无效": ("signature_invalid", False),
-        "设备时间与服务器时间不一致": ("clock_invalid", False),
-        "学校不存在": ("school_not_found", True),
-        "班级不存在": ("class_not_found", True),
+        1: ("device_not_found", True),
+        2: ("device_unbound", True),
+        3: ("signature_invalid", False),
+        4: ("clock_invalid", False),
+        5: ("school_not_found", True),
+        6: ("class_not_found", True),
     }
-    for message, expected in cases.items():
-        error = classify_device_auth_error({"message": message})
+    for result_code, expected in cases.items():
+        error = classify_device_auth_error(
+            {"resultCode": result_code, "resultMsg": "设备认证失败"}
+        )
         assert isinstance(error, DeviceAuthError)
         assert (error.reason, error.rebind_required) == expected
+
+
+def test_device_auth_reads_business_code_from_http_error_body():
+    error = classify_device_auth_error(
+        RuntimeError('HTTP 400: {"resultCode":4,"resultMsg":"设备认证失败"}')
+    )
+
+    assert (error.reason, error.rebind_required) == ("clock_invalid", False)
 
 
 def test_upload_uses_wisdom_oss_contract_and_server_authorized_directory(tmp_path, monkeypatch):
@@ -154,6 +164,7 @@ def test_audio_metadata_uses_confirmed_server_contract(monkeypatch):
 
     result = client.save_audio_file_info(
         {
+            "schoolId": 9001,
             "deviceNo": "device-1",
             "segmentIndex": 3,
             "fileName": "device-1_20260725_003.ogg",
@@ -170,6 +181,7 @@ def test_audio_metadata_uses_confirmed_server_contract(monkeypatch):
         (
             "/ai-lesson-eval/audio/save-audio-file-info",
             {
+                "schoolId": 9001,
                 "deviceNo": "device-1",
                 "segmentIndex": 3,
                 "fileName": "device-1_20260725_003.ogg",
@@ -211,7 +223,13 @@ def test_uploaded_restart_authenticates_then_registers_without_upload(tmp_path, 
     def post(endpoint, payload, *, auth=True):
         observed.append((endpoint, client.token, auth))
         if endpoint.endswith("device-auth"):
-            return {"accessToken": "fresh-token"}
+            return {
+                "accessToken": "fresh-token",
+                "schoolId": 9001,
+                "schoolName": "众享中学",
+                "groupId": 701,
+                "groupName": "七年级一班",
+            }
         return {"ok": True}
 
     monkeypatch.setattr(client, "_post_json", post)
@@ -243,8 +261,15 @@ def test_metadata_registration_refreshes_device_auth_without_using_expiry_fields
 
     def post(endpoint, payload, *, auth=True):
         if endpoint.endswith("device-auth"):
-            return {"accessToken": next(issued)}
+            return {
+                "accessToken": next(issued),
+                "schoolId": 9001,
+                "schoolName": "众享中学",
+                "groupId": 701,
+                "groupName": "七年级一班",
+            }
         observed.append((endpoint, client.token))
+        assert payload["schoolId"] == 9001
         return {"ok": True}
 
     monkeypatch.setattr(client, "_post_json", post)

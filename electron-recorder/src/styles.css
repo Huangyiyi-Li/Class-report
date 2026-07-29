@@ -783,6 +783,47 @@ h1 {
     sans-serif;
 }
 
+.device-management {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid #ead8d5;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: #fff;
+}
+
+.device-management strong {
+  display: block;
+  font-size: 15px;
+}
+
+.device-management p {
+  max-width: 330px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.danger-action.compact {
+  height: 40px;
+  flex: 0 0 auto;
+  padding: 0 14px;
+  border-radius: 7px;
+  background: #fff;
+  color: #b42318;
+  box-shadow: inset 0 0 0 1px #e7b9b4;
+  font-size: 13px;
+}
+
+.danger-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .readonly-field {
   border: 1px solid #dbe5ec;
   border-radius: 18px;

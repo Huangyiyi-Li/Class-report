@@ -621,6 +621,7 @@ class RecorderWorker:
             **self.state,
             "pending": pending,
             "completed": counts.get("completed", 0),
+            "deviceNo": self.config.device_no,
             "binding": binding,
             "dataRoot": self.config.data_root,
             "freeDiskBytes": free_bytes,
@@ -927,7 +928,9 @@ class XxtProductionAdapter:
         try:
             auth = self.upload_manager.ensure_device_auth()
             self.api_client.token = auth.access_token
-            return self.api_client.save_audio_file_info(payload)
+            return self.api_client.save_audio_file_info(
+                {**payload, "schoolId": auth.school_id}
+            )
         except Exception as exc:
             from windows_client.xxt_upload import DeviceAuthError
 

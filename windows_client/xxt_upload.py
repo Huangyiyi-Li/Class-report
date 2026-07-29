@@ -25,7 +25,7 @@ def build_device_auth_payload(device_no: str, timestamp: int | None = None) -> d
     timestamp = timestamp if timestamp is not None else int(datetime.now().timestamp() * 1000)
     return {
         "deviceNo": device_no,
-        "sign": device_sign(device_no, timestamp),
+        "sign": device_sign(device_no, device_no),
         "timestamp": timestamp,
     }
 
@@ -84,18 +84,48 @@ class DeviceAuthError(RuntimeError):
 def classify_device_auth_error(value: Any) -> DeviceAuthError:
     if isinstance(value, DeviceAuthError):
         return value
+    if not isinstance(value, dict):
+        text = str(value)
+        json_start = text.find("{")
+        if json_start >= 0:
+            try:
+                parsed = json.loads(text[json_start:])
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, dict):
+                return classify_device_auth_error(parsed)
     if isinstance(value, dict):
-        code = str(value.get("code") or value.get("errorCode") or "")
+        code = str(
+            value.get("resultCode")
+            or value.get("code")
+            or value.get("errorCode")
+            or ""
+        )
         message = str(
             value.get("message")
             or value.get("msg")
+            or value.get("resultMsg")
             or value.get("error")
             or value
         )
     else:
         code = ""
         message = str(value)
-    source = f"{code} {message}".lower()
+    code_cases = {
+        "1": ("device_not_found", True),
+        "2": ("device_unbound", True),
+        "3": ("signature_invalid", False),
+        "4": ("clock_invalid", False),
+        "5": ("school_not_found", True),
+        "6": ("class_not_found", True),
+    }
+    if code in code_cases:
+        reason, rebind_required = code_cases[code]
+        return DeviceAuthError(
+            reason, message or "设备认证失败", rebind_required=rebind_required
+        )
+
+    source = message.lower()
     cases = (
         (
             "clock_invalid",
@@ -333,6 +363,7 @@ class XxtDeviceApiClient(ClassroomApiClient):
         file_path = str(payload.get("filePath") or "")
         upload_status = int(payload.get("uploadStatus") or 1)
         metadata = {
+            "schoolId": int(payload["schoolId"]),
             "deviceNo": str(payload["deviceNo"]),
             "segmentIndex": int(payload["segmentIndex"]),
             "fileName": str(

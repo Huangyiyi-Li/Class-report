@@ -66,12 +66,12 @@ git switch feat/windows-recorder-production
 - `deviceNo` 使用规范化物理网卡 MAC；卸载重装后同一网卡编号不变，更换网卡视为新设备。设备编号不能代替上传凭证，正式接口仍须提供设备证明。
 - 多网卡按有线物理网卡、Wi-Fi 物理网卡的顺序选择，排除蓝牙、虚拟机、VPN 和回环设备；首次选定后即使网卡暂时离线也不漂移，实际更换后才视为新设备。
 - 普通重绑沿用已持久化的 MAC；只有用户明确选择“网卡已更换”才按当前物理网卡创建新设备。
-- `/wisdom/book-reading/device-auth` 的请求签名固定为 `SHA1(deviceNo + String(timestamp))`，按 UTF-8 计算并输出 40 位小写十六进制；其中服务端 `checkSign` 的 `credential` 就是请求中的 `timestamp`。客户端只消费返回的 `accessToken`；其他返回字段不用于恢复学校或教室绑定，也不要求为公共教室新增返回字段。
-- 音频信息使用 `POST /ai-lesson-eval/audio/save-audio-file-info`；`schoolId` 非必填且客户端不传，由服务端根据设备认证上下文获取。
+- `/wisdom/book-reading/device-auth` 的请求签名按服务端现役代码固定为 `SHA1(deviceNo + credential)`；AI 评课设备入库时 `credential`（`valldateCode`）初始化为同一 `deviceNo`，因此客户端计算 `SHA1(deviceNo + deviceNo)`，按 UTF-8 输出 40 位小写十六进制。`timestamp` 仅用于 30 秒设备时间校验。认证成功后，客户端同时使用返回的 `accessToken`、学校和班级/教室字段刷新本地归属。
+- 音频信息使用 `POST /ai-lesson-eval/audio/save-audio-file-info`；按服务端现役 DTO，`schoolId` 必填。客户端在每次登记前重新认证，并发送认证结果中的当前 `schoolId`。
 - `filePath` 传完整 URL；状态 `3` 时 URL 可空且 `failReason` 必填，同一分片重试成功后允许更新为状态 `1`。
 - 重绑前录制、重绑后补传的文件按上传时的当前绑定归属。
 - 完整决策、服务端开发清单和接口待确认项见 docs/windows-recorder/DESKTOP_LOGIN_AND_DEVICE_BINDING.md。
-- 客户端已实现正式 Passport 绑定流程：登录及身份选择后读取当前学校，班级教室按年级/班级选择，公共教室填写名称，空闲时可重绑。mock 模式复用同一界面和数据契约，仅用于内部流程验证。
+- 客户端已实现正式 Passport 绑定流程：登录及身份选择后读取当前学校，班级教室按年级/班级选择，公共教室填写名称。所有人工换绑统一先解除当前绑定，再重新登录并完成初始化绑定，不支持同校直接改绑。mock 模式复用同一界面和数据契约，仅用于内部流程验证。
 - 解绑采用持久化两阶段安全门：先停止本地生产上传并写入待解绑状态，再调用服务端幂等解绑，最后清空本地绑定。
 - 当前仓库已包含隔离 Cookie 的 Passport 登录协调器和 HTTP binding service。生产模式不回退 mock；由于 `rest.xxt.cn/ai-lesson-eval/...` 尚未开发，真实接口联调仍是外部阻断项。
 

@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
-  Check,
   ChevronUp,
   Cloud,
   FolderOpen,
@@ -20,7 +19,7 @@ import {
 import { createRuntimeState } from "./runtime-state.js";
 import { getHealthMeta, getRecordingMeta, getUploadMeta } from "./state.js";
 import { saveSettings } from "./settings-save.js";
-import { canRebind } from "./binding-flow.js";
+import { beginFullRebinding, canRebind } from "./binding-flow.js";
 import { BindingWizard } from "./binding-wizard.jsx";
 import { createFloatingDragController } from "./floating-drag.js";
 import {
@@ -69,6 +68,7 @@ function App() {
 
 function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
   const [bindingOpen, setBindingOpen] = useState(false);
+  const [rebindPending, setRebindPending] = useState(false);
   const home = getHomeState(snapshot, runtime);
   const binding = snapshot.binding || runtime.binding;
   const uploadAttention =
@@ -76,6 +76,26 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
     ["failed", "metadata_failed", "network_error", "waiting_network"].includes(
       runtime.upload
     );
+  const fullRebind = async () => {
+    setRebindPending(true);
+    try {
+      await beginFullRebinding({
+        confirm: () =>
+          window.confirm(
+            "重新绑定会先解除当前设备归属，并停止当前录音和上传处理。解除后需要重新登录并选择学校和教室。确认继续吗？"
+          ),
+        unbindDevice: () => shell.unbindDevice(),
+        openBinding: () => {
+          setSettingsOpen(false);
+          setBindingOpen(true);
+        },
+      });
+    } catch (error) {
+      window.alert(error?.message || "解除绑定失败，请稍后重试");
+    } finally {
+      setRebindPending(false);
+    }
+  };
 
   return (
     <main className="app-shell">
@@ -227,11 +247,12 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
           snapshot={snapshot}
           runtime={runtime}
           onClose={() => setSettingsOpen(false)}
+          onFullRebind={fullRebind}
+          rebindPending={rebindPending}
         />
       ) : null}
       <BindingWizard
         open={bindingOpen}
-        isRebinding={Boolean(snapshot.binding)}
         bindingServiceMode={snapshot.bindingServiceMode || "remote"}
         onClose={() => setBindingOpen(false)}
         onBound={() => {}}
@@ -346,86 +367,6 @@ function getHomeState(snapshot, runtime) {
   };
 }
 
-function BindingBanner({ snapshot, runtime, onOpen }) {
-  const [unbinding, setUnbinding] = useState(false);
-  const binding = snapshot.binding;
-  const rebindAllowed = canRebind({ ...snapshot, runtime });
-  if (!binding)
-    return (
-      <section className="binding-gate unbound">
-        <div className="binding-gate-icon">
-          <AlertTriangle size={22} />
-        </div>
-        <div>
-          <span className="binding-gate-label">需要完成设备配置</span>
-          <strong>设备尚未绑定班级或公共教室</strong>
-          <p>使用 Passport 登录并选择教室后，录音服务会立即启用。</p>
-        </div>
-        <button
-          className="binding-action"
-          onClick={onOpen}
-          data-testid="open-binding"
-        >
-          登录并绑定设备
-        </button>
-      </section>
-    );
-  const type = binding.bindType === 2 ? "公共教室" : "班级教室";
-  const unbind = async () => {
-    if (
-      !window.confirm(
-        "解除绑定后将立即停止生产上传，并要求重新绑定才能录音。确认继续吗？"
-      )
-    )
-      return;
-    setUnbinding(true);
-    try {
-      await shell.unbindDevice();
-    } catch (error) {
-      window.alert(error?.message || "解绑失败，请稍后重试");
-    } finally {
-      setUnbinding(false);
-    }
-  };
-  return (
-    <section className="binding-gate bound">
-      <div className="binding-gate-icon">
-        <Check size={22} />
-      </div>
-      <div>
-        <span className="binding-gate-label">
-          当前设备归属{" "}
-          {binding.bindingSource === "mock" ? <em>模拟数据</em> : null}
-        </span>
-        <strong>
-          {binding.schoolName || "学校未命名"} · {binding.classroom}
-        </strong>
-        <p>
-          {type}
-          {binding.className ? ` · ${binding.className}` : ""}
-        </p>
-      </div>
-      <button
-        className="binding-action danger"
-        onClick={unbind}
-        disabled={!rebindAllowed || unbinding}
-        title={rebindAllowed ? "" : "请先停止录音"}
-      >
-        {unbinding ? "正在解绑…" : "解除绑定"}
-      </button>
-      <button
-        className="binding-action subtle"
-        onClick={onOpen}
-        disabled={!rebindAllowed || unbinding}
-        title={rebindAllowed ? "" : "请先停止录音"}
-        data-testid="open-binding"
-      >
-        重新绑定
-      </button>
-    </section>
-  );
-}
-
 function FloatingBall({ recording }) {
   const meta = getRecordingMeta(recording);
   const drag = useRef(null);
@@ -487,7 +428,13 @@ function FloatingBall({ recording }) {
   );
 }
 
-function SettingsModal({ snapshot, runtime, onClose }) {
+function SettingsModal({
+  snapshot,
+  runtime,
+  onClose,
+  onFullRebind,
+  rebindPending,
+}) {
   const initial = snapshot.settings || {};
   const [form, setForm] = useState({
     autoLaunch: initial.autoLaunch === true,
@@ -497,6 +444,7 @@ function SettingsModal({ snapshot, runtime, onClose }) {
     apiRoutes: initial.apiRoutes || TEST_API_ROUTES,
   });
   const [saveError, setSaveError] = useState("");
+  const rebindAllowed = canRebind({ ...snapshot, runtime });
   const update = (key, value) =>
     setForm((current) => ({ ...current, [key]: value }));
   const updateRoute = (key, value) =>
@@ -584,6 +532,22 @@ function SettingsModal({ snapshot, runtime, onClose }) {
                 title="设备归属"
                 value={formatBinding(snapshot.binding || runtime.binding)}
               />
+              {snapshot.binding || runtime.binding ? (
+                <div className="device-management">
+                  <div>
+                    <strong>设备管理</strong>
+                    <p>更换学校、班级或教室时，需要解除当前绑定并重新登录。</p>
+                  </div>
+                  <button
+                    className="danger-action compact"
+                    onClick={onFullRebind}
+                    disabled={!rebindAllowed || rebindPending}
+                    title={rebindAllowed ? "" : "请先停止录音"}
+                  >
+                    {rebindPending ? "正在解除绑定…" : "解绑并重新绑定"}
+                  </button>
+                </div>
+              ) : null}
               <SettingRow
                 title="当前版本"
                 value={`v${snapshot.appVersion || "--"}`}

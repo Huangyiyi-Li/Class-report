@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  beginFullRebinding,
   bindingFlowReducer,
   canRebind,
   initialBindingFlow,
@@ -110,4 +111,44 @@ test("rebind is available only when the recorder is idle", () => {
   assert.equal(canRebind({ recording: "idle" }), true);
   assert.equal(canRebind({ recordingState: "recording" }), false);
   assert.equal(canRebind({ runtime: { recording: "paused" } }), false);
+});
+
+test("full rebind unbinds first and opens a fresh login binding flow", async () => {
+  const calls = [];
+  const started = await beginFullRebinding({
+    confirm: () => true,
+    unbindDevice: async () => calls.push("unbind"),
+    openBinding: () => calls.push("open"),
+  });
+
+  assert.equal(started, true);
+  assert.deepEqual(calls, ["unbind", "open"]);
+});
+
+test("full rebind neither unbinds nor opens when the user cancels", async () => {
+  const calls = [];
+  const started = await beginFullRebinding({
+    confirm: () => false,
+    unbindDevice: async () => calls.push("unbind"),
+    openBinding: () => calls.push("open"),
+  });
+
+  assert.equal(started, false);
+  assert.deepEqual(calls, []);
+});
+
+test("full rebind does not open binding when server unbind fails", async () => {
+  const calls = [];
+  await assert.rejects(
+    beginFullRebinding({
+      confirm: () => true,
+      unbindDevice: async () => {
+        calls.push("unbind");
+        throw new Error("解绑失败");
+      },
+      openBinding: () => calls.push("open"),
+    }),
+    /解绑失败/
+  );
+  assert.deepEqual(calls, ["unbind"]);
 });

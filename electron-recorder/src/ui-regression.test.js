@@ -33,3 +33,10 @@ test("settings labels describe user-facing choices instead of implementation fie
   assert.match(renderer, />录音保存位置</);
   assert.doesNotMatch(renderer, />麦克风设备 ID</);
 });
+
+test("rebind is exposed only as unbind followed by a fresh binding flow", () => {
+  assert.match(renderer, /解绑并重新绑定/);
+  assert.doesNotMatch(renderer, /绑定其他班级/);
+  assert.doesNotMatch(wizard, /继续重新绑定/);
+  assert.doesNotMatch(wizard, /isRebinding/);
+});

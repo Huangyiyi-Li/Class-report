@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   LoaderCircle,
   Radio,
-  RotateCcw,
   School,
   UserRound,
   X,
@@ -16,34 +15,22 @@ import { bindingFlowReducer, initialBindingFlow } from "./binding-flow.js";
 
 const api = window.recorderShell;
 
-export function BindingWizard({
-  open,
-  isRebinding,
-  bindingServiceMode,
-  onClose,
-  onBound,
-}) {
+export function BindingWizard({ open, bindingServiceMode, onClose, onBound }) {
   const [state, dispatch] = useReducer(bindingFlowReducer, initialBindingFlow);
-  const [rebindApproved, setRebindApproved] = useState(false);
-  const [replaceDevice, setReplaceDevice] = useState(false);
 
   useEffect(() => {
     if (!open) {
-      setRebindApproved(false);
-      setReplaceDevice(false);
       dispatch({ type: "CLOSE" });
       return;
     }
-    if (!isRebinding) dispatch({ type: "OPEN" });
-  }, [open, isRebinding]);
+    dispatch({ type: "OPEN" });
+  }, [open]);
 
   useEffect(() => {
     if (!open || state.phase !== "creating") return undefined;
     let active = true;
-    const createSession = replaceDevice
-      ? api.createReplacementBindingSession
-      : api.createBindingSession;
-    createSession()
+    api
+      .createBindingSession()
       .then(
         (session) => active && dispatch({ type: "SESSION_UPDATED", session })
       )
@@ -51,7 +38,7 @@ export function BindingWizard({
     return () => {
       active = false;
     };
-  }, [open, replaceDevice, state.phase]);
+  }, [open, state.phase]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -119,9 +106,7 @@ export function BindingWizard({
                 <span className="mock-badge">模拟数据</span>
               ) : null}
             </div>
-            <h2 id="binding-title">
-              {isRebinding ? "重新绑定录音设备" : "绑定录音设备"}
-            </h2>
+            <h2 id="binding-title">绑定录音设备</h2>
           </div>
           <button
             className="icon-button"
@@ -132,39 +117,24 @@ export function BindingWizard({
             <X size={22} />
           </button>
         </header>
-        {isRebinding && !rebindApproved ? (
-          <RebindConfirmation
-            onCancel={onClose}
-            onConfirm={() => {
-              setRebindApproved(true);
-              dispatch({ type: "OPEN" });
-            }}
-            onReplaceDevice={() => {
-              setReplaceDevice(true);
-              setRebindApproved(true);
-              dispatch({ type: "OPEN" });
-            }}
-          />
-        ) : (
-          <div className="binding-workbench">
-            <IdentityPanel state={state} mode={bindingServiceMode} />
-            <section
-              className="binding-step-panel"
-              data-binding-step={state.phase}
-            >
-              <StepTrack phase={state.phase} />
-              <StepContent
-                state={state}
-                mode={bindingServiceMode}
-                dispatch={dispatch}
-                onSelectType={selectBindType}
-                onSelectGrade={selectGrade}
-                onConfirm={confirm}
-                onClose={onClose}
-              />
-            </section>
-          </div>
-        )}
+        <div className="binding-workbench">
+          <IdentityPanel state={state} mode={bindingServiceMode} />
+          <section
+            className="binding-step-panel"
+            data-binding-step={state.phase}
+          >
+            <StepTrack phase={state.phase} />
+            <StepContent
+              state={state}
+              mode={bindingServiceMode}
+              dispatch={dispatch}
+              onSelectType={selectBindType}
+              onSelectGrade={selectGrade}
+              onConfirm={confirm}
+              onClose={onClose}
+            />
+          </section>
+        </div>
       </section>
     </div>
   );
@@ -200,7 +170,7 @@ function IdentityPanel({ state, mode }) {
         </p>
       )}
       <p className="binding-safety-note">
-        重新绑定只影响上传时的设备归属；本机设备编号仍使用已选定的物理网卡 MAC。
+        绑定完成后，录音将按当前学校和教室归属上传；本机设备编号保持不变。
       </p>
     </aside>
   );
@@ -452,33 +422,6 @@ function ReviewStep({ state, onBack, onConfirm }) {
         {busy ? <LoaderCircle className="spin" /> : <CheckCircle2 />}
         {busy ? "正在绑定…" : "确认并应用绑定"}
       </button>
-    </div>
-  );
-}
-
-function RebindConfirmation({ onCancel, onConfirm, onReplaceDevice }) {
-  return (
-    <div className="rebind-confirmation">
-      <div className="rebind-orbit">
-        <RotateCcw />
-      </div>
-      <span className="step-label">变更提醒</span>
-      <h3>确认重新绑定这台设备？</h3>
-      <p>
-        普通重绑继续使用已保存的物理网卡
-        MAC。只有身份网卡确已更换时，才按当前网卡创建新设备。
-      </p>
-      <div>
-        <button className="quiet-action" onClick={onCancel}>
-          取消
-        </button>
-        <button className="quiet-action" onClick={onReplaceDevice}>
-          网卡已更换
-        </button>
-        <button className="binding-confirm-button compact" onClick={onConfirm}>
-          继续重新绑定
-        </button>
-      </div>
     </div>
   );
 }
