@@ -19,7 +19,7 @@
 1. 未绑定客户端显示“登录并绑定设备”。
 2. 客户端打开现有数智家校 passport 登录页。
 3. 操作者通过 Passport 当前支持的账号密码或验证码完成登录。
-4. Passport 完成身份选择后跳转到 `https://szjx-console.xxt.cn/`；客户端只把该域视为登录完成，不能把中间页 `szjx.xxt.cn` 或 Passport 登录页当作成功。
+4. Passport 完成登录后可能进入 `https://szjx.xxt.cn/` 首页或 `https://szjx-console.xxt.cn/`；客户端把这两个精确 HTTPS 域名作为读取身份的触发点，不把 Passport 登录页或其他域名当作成功。
 5. 客户端使用同一隔离 Cookie 会话请求 `GET https://szjx-console.xxt.cn/api/user-data-v2/user/get-user-info-by-login`，取得当前身份的 `schoolId`、`schoolName`、`userName` 和 `userType`。现网页教师侧身份的 `userType` 为 `0`；客户端接受 `0` 并拒绝学生侧身份。
 6. 操作者选择班级教室或公共教室。班级教室先调用年级列表，再按 `gradeCode` 调用班级列表；公共教室直接填写名称。
 7. 服务端保存设备当前绑定，客户端不解析绑定接口的其他返回字段，而是用本次请求和当前登录身份构造 worker 所需的本地绑定。
@@ -111,13 +111,12 @@ Device-Signature = HMAC(deviceSecret, method + path + bodyHash + timestamp + non
 
 - 复用现有登录页和 Cookie 会话。
 - 为 Electron 登录场景配置允许的跳转目标和安全域策略。
-- 保持身份选择后的正式落点为 `szjx-console.xxt.cn`，并允许隔离 Electron session 携带 Cookie 调用当前用户和 REST 接口。
+- 登录完成后允许进入 `szjx.xxt.cn` 首页或 `szjx-console.xxt.cn`，并允许隔离 Electron session 携带 Cookie 调用当前用户和 REST 接口。
 
 ### 用户和班级范围
 
 - 当前登录用户沿用 `GET /api/user-data-v2/user/get-user-info-by-login`。
-- 年级列表使用 `POST /ai-lesson-eval/basic-data/get-grade-list`，请求体为空。
-- 班级列表使用 `POST /ai-lesson-eval/basic-data/get-class-list`，请求体只传 `gradeCode`；`schoolId` 省略，由当前登录身份确定学校。
+- 年级和班级目录统一使用 `POST /wisdom/group/grade-class-list`，请求体为 `{"schoolId":null}`；接口通过 Passport Cookie 确定当前登录身份和学校，不要求客户端发送 `webId` 或 `Authorization`。
 - “教师”代表全部教师侧身份，教师、班主任、信息化管理员和学校管理员均可进入绑定流程。
 - 四类角色在绑定、解绑、重绑以及创建、重命名、合并绑定目标方面使用同一权限。
 - 禁止客户端通过篡改学校或目标标识绑定到用户不所属的学校。

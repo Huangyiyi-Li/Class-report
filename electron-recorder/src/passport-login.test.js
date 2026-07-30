@@ -51,12 +51,12 @@ function response(body, { status = 200 } = {}) {
   };
 }
 
-test("only the authenticated szjx console is a login completion URL", () => {
+test("only authenticated szjx landing pages are login completion URLs", () => {
   assert.equal(
     isPassportConsoleUrl("https://szjx-console.xxt.cn/user-data/home"),
     true
   );
-  assert.equal(isPassportConsoleUrl("https://szjx.xxt.cn/"), false);
+  assert.equal(isPassportConsoleUrl("https://szjx.xxt.cn/"), true);
   assert.equal(
     isPassportConsoleUrl("https://passport.xxt.cn/user-select-pre"),
     false
@@ -69,7 +69,7 @@ test("only the authenticated szjx console is a login completion URL", () => {
   );
 });
 
-test("Passport authenticator accepts the live teacher userType and reuses its session", async () => {
+test("Passport authenticator reads identity after the configured homepage redirect", async () => {
   const window = new FakeWindow();
   const requests = [];
   const browserSession = {
@@ -81,7 +81,6 @@ test("Passport authenticator accepts the live teacher userType and reuses its se
           schoolName: "众享中学",
           userName: "测试教师",
           userType: 0,
-          webId: 778899,
         });
       }
       return response({ success: true });
@@ -95,12 +94,6 @@ test("Passport authenticator accepts the live teacher userType and reuses its se
   const login = authenticate();
   assert.equal(window.loadedUrl, PASSPORT_LOGIN_URL);
   window.webContents.emit("did-navigate", {}, "https://szjx.xxt.cn/");
-  assert.equal(requests.length, 0);
-  window.webContents.emit(
-    "did-redirect-navigation",
-    {},
-    "https://szjx-console.xxt.cn/user-data/home"
-  );
   const authenticated = await login;
 
   assert.deepEqual(authenticated.user, {
@@ -125,7 +118,49 @@ test("Passport authenticator accepts the live teacher userType and reuses its se
   assert.equal(requests[1][1].credentials, "include");
   assert.equal(requests[1][1].method, "POST");
   assert.equal(requests[1][1].body, "{}");
-  assert.equal(requests[1][1].headers.Authorization, "778899");
+  assert.equal("Authorization" in requests[1][1].headers, false);
+});
+
+test("grade and class request uses the Passport cookie and null schoolId", async () => {
+  const window = new FakeWindow();
+  const requests = [];
+  const authenticate = createPassportAuthenticator({
+    createWindow: () => window,
+    browserSession: {
+      fetch: async (url, options) => {
+        requests.push([url, options]);
+        if (url === CURRENT_USER_URL) {
+          return response({
+            schoolId: 9001,
+            schoolName: "众享中学",
+            userName: "测试教师",
+            userType: 0,
+          });
+        }
+        return response({ code: 1, data: [] });
+      },
+    },
+  });
+
+  const login = authenticate();
+  window.webContents.emit(
+    "did-navigate",
+    {},
+    "https://szjx-console.xxt.cn/user-data/home"
+  );
+  const authenticated = await login;
+  await authenticated.post(
+    "https://rest.xxt.cn/wisdom/group/grade-class-list",
+    { schoolId: null }
+  );
+
+  assert.equal(
+    requests[1][0],
+    "https://rest.xxt.cn/wisdom/group/grade-class-list"
+  );
+  assert.equal(requests[1][1].credentials, "include");
+  assert.equal(requests[1][1].body, '{"schoolId":null}');
+  assert.equal("Authorization" in requests[1][1].headers, false);
 });
 
 test("Passport API business errors are reported instead of being parsed as an invalid catalog", async () => {
@@ -138,7 +173,6 @@ test("Passport API business errors are reported instead of being parsed as an in
             schoolName: "众享中学",
             userName: "测试教师",
             userType: 0,
-            webId: 778899,
           })
         : response({ code: 2, message: "未登录", status: 401 }),
   };
@@ -166,7 +200,7 @@ test("Passport API business errors are reported instead of being parsed as an in
   );
 });
 
-test("Passport identity without webId is rejected before protected API calls", async () => {
+test("Passport identity does not require webId", async () => {
   const window = new FakeWindow();
   const authenticate = createPassportAuthenticator({
     createWindow: () => window,
@@ -188,10 +222,7 @@ test("Passport identity without webId is rejected before protected API calls", a
     "https://szjx-console.xxt.cn/user-data/home"
   );
 
-  await assert.rejects(login, {
-    code: "PASSPORT_IDENTITY_INVALID",
-    message: "webId is invalid",
-  });
+  await assert.doesNotReject(login);
 });
 
 test("Passport window fits a desktop page into the available display area", () => {

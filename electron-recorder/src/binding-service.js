@@ -302,7 +302,7 @@ export class RemoteBindingService {
     if (session.gradeClassCatalog) return session.gradeClassCatalog;
     const routes = validateApiRoutes(this.getApiRoutes());
     const response = await session.post(routes.gradeClassList, {
-      schoolId: session.user.schoolId,
+      schoolId: null,
     });
     session.gradeClassCatalog = normalizeGradeClassCatalog(response);
     return session.gradeClassCatalog;

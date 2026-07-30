@@ -127,7 +127,7 @@ test("remote mode loads grades and classes from the shared grade-class-list API"
   assert.deepEqual(requests, [
     [
       "https://rest-test.xxt.cn/wisdom/group/grade-class-list",
-      { schoolId: 9001 },
+      { schoolId: null },
     ],
   ]);
 });

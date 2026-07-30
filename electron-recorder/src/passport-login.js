@@ -41,7 +41,10 @@ export function getPassportWindowLayout(workAreaSize = {}) {
 export function isPassportConsoleUrl(value) {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && url.hostname === "szjx-console.xxt.cn";
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "szjx.xxt.cn" || url.hostname === "szjx-console.xxt.cn")
+    );
   } catch {
     return false;
   }
@@ -77,19 +80,11 @@ export function createPassportAuthenticator({
         if (!isPassportConsoleUrl(url) || resolving || completed) return;
         resolving = true;
         try {
-          const identity = await loadCurrentUser(
-            browserSession,
-            currentUserUrl
-          );
+          const user = await loadCurrentUser(browserSession, currentUserUrl);
           finish(resolve, {
-            user: identity.user,
+            user,
             post: (requestUrl, payload) =>
-              postJson(
-                browserSession,
-                requestUrl,
-                payload,
-                identity.authorization
-              ),
+              postJson(browserSession, requestUrl, payload),
           });
         } catch (error) {
           resolving = false;
@@ -120,23 +115,19 @@ async function loadCurrentUser(browserSession, url) {
   const user =
     payload?.data && typeof payload.data === "object" ? payload.data : payload;
   return {
-    user: {
-      schoolId: positiveInteger(user?.schoolId, "schoolId"),
-      schoolName: nonEmptyString(user?.schoolName, "schoolName"),
-      userName: nonEmptyString(user?.userName, "userName"),
-      userType: nonNegativeInteger(user?.userType, "userType"),
-    },
-    authorization: authorizationToken(user?.webId),
+    schoolId: positiveInteger(user?.schoolId, "schoolId"),
+    schoolName: nonEmptyString(user?.schoolName, "schoolName"),
+    userName: nonEmptyString(user?.userName, "userName"),
+    userType: nonNegativeInteger(user?.userType, "userType"),
   };
 }
 
-async function postJson(browserSession, url, payload, authorization) {
+async function postJson(browserSession, url, payload) {
   const response = await browserSession.fetch(url, {
     method: "POST",
     credentials: "include",
     headers: {
       Accept: "application/json",
-      Authorization: authorization,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload ?? {}),
@@ -190,19 +181,6 @@ function nonNegativeInteger(value, field) {
 
 function positiveDimension(value, fallback) {
   return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
-}
-
-function authorizationToken(value) {
-  const normalized =
-    typeof value === "number" && Number.isFinite(value)
-      ? String(value)
-      : typeof value === "string"
-        ? value.trim()
-        : "";
-  if (!normalized || normalized.length > 256 || /[\0\r\n]/u.test(normalized)) {
-    throw passportError("PASSPORT_IDENTITY_INVALID", "webId is invalid");
-  }
-  return normalized;
 }
 
 function nonEmptyString(value, field) {
