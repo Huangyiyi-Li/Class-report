@@ -2,9 +2,47 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   SETTINGS_SAVE_UNCONFIRMED,
+  buildWorkerSettingsPatch,
   saveSettings,
   setAutoLaunchAfterBootstrap,
 } from "./settings-save.js";
+import { PRODUCTION_API_ROUTES } from "./api-routes.js";
+
+test("locked recording directory is omitted from ordinary settings updates", () => {
+  assert.deepEqual(
+    buildWorkerSettingsPatch(
+      {
+        autoLaunch: false,
+        autoRecordEnabled: true,
+        inputDevice: "default",
+        dataRoot: "D:/RecorderData",
+        apiRoutes: PRODUCTION_API_ROUTES,
+      },
+      { dataRootLocked: true }
+    ),
+    {
+      autoRecordEnabled: true,
+      inputDevice: "default",
+      apiRoutes: PRODUCTION_API_ROUTES,
+    }
+  );
+});
+
+test("first deployment keeps the selected recording directory in settings update", () => {
+  assert.equal(
+    buildWorkerSettingsPatch(
+      {
+        autoLaunch: false,
+        autoRecordEnabled: true,
+        inputDevice: "default",
+        dataRoot: "D:/RecorderData",
+        apiRoutes: PRODUCTION_API_ROUTES,
+      },
+      { dataRootLocked: false }
+    ).dataRoot,
+    "D:/RecorderData"
+  );
+});
 
 test("auto-launch before bootstrap fails without mutation or registration", () => {
   let applied = 0;

@@ -11,11 +11,11 @@ import {
   validateAutoLaunchValue,
   validateSettingsPatch,
 } from "./settings.js";
-import { PRODUCTION_API_ROUTES, TEST_API_ROUTES } from "./api-routes.js";
+import { PRODUCTION_API_ROUTES } from "./api-routes.js";
 
 test("settings default to auto-launch disabled", () => {
   assert.equal(loadSettings(null).autoLaunch, false);
-  assert.deepEqual(loadSettings(null).apiRoutes, TEST_API_ROUTES);
+  assert.deepEqual(loadSettings(null).apiRoutes, PRODUCTION_API_ROUTES);
 });
 
 test("API routes persist with settings and are accepted by the worker patch boundary", () => {
@@ -47,7 +47,7 @@ test("preferences stay default before bootstrap and persist beside worker config
     autoLaunch: false,
     autoRecordEnabled: true,
     inputDevice: "default",
-    apiRoutes: TEST_API_ROUTES,
+    apiRoutes: PRODUCTION_API_ROUTES,
   });
   saveSettings(configPath, {
     autoLaunch: true,
@@ -73,7 +73,7 @@ test("settings persist across a fresh load without worker or binding fields", ()
     autoLaunch: true,
     autoRecordEnabled: true,
     inputDevice: "mic-2",
-    apiRoutes: TEST_API_ROUTES,
+    apiRoutes: PRODUCTION_API_ROUTES,
   });
   assert.equal(
     JSON.parse(fs.readFileSync(path.join(root, "settings.json"), "utf8"))
@@ -92,7 +92,7 @@ test("invalid or corrupt persisted settings fall back safely", () => {
     autoLaunch: false,
     autoRecordEnabled: true,
     inputDevice: "default",
-    apiRoutes: TEST_API_ROUTES,
+    apiRoutes: PRODUCTION_API_ROUTES,
   });
 });
 
@@ -111,7 +111,7 @@ test("worker core settings are loaded as authority instead of stale Electron def
   assert.deepEqual(loadWorkerCoreSettings(configPath), {
     autoRecordEnabled: true,
     inputDevice: "mic-authoritative",
-    apiRoutes: TEST_API_ROUTES,
+    apiRoutes: PRODUCTION_API_ROUTES,
   });
 });
 

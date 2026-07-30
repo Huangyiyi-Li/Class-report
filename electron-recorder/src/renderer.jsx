@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { createRuntimeState } from "./runtime-state.js";
 import { getHealthMeta, getRecordingMeta, getUploadMeta } from "./state.js";
-import { saveSettings } from "./settings-save.js";
+import { buildWorkerSettingsPatch, saveSettings } from "./settings-save.js";
 import { beginFullRebinding, canRebind } from "./binding-flow.js";
 import { BindingWizard } from "./binding-wizard.jsx";
 import { createFloatingDragController } from "./floating-drag.js";
@@ -441,7 +441,7 @@ function SettingsModal({
     autoRecordEnabled: Boolean(initial.autoRecordEnabled),
     inputDevice: initial.inputDevice || "default",
     dataRoot: initial.dataRoot || snapshot.dataRoot || "",
-    apiRoutes: initial.apiRoutes || TEST_API_ROUTES,
+    apiRoutes: initial.apiRoutes || PRODUCTION_API_ROUTES,
   });
   const [saveError, setSaveError] = useState("");
   const rebindAllowed = canRebind({ ...snapshot, runtime });
@@ -454,12 +454,14 @@ function SettingsModal({
     }));
   const save = async () => {
     setSaveError("");
-    const { autoLaunch, ...workerSettings } = form;
+    const workerSettings = buildWorkerSettingsPatch(form, {
+      dataRootLocked: snapshot.dataRootLocked,
+    });
     await saveSettings({
       updateSettings: (value) => shell.updateSettings(value),
       setAutoLaunch: (value) => shell.setAutoLaunch(value),
       workerSettings,
-      autoLaunch,
+      autoLaunch: form.autoLaunch,
       onClose,
       onUnconfirmed: setSaveError,
     });
@@ -517,11 +519,14 @@ function SettingsModal({
                 <span>录音保存位置</span>
                 <input
                   value={form.dataRoot}
-                  disabled={snapshot.dataRootLocked}
+                  readOnly={snapshot.dataRootLocked}
+                  aria-readonly={snapshot.dataRootLocked}
                   onChange={(event) => update("dataRoot", event.target.value)}
                 />
                 {snapshot.dataRootLocked ? (
-                  <small>如需修改请重新部署</small>
+                  <small>
+                    保存位置已固定，避免影响现有录音和待上传文件。切换接口环境不会修改此目录。
+                  </small>
                 ) : null}
               </label>
               <SettingRow

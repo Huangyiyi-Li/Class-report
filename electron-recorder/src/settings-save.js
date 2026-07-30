@@ -1,6 +1,15 @@
 export const SETTINGS_SAVE_UNCONFIRMED = "设置保存失败，请稍后重试";
 export const AUTO_LAUNCH_UNVERIFIED = "开机自启状态未验证，请重试";
 
+export function buildWorkerSettingsPatch(
+  form,
+  { dataRootLocked = false } = {}
+) {
+  const { autoLaunch: _autoLaunch, dataRoot, ...workerSettings } = form;
+  if (!dataRootLocked) workerSettings.dataRoot = dataRoot;
+  return workerSettings;
+}
+
 export function setAutoLaunchAfterBootstrap({
   workerLocation,
   desired,

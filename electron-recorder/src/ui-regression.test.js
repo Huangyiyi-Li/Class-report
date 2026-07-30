@@ -31,6 +31,7 @@ test("settings diagnostics preserve readable columns and stack on compact window
 test("settings labels describe user-facing choices instead of implementation fields", () => {
   assert.match(renderer, />麦克风设备</);
   assert.match(renderer, />录音保存位置</);
+  assert.match(renderer, /保存位置已固定，避免影响现有录音和待上传文件/);
   assert.doesNotMatch(renderer, />麦克风设备 ID</);
 });
 

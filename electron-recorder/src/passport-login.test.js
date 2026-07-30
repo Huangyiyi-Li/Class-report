@@ -81,6 +81,7 @@ test("Passport authenticator accepts the live teacher userType and reuses its se
           schoolName: "众享中学",
           userName: "测试教师",
           userType: 0,
+          webId: 778899,
         });
       }
       return response({ success: true });
@@ -124,6 +125,7 @@ test("Passport authenticator accepts the live teacher userType and reuses its se
   assert.equal(requests[1][1].credentials, "include");
   assert.equal(requests[1][1].method, "POST");
   assert.equal(requests[1][1].body, "{}");
+  assert.equal(requests[1][1].headers.Authorization, "778899");
 });
 
 test("Passport API business errors are reported instead of being parsed as an invalid catalog", async () => {
@@ -136,6 +138,7 @@ test("Passport API business errors are reported instead of being parsed as an in
             schoolName: "众享中学",
             userName: "测试教师",
             userType: 0,
+            webId: 778899,
           })
         : response({ code: 2, message: "未登录", status: 401 }),
   };
@@ -161,6 +164,34 @@ test("Passport API business errors are reported instead of being parsed as an in
       message: "登录状态已失效，请重新登录 Passport",
     }
   );
+});
+
+test("Passport identity without webId is rejected before protected API calls", async () => {
+  const window = new FakeWindow();
+  const authenticate = createPassportAuthenticator({
+    createWindow: () => window,
+    browserSession: {
+      fetch: async () =>
+        response({
+          schoolId: 9001,
+          schoolName: "众享中学",
+          userName: "测试教师",
+          userType: 0,
+        }),
+    },
+  });
+
+  const login = authenticate();
+  window.webContents.emit(
+    "did-navigate",
+    {},
+    "https://szjx-console.xxt.cn/user-data/home"
+  );
+
+  await assert.rejects(login, {
+    code: "PASSPORT_IDENTITY_INVALID",
+    message: "webId is invalid",
+  });
 });
 
 test("Passport window fits a desktop page into the available display area", () => {

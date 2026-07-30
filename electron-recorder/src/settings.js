@@ -4,13 +4,13 @@ import {
   atomicWriteJson,
   validateBootstrapDataRoot,
 } from "./worker-bootstrap.js";
-import { TEST_API_ROUTES, validateApiRoutes } from "./api-routes.js";
+import { PRODUCTION_API_ROUTES, validateApiRoutes } from "./api-routes.js";
 
 export const DEFAULT_SETTINGS = Object.freeze({
   autoLaunch: false,
   autoRecordEnabled: true,
   inputDevice: "default",
-  apiRoutes: TEST_API_ROUTES,
+  apiRoutes: PRODUCTION_API_ROUTES,
 });
 
 const PERSISTED_KEYS = new Set(Object.keys(DEFAULT_SETTINGS));
@@ -90,7 +90,7 @@ function validatePersisted(payload) {
       .inputDevice,
     apiRoutes: Object.hasOwn(payload, "apiRoutes")
       ? validateApiRoutes(payload.apiRoutes)
-      : { ...TEST_API_ROUTES },
+      : { ...PRODUCTION_API_ROUTES },
   };
 }
 
@@ -131,7 +131,7 @@ export function loadWorkerCoreSettings(configPath) {
     if (inputDevice.length > 256 || /\0|[\r\n]/u.test(inputDevice)) return {};
     const apiRoutes = payload.api_routes
       ? validateApiRoutes(payload.api_routes)
-      : { ...TEST_API_ROUTES };
+      : { ...PRODUCTION_API_ROUTES };
     return {
       autoRecordEnabled: payload.auto_record_enabled,
       inputDevice: inputDevice || "default",

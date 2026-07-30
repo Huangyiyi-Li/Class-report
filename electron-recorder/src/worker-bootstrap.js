@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { TEST_API_ROUTES, validateApiRoutes } from "./api-routes.js";
+import { PRODUCTION_API_ROUTES, validateApiRoutes } from "./api-routes.js";
 
 const CONFIG_DEFAULTS = {
   data_root: "",
-  base_url: "http://rest-test.xxt.cn",
-  api_routes: TEST_API_ROUTES,
+  base_url: "https://rest.xxt.cn",
+  api_routes: PRODUCTION_API_ROUTES,
   device_no: "",
   school_id: null,
   school_name: "",
@@ -121,7 +121,7 @@ export function bootstrapWorkerConfig({
         ? ""
         : String(patch.inputDevice ?? existing.input_device ?? ""),
     api_routes: validateApiRoutes(
-      patch.apiRoutes ?? existing.api_routes ?? TEST_API_ROUTES
+      patch.apiRoutes ?? existing.api_routes ?? PRODUCTION_API_ROUTES
     ),
   };
   atomicWriteJson(configPath, config);

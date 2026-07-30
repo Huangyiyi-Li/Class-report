@@ -28,7 +28,11 @@ test("first settings save writes full config outside userData and a secret-free 
   const config = JSON.parse(fs.readFileSync(result.configPath, "utf8"));
   assert.equal(config.data_root, result.dataRoot);
   assert.equal(config.auto_record_enabled, true);
-  assert.equal(config.base_url, "http://rest-test.xxt.cn");
+  assert.equal(config.base_url, "https://rest.xxt.cn");
+  assert.equal(
+    config.api_routes.gradeClassList,
+    "https://rest.xxt.cn/wisdom/group/grade-class-list"
+  );
   const locatorText = fs.readFileSync(
     path.join(userData, "worker-config-locator.json"),
     "utf8"
