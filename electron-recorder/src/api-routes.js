@@ -27,8 +27,8 @@ function createPreset(origin) {
   );
 }
 
-export const TEST_API_ROUTES = createPreset("http://rest-test.xxt.cn");
-export const PRODUCTION_API_ROUTES = createPreset("http://rest.xxt.cn");
+export const TEST_API_ROUTES = createPreset("https://rest-test.xxt.cn");
+export const PRODUCTION_API_ROUTES = createPreset("https://rest.xxt.cn");
 
 export function validateApiRoutes(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {

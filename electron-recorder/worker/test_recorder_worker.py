@@ -6,7 +6,8 @@ import threading
 
 import pytest
 
-from worker.config import StartupGate, WorkerConfig
+from worker.config import DEFAULT_API_ROUTES, StartupGate, WorkerConfig
+from worker.queue_store import QueueStore
 from worker.recorder_worker import RecorderWorker, main, run_worker
 
 
@@ -954,6 +955,76 @@ def test_update_settings_is_rejected_while_recording(tmp_path: Path):
     assert any(name == "error" and "录音中" in payload["message"] for name, payload in events)
     assert worker.config.input_device == ""
     assert WorkerConfig.load(config_path).input_device == ""
+
+
+def test_route_change_ack_does_not_wait_for_an_inflight_upload_request(tmp_path: Path):
+    entered = threading.Event()
+    release = threading.Event()
+    completed = threading.Event()
+
+    class BlockingUploadService:
+        def run_once(self, _now):
+            entered.set()
+            release.wait(timeout=2)
+            return None
+
+    old_service = BlockingUploadService()
+    replacements = []
+
+    class ReplacementUploadService:
+        def run_once(self, _now):
+            return None
+
+    def create_service(config, _store):
+        replacement = ReplacementUploadService()
+        replacements.append((config.api_routes, replacement))
+        return replacement
+
+    config_path = tmp_path / "worker-config.json"
+    original = WorkerConfig(
+        data_root=str(tmp_path),
+        device_no="device-1",
+        api_routes=dict(DEFAULT_API_ROUTES),
+    )
+    original.save_atomic(config_path)
+    worker = RecorderWorker(
+        original,
+        config_path=config_path,
+        queue_store=QueueStore(tmp_path / "queue.db"),
+        upload_service=old_service,
+        upload_service_factory=create_service,
+        shutdown_join_seconds=0.01,
+        recover=lambda root, on_error: [],
+    )
+    worker.start_uploading()
+    assert entered.wait(timeout=1)
+    production_routes = {
+        key: value.replace("rest-test.xxt.cn", "rest.xxt.cn")
+        for key, value in DEFAULT_API_ROUTES.items()
+    }
+
+    update = threading.Thread(
+        target=lambda: (
+            worker.execute_command(
+                command("update_settings", {"apiRoutes": production_routes})
+            ),
+            completed.set(),
+        ),
+        daemon=True,
+    )
+    update.start()
+
+    assert completed.wait(timeout=0.2)
+    assert WorkerConfig.load(config_path).api_routes == production_routes
+    assert replacements == [(production_routes, replacements[0][1])]
+
+    release.set()
+    update.join(timeout=1)
+    deadline = time.monotonic() + 1
+    while worker.upload_service is old_service and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert worker.upload_service is replacements[0][1]
+    worker.shutdown()
 
 
 def test_auto_record_starts_exactly_once_after_recovery_and_queue_initialization(tmp_path: Path):

@@ -92,14 +92,18 @@ function remoteFixture(requests) {
       post: async (url, payload) => {
         requests.push([url, payload]);
         if (url.endsWith("/grade-class-list"))
-          return [
-            {
-              gradeCode: 7,
-              gradeName: "七年级",
-              groupId: 701,
-              groupName: "七年级一班",
-            },
-          ];
+          return {
+            code: 1,
+            data: [
+              {
+                gradeId: 7,
+                gradeName: "七年级",
+                classId: 701,
+                className: "七年级一班",
+                studentCount: 36,
+              },
+            ],
+          };
         return { success: true };
       },
     }),
@@ -122,7 +126,7 @@ test("remote mode loads grades and classes from the shared grade-class-list API"
   ]);
   assert.deepEqual(requests, [
     [
-      "http://rest-test.xxt.cn/wisdom/group/grade-class-list",
+      "https://rest-test.xxt.cn/wisdom/group/grade-class-list",
       { schoolId: 9001 },
     ],
   ]);

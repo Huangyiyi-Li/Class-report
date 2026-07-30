@@ -126,6 +126,43 @@ test("Passport authenticator accepts the live teacher userType and reuses its se
   assert.equal(requests[1][1].body, "{}");
 });
 
+test("Passport API business errors are reported instead of being parsed as an invalid catalog", async () => {
+  const window = new FakeWindow();
+  const browserSession = {
+    fetch: async (url) =>
+      url === CURRENT_USER_URL
+        ? response({
+            schoolId: 9001,
+            schoolName: "众享中学",
+            userName: "测试教师",
+            userType: 0,
+          })
+        : response({ code: 2, message: "未登录", status: 401 }),
+  };
+  const authenticate = createPassportAuthenticator({
+    createWindow: () => window,
+    browserSession,
+  });
+
+  const login = authenticate();
+  window.webContents.emit(
+    "did-navigate",
+    {},
+    "https://szjx-console.xxt.cn/user-data/home"
+  );
+  const authenticated = await login;
+
+  await assert.rejects(
+    authenticated.post("https://rest.xxt.cn/wisdom/group/grade-class-list", {
+      schoolId: 9001,
+    }),
+    {
+      code: "PASSPORT_REQUEST_FAILED",
+      message: "登录状态已失效，请重新登录 Passport",
+    }
+  );
+});
+
 test("Passport window fits a desktop page into the available display area", () => {
   assert.deepEqual(getPassportWindowLayout({ width: 1920, height: 1040 }), {
     width: 1440,

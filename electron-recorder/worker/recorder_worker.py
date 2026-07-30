@@ -770,10 +770,24 @@ class RecorderWorker:
         if routes_changed and self.upload_service_factory is not None and self.queue_store is not None:
             replacement = self.upload_service_factory(candidate, self.queue_store)
             self._configure_upload_service(replacement)
-            self._stop_uploading()
+            self._replace_upload_service(replacement)
+
+    def _replace_upload_service(self, replacement) -> None:
+        if self._upload_thread is None:
             with self._upload_lock:
                 self.upload_service = replacement
             self.start_uploading()
+            return
+
+        def replace_after_inflight_request() -> None:
+            with self._upload_lock:
+                self.upload_service = replacement
+
+        threading.Thread(
+            target=replace_after_inflight_request,
+            daemon=True,
+            name="recorder-upload-route-handover",
+        ).start()
 
     def _configure_upload_service(self, service) -> None:
         if service is not None and hasattr(service, "set_device_auth_listener"):

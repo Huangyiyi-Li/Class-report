@@ -139,7 +139,19 @@ async function responseJson(response, fallback) {
       `${fallback}${response?.status ? `（HTTP ${response.status}）` : ""}`
     );
   }
-  return response.json();
+  const payload = await response.json();
+  const businessStatus = Number(payload?.status);
+  if (Number.isFinite(businessStatus) && businessStatus >= 400) {
+    const message =
+      typeof payload?.message === "string" ? payload.message.trim() : "";
+    throw passportError(
+      "PASSPORT_REQUEST_FAILED",
+      businessStatus === 401 || message.includes("未登录")
+        ? "登录状态已失效，请重新登录 Passport"
+        : message || `${fallback}（服务端状态 ${businessStatus}）`
+    );
+  }
+  return payload;
 }
 
 function positiveInteger(value, field) {

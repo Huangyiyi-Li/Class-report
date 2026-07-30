@@ -20,11 +20,11 @@ test("test and production presets expose every editable recorder API", () => {
   ]);
   assert.equal(
     TEST_API_ROUTES.gradeClassList,
-    "http://rest-test.xxt.cn/wisdom/group/grade-class-list"
+    "https://rest-test.xxt.cn/wisdom/group/grade-class-list"
   );
   assert.equal(
     PRODUCTION_API_ROUTES.gradeClassList,
-    "http://rest.xxt.cn/wisdom/group/grade-class-list"
+    "https://rest.xxt.cn/wisdom/group/grade-class-list"
   );
   assert.equal(API_ROUTE_DEFINITIONS.length, 6);
 });
