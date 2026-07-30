@@ -94,10 +94,10 @@ test("Windows distributions are separate direct artifacts and tags publish a pre
   assert.match(workflow, /uses: actions\/checkout@v7/);
   assert.match(workflow, /uses: actions\/setup-node@v7/);
   assert.match(workflow, /uses: actions\/setup-python@v7/);
-  assert.equal(workflow.match(/uses: actions\/upload-artifact@v7/g)?.length, 2);
+  assert.equal(workflow.match(/uses: actions\/upload-artifact@v7/g)?.length, 3);
   assert.equal(
     workflow.match(/uses: actions\/download-artifact@v8/g)?.length,
-    2
+    3
   );
   assert.doesNotMatch(
     workflow,
@@ -108,7 +108,7 @@ test("Windows distributions are separate direct artifacts and tags publish a pre
   assert.match(workflow, /^\s{10}path: .*\*-Setup-x64\.exe\s*$/m);
   assert.match(workflow, /^\s{6}- name: Upload Windows Portable\s*$/m);
   assert.match(workflow, /^\s{10}path: .*\*-Portable-x64\.exe\s*$/m);
-  assert.equal(workflow.match(/^\s{10}archive: false\s*$/gm)?.length, 2);
+  assert.equal(workflow.match(/^\s{10}archive: false\s*$/gm)?.length, 3);
 
   assert.match(workflow, /^\s{6}- name: Download Windows Setup\s*$/m);
   assert.match(workflow, /^\s{10}pattern: "\*-Setup-x64\.exe"\s*$/m);

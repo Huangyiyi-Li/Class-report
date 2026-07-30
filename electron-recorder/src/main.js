@@ -11,6 +11,7 @@ import {
   shell as electronShell,
   Tray,
 } from "electron";
+import electronUpdater from "electron-updater";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
@@ -41,9 +42,11 @@ import {
 } from "./passport-login.js";
 import { resolveDeviceNo } from "./backend.js";
 import { clampFloatingPosition } from "./floating-drag.js";
+import { createUpdateController } from "./update-manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+const { autoUpdater } = electronUpdater;
 
 let mainWindow;
 let floatingBallWindow;
@@ -78,6 +81,14 @@ const bindingServiceMode =
   process.env.BINDING_SERVICE_MODE === "mock" ? "mock" : "remote";
 let bindingService;
 let bindingController;
+let updateController;
+let updateState = {
+  status: "unsupported",
+  currentVersion: "",
+  availableVersion: "",
+  percent: 0,
+  error: "",
+};
 
 function isScreenPoint(point) {
   return Number.isFinite(point?.x) && Number.isFinite(point?.y);
@@ -486,7 +497,32 @@ function publishSnapshot(snapshot) {
     dataRootLocked: Boolean(workerLocation),
     bindingServiceMode,
     appVersion: app.getVersion(),
+    update: updateState,
   });
+}
+
+function initializeUpdateController() {
+  const supported =
+    app.isPackaged &&
+    process.platform === "win32" &&
+    !process.env.PORTABLE_EXECUTABLE_FILE;
+  updateController = createUpdateController({
+    updater: autoUpdater,
+    currentVersion: app.getVersion(),
+    supported,
+    publish: (nextState) => {
+      updateState = nextState;
+      publishSnapshot({});
+    },
+    canInstall: () =>
+      ["idle", "paused"].includes(createRuntimeState(workerSnapshot).recording),
+    prepareInstall: async () => {
+      if (supervisor) await supervisor.sendCommand("shutdown");
+      supervisor?.disconnect();
+      app.isQuitting = true;
+    },
+  });
+  updateState = updateController.getState();
 }
 
 function waitForWindowLoad(win) {
@@ -768,6 +804,7 @@ if (hasSingleInstanceLock)
       desired: settings.autoLaunch,
       apply: (desired) => applyAutoLaunch({ desired, app }),
     });
+    initializeUpdateController();
 
     createMainWindow();
     createFloatingBallWindow();
@@ -789,7 +826,10 @@ if (hasSingleInstanceLock)
       dataRootLocked: Boolean(workerLocation),
       bindingServiceMode,
       appVersion: app.getVersion(),
+      update: updateState,
     }));
+    ipcMain.handle("app:check-for-updates", () => updateController.check());
+    ipcMain.handle("app:install-update", () => updateController.install());
     ipcMain.handle("binding:create-session", () =>
       bindingController.createSession()
     );

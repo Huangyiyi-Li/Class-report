@@ -3,7 +3,7 @@
 ## 1. 发布原则
 
 - `feat/windows-recorder-production` 是当前开发分支，PR #1 保持 Draft。
-- 每个候选版本使用新的 semver prerelease 标签，例如 `recorder-v0.1.19-beta.1`。
+- 每个可供客户端更新的候选版本使用新的 semver prerelease 标签，例如 `v0.2.0-codex.5`。
 - 不复用、不移动已经触发构建的标签。
 - GitHub Actions 成功只说明自动化和 CI 环境通过，不等于用户真机验收通过。
 - 失败版本应从 Releases 撤下或明确标记不可用，避免用户继续下载。
@@ -78,9 +78,9 @@ $app = Get-ChildItem release\win-unpacked -Filter *.exe | Select-Object -First 1
 
 ```powershell
 git status --short
-git tag recorder-v0.1.19-beta.1
+git tag v0.2.0-codex.5
 git push origin feat/windows-recorder-production
-git push origin recorder-v0.1.19-beta.1
+git push origin v0.2.0-codex.5
 ```
 
 监控 `.github/workflows/windows-recorder.yml`，必须确认以下步骤全部成功：
@@ -94,6 +94,7 @@ git push origin recorder-v0.1.19-beta.1
 - packaged UI smoke；
 - packaged normal-start test；
 - installer upload；
+- `codex.yml` 和 Setup blockmap 更新元数据；
 - prerelease publish。
 
 GitHub 仓库还应把 `Windows Recorder CI / build-windows-installer` 配置为

@@ -135,6 +135,7 @@ test("GitHub Windows workflow builds and validates installer artifacts", () => {
   assert.match(workflow, /runs-on:\s*windows-2022/);
   assert.match(workflow, /branches:\s*\n\s*- master/);
   assert.match(workflow, /tags:\s*\n\s*- ["']recorder-v\*/);
+  assert.match(workflow, /["']v\*-codex\.\*["']/);
   assert.match(workflow, /Run Python checks/);
   assert.match(workflow, /Run Node\.js checks/);
   assert.match(workflow, /python scripts\/build-worker\.py/);
@@ -171,6 +172,29 @@ test("NSIS and portable installers use distinct artifact names", () => {
   assert.match(pkg.build.nsis.artifactName, /Setup/);
   assert.match(pkg.build.portable.artifactName, /Portable/);
   assert.notEqual(pkg.build.nsis.artifactName, pkg.build.portable.artifactName);
+});
+
+test("installed Windows builds declare GitHub differential update metadata", () => {
+  assert.ok(pkg.dependencies["electron-updater"]);
+  assert.deepEqual(pkg.build.publish, [
+    {
+      provider: "github",
+      owner: "Huangyiyi-Li",
+      repo: "Class-report",
+      releaseType: "prerelease",
+      channel: "codex",
+    },
+  ]);
+
+  const workflow = readFileSync(
+    path.join(repositoryRoot, ".github/workflows/windows-recorder.yml"),
+    "utf8"
+  );
+  assert.match(workflow, /Upload updater metadata/);
+  assert.match(workflow, /\*\.yml/);
+  assert.match(workflow, /\*\.blockmap/);
+  assert.match(workflow, /Download updater metadata/);
+  assert.match(workflow, /Get-ChildItem release -File/);
 });
 
 test("Passport BrowserWindow applies the display-aware layout and zoom factor", () => {

@@ -557,6 +557,11 @@ function SettingsModal({
                 title="当前版本"
                 value={`v${snapshot.appVersion || "--"}`}
               />
+              <UpdateSetting
+                update={snapshot.update}
+                recording={runtime.recording}
+                onError={setSaveError}
+              />
             </section>
             <section className="settings-section">
               <h3>
@@ -684,6 +689,76 @@ function SettingRow({ title, value }) {
     </article>
   );
 }
+
+function UpdateSetting({ update, recording, onError }) {
+  const state = update || { status: "unsupported" };
+  const recordingActive = ["recording", "starting"].includes(recording);
+  const check = async () => {
+    onError("");
+    try {
+      await shell?.checkForUpdates?.();
+    } catch (error) {
+      onError(error?.message || "检查更新失败，请稍后重试");
+    }
+  };
+  const install = async () => {
+    onError("");
+    try {
+      await shell?.installUpdate?.();
+    } catch (error) {
+      onError(error?.message || "更新安装未能开始，请稍后重试");
+    }
+  };
+  const labels = {
+    idle: "可检查新版本",
+    checking: "正在检查更新",
+    current: "当前已是最新版本",
+    downloading: `正在下载 ${state.percent || 0}%`,
+    ready: `新版本 v${state.availableVersion || "--"} 已下载`,
+    installing: "正在重启并安装",
+    error: state.error || "检查更新失败",
+    unsupported: "便携版或开发版本不支持应用内更新",
+  };
+
+  return (
+    <article className="update-setting">
+      <div>
+        <strong>软件更新</strong>
+        <p>{labels[state.status] || labels.idle}</p>
+        {state.status === "ready" && recordingActive ? (
+          <small>正在录音，请先暂停录音后再安装更新。</small>
+        ) : null}
+      </div>
+      {state.status === "ready" ? (
+        <button
+          className="secondary-action compact"
+          onClick={install}
+          disabled={recordingActive}
+        >
+          重启并安装
+        </button>
+      ) : (
+        <button
+          className="quiet-action compact"
+          onClick={check}
+          disabled={[
+            "checking",
+            "downloading",
+            "installing",
+            "unsupported",
+          ].includes(state.status)}
+        >
+          {state.status === "checking"
+            ? "正在检查…"
+            : state.status === "downloading"
+              ? `下载中 ${state.percent || 0}%`
+              : "检查更新"}
+        </button>
+      )}
+    </article>
+  );
+}
+
 function StatusPill({ icon, label, tone }) {
   return (
     <div className={`status-pill ${tone}`}>

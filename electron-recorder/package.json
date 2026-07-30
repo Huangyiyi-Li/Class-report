@@ -1,6 +1,6 @@
 {
   "name": "classroom-recorder-electron",
-  "version": "0.2.0-codex.4",
+  "version": "0.2.0-codex.5",
   "private": true,
   "description": "课堂录音采集助手 Windows 客户端",
   "author": "XXT",
@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@audio/encode-opus": "^1.0.2",
+    "electron-updater": "^6.8.9",
     "qrcode.react": "^4.2.0"
   },
   "devDependencies": {
@@ -59,6 +60,7 @@
       "src/runtime-state.js",
       "src/settings.js",
       "src/settings-save.js",
+      "src/update-manager.js",
       "src/backend.js",
       "src/binding-service.js",
       "src/binding-controller.js",
@@ -88,6 +90,15 @@
     ],
     "asar": true,
     "compression": "normal",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Huangyiyi-Li",
+        "repo": "Class-report",
+        "releaseType": "prerelease",
+        "channel": "codex"
+      }
+    ],
     "win": {
       "icon": "build/icon.ico",
       "target": [

@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld("recorderShell", {
   unbindDevice: () => ipcRenderer.invoke("binding:unbind"),
   setAutoLaunch: (enabled) =>
     ipcRenderer.invoke("app:set-auto-launch", enabled),
+  checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
+  installUpdate: () => ipcRenderer.invoke("app:install-update"),
   openDataDir: () => ipcRenderer.invoke("recorder:open-data-dir"),
   exportDiagnostics: () => ipcRenderer.invoke("recorder:export-diagnostics"),
   minimizeToTray: () => ipcRenderer.invoke("window:minimize-to-tray"),
