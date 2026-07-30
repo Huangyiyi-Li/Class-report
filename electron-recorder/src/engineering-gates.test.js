@@ -108,7 +108,7 @@ test("Windows distributions are separate direct artifacts and tags publish a pre
   assert.match(workflow, /^\s{10}path: .*\*-Setup-x64\.exe\s*$/m);
   assert.match(workflow, /^\s{6}- name: Upload Windows Portable\s*$/m);
   assert.match(workflow, /^\s{10}path: .*\*-Portable-x64\.exe\s*$/m);
-  assert.equal(workflow.match(/^\s{10}archive: false\s*$/gm)?.length, 3);
+  assert.equal(workflow.match(/^\s{10}archive: false\s*$/gm)?.length, 2);
 
   assert.match(workflow, /^\s{6}- name: Download Windows Setup\s*$/m);
   assert.match(workflow, /^\s{10}pattern: "\*-Setup-x64\.exe"\s*$/m);
