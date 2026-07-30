@@ -179,6 +179,7 @@ jobs:
           path: electron-recorder/release/*-Setup-x64.exe
           if-no-files-found: error
           retention-days: 14
+          archive: false
 
       - name: Upload Windows Portable
         uses: actions/upload-artifact@v7
@@ -197,7 +198,6 @@ jobs:
             electron-recorder/release/*.blockmap
           if-no-files-found: error
           retention-days: 14
-          archive: false
 
   publish-github-prerelease:
     if: needs.build-windows-installer.outputs.release_tag != ''

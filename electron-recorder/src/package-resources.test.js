@@ -195,6 +195,11 @@ test("installed Windows builds declare GitHub differential update metadata", () 
   assert.match(workflow, /\*\.blockmap/);
   assert.match(workflow, /Download updater metadata/);
   assert.match(workflow, /Get-ChildItem release -File/);
+  const metadataUpload = workflow.match(
+    /- name: Upload updater metadata[\s\S]*?(?=\n\s{2}publish-github-prerelease:)/
+  )?.[0];
+  assert.ok(metadataUpload);
+  assert.doesNotMatch(metadataUpload, /archive:\s*false/);
 });
 
 test("Passport BrowserWindow applies the display-aware layout and zoom factor", () => {
