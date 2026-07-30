@@ -169,8 +169,14 @@ test("packaged normal-start gate launches the real worker without smoke mode", (
 });
 
 test("NSIS and portable installers use distinct artifact names", () => {
-  assert.match(pkg.build.nsis.artifactName, /Setup/);
-  assert.match(pkg.build.portable.artifactName, /Portable/);
+  assert.equal(
+    pkg.build.nsis.artifactName,
+    "classroom-recorder-electron-setup-${version}.${ext}"
+  );
+  assert.equal(
+    pkg.build.portable.artifactName,
+    "classroom-recorder-electron-portable-${version}.${ext}"
+  );
   assert.notEqual(pkg.build.nsis.artifactName, pkg.build.portable.artifactName);
 });
 

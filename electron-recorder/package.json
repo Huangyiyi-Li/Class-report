@@ -125,10 +125,10 @@
       "createStartMenuShortcut": true,
       "shortcutName": "课堂录音采集助手",
       "deleteAppDataOnUninstall": false,
-      "artifactName": "${productName}-${version}-Setup-${arch}.${ext}"
+      "artifactName": "classroom-recorder-electron-setup-${version}.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-Portable-${arch}.${ext}"
+      "artifactName": "classroom-recorder-electron-portable-${version}.${ext}"
     }
   }
 }

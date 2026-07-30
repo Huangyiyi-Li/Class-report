@@ -176,7 +176,7 @@ jobs:
       - name: Upload Windows Setup
         uses: actions/upload-artifact@v7
         with:
-          path: electron-recorder/release/*-Setup-x64.exe
+          path: electron-recorder/release/classroom-recorder-electron-setup-*.exe
           if-no-files-found: error
           retention-days: 14
           archive: false
@@ -184,7 +184,7 @@ jobs:
       - name: Upload Windows Portable
         uses: actions/upload-artifact@v7
         with:
-          path: electron-recorder/release/*-Portable-x64.exe
+          path: electron-recorder/release/classroom-recorder-electron-portable-*.exe
           if-no-files-found: error
           retention-days: 14
           archive: false
@@ -209,14 +209,14 @@ jobs:
       - name: Download Windows Setup
         uses: actions/download-artifact@v8
         with:
-          pattern: "*-Setup-x64.exe"
+          pattern: "classroom-recorder-electron-setup-*.exe"
           path: release
           merge-multiple: true
 
       - name: Download Windows Portable
         uses: actions/download-artifact@v8
         with:
-          pattern: "*-Portable-x64.exe"
+          pattern: "classroom-recorder-electron-portable-*.exe"
           path: release
           merge-multiple: true
 
