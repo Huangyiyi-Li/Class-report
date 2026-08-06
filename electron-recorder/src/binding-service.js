@@ -422,11 +422,17 @@ function normalizeCatalogClass(value, grade) {
 
 function requireSuccessfulMutation(value, fallback) {
   const success =
-    value === true || value?.success === true || value?.data?.success === true;
+    value === true ||
+    value?.success === true ||
+    value?.data?.success === true ||
+    value?.content === "success" ||
+    value?.data?.content === "success";
   if (!success) {
     throw bindingError(
       "BINDING_REJECTED",
-      requireOptionalMessage(value?.message || value?.data?.message) || fallback
+      requireOptionalMessage(
+        value?.message || value?.msg || value?.data?.message || value?.data?.msg
+      ) || fallback
     );
   }
 }

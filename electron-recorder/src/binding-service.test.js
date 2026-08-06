@@ -221,6 +221,90 @@ test("remote binding rejects business failure and consumes a successful session 
   );
 });
 
+test("remote binding accepts the backend SimpleSuccessVO contract", async () => {
+  const service = createBindingService({
+    mode: "remote",
+    createId: () => "passport-session-1",
+    authenticate: async () => ({
+      user: {
+        schoolId: 9001,
+        schoolName: "众享中学",
+        userName: "测试教师",
+        userType: 0,
+      },
+      post: async () => ({ content: "success" }),
+    }),
+  });
+  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+
+  const binding = await service.confirmBinding("passport-session-1", {
+    bindType: 1,
+    classId: 701,
+    className: "七年级一班",
+  });
+
+  assert.equal(binding.classId, "701");
+  assert.equal(binding.classroom, "七年级一班录音设备");
+});
+
+test("remote binding reports the backend business message when code is not successful", async () => {
+  const service = createBindingService({
+    mode: "remote",
+    createId: () => "passport-session-1",
+    authenticate: async () => ({
+      user: {
+        schoolId: 9001,
+        schoolName: "众享中学",
+        userName: "测试教师",
+        userType: 0,
+      },
+      post: async () => ({ code: 5, msg: "设备已绑定其他的班级或者教室" }),
+    }),
+  });
+  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+
+  await assert.rejects(
+    service.confirmBinding("passport-session-1", {
+      bindType: 1,
+      classId: 701,
+      className: "七年级一班",
+    }),
+    {
+      code: "BINDING_REJECTED",
+      message: "设备已绑定其他的班级或者教室",
+    }
+  );
+});
+
+test("remote binding never treats a business error code as SimpleSuccessVO", async () => {
+  const service = createBindingService({
+    mode: "remote",
+    createId: () => "passport-session-1",
+    authenticate: async () => ({
+      user: {
+        schoolId: 9001,
+        schoolName: "众享中学",
+        userName: "测试教师",
+        userType: 0,
+      },
+      post: async () => ({ code: 1, msg: "学校不存在" }),
+    }),
+  });
+  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+
+  await assert.rejects(
+    service.confirmBinding("passport-session-1", {
+      bindType: 1,
+      classId: 701,
+      className: "七年级一班",
+    }),
+    {
+      code: "BINDING_REJECTED",
+      message: "学校不存在",
+    }
+  );
+});
+
 test("Passport student identity is rejected before catalog access", async () => {
   const service = createBindingService({
     mode: "remote",
