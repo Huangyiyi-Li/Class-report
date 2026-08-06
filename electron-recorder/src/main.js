@@ -140,7 +140,7 @@ function initializeBindingController() {
   bindingController = new BindingController({
     service: bindingService,
     resolveDeviceNo: () =>
-      process.env.ELECTRON_SMOKE_TEST ? "SMOKEDEVICE001" : resolveDeviceNo(),
+      process.env.ELECTRON_SMOKE_TEST ? "020000000001" : resolveDeviceNo(),
     getSnapshot: () => workerSnapshot,
     sendWorkerCommand: (command, payload) => {
       if (!supervisor) {

@@ -90,6 +90,40 @@ test("fresh binding after unbind keeps the worker's persisted device number", as
   assert.deepEqual(calls, [["createSession", { deviceNo: "AABBCCDDEEFF" }]]);
 });
 
+test("fresh binding replaces a persisted test fixture with the physical MAC", async () => {
+  const { controller, calls } = createFixture({
+    controller: {
+      resolveDeviceNo: () => "112233445566",
+      getSnapshot: () => ({
+        recording: "idle",
+        binding: null,
+        deviceNo: "WIN-REC-002-LOCAL-FIXTURE",
+      }),
+    },
+  });
+
+  await controller.createSession();
+
+  assert.deepEqual(calls, [["createSession", { deviceNo: "112233445566" }]]);
+});
+
+test("persisted MAC separators are normalized before binding", async () => {
+  const { controller, calls } = createFixture({
+    controller: {
+      resolveDeviceNo: () => "112233445566",
+      getSnapshot: () => ({
+        recording: "idle",
+        binding: null,
+        deviceNo: "aa-bb-cc-dd-ee-ff",
+      }),
+    },
+  });
+
+  await controller.createSession();
+
+  assert.deepEqual(calls, [["createSession", { deviceNo: "AABBCCDDEEFF" }]]);
+});
+
 test("explicit device replacement uses the currently resolved physical MAC", async () => {
   const { controller, calls } = createFixture({
     controller: {
@@ -206,6 +240,12 @@ test("rebind requires idle but initial binding may proceed from binding_required
 test("missing identity and service failures propagate without fallback", async () => {
   const noDevice = createFixture({ controller: { resolveDeviceNo: () => "" } });
   await assert.rejects(noDevice.controller.createSession(), {
+    code: "DEVICE_IDENTITY_UNAVAILABLE",
+  });
+  const invalidDevice = createFixture({
+    controller: { resolveDeviceNo: () => "WIN-REC-002-LOCAL-FIXTURE" },
+  });
+  await assert.rejects(invalidDevice.controller.createSession(), {
     code: "DEVICE_IDENTITY_UNAVAILABLE",
   });
   const unavailable = Object.assign(new Error("not configured"), {

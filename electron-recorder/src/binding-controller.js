@@ -16,9 +16,9 @@ export class BindingController {
     const snapshot = this.getSnapshot() || {};
     const persistedDeviceNo =
       [snapshot.binding?.deviceNo, snapshot.deviceNo]
-        .find((value) => typeof value === "string" && value.trim())
-        ?.trim() || "";
-    const resolvedDeviceNo = this.resolveDeviceNo();
+        .map(normalizeMacDeviceNo)
+        .find(Boolean) || "";
+    const resolvedDeviceNo = normalizeMacDeviceNo(this.resolveDeviceNo());
     const deviceNo = replaceDevice
       ? resolvedDeviceNo
       : persistedDeviceNo || resolvedDeviceNo;
@@ -98,4 +98,11 @@ export class BindingController {
       );
     }
   }
+}
+
+function normalizeMacDeviceNo(value) {
+  const text = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (!/^[0-9A-F]{2}(?:[:-]?[0-9A-F]{2}){5}$/.test(text)) return "";
+  const normalized = text.replace(/[:-]/g, "");
+  return /^0{12}$/.test(normalized) ? "" : normalized;
 }
