@@ -1,13 +1,13 @@
 # Windows 录音采集客户端交接
 
-- 更新日期：2026-07-25
-- 当前状态：开发中，尚未达到用户试用条件
+- 更新日期：2026-08-07
+- 当前状态：`v0.2.0-codex.12` 候选开发中，等待 Windows 真机验证真实录音、OSS 上传和信息登记
 - 仓库：`https://github.com/Huangyiyi-Li/Class-report.git`
-- 工作分支：`feat/windows-recorder-production`
+- 工作分支：`feat/recorder-v0.2.0-codex.12`
 - Draft PR：`https://github.com/Huangyiyi-Li/Class-report/pull/1`
-- 当前源码版本：`0.1.19-beta.2`
-- 最新候选标签：`recorder-v0.1.19-beta.2`
-- 最新状态：`0.1.19-beta.2` 新增 Passport 教师身份兼容和登录窗口自适应；服务端 `rest.xxt.cn/ai-lesson-eval/...` 尚未上线，真实绑定接口仍不可联调
+- 当前源码版本：`0.2.0-codex.12`
+- 最新候选标签：待创建 `v0.2.0-codex.12`
+- 最新状态：正式绑定接口已可用；本候选修复现役 OSS 凭证字段兼容，并增加录音时长、分段及上传各阶段诊断。必须在 Windows 真机验证至少一个分段完成 OSS 上传和服务端信息登记。
 
 ## 1. 新 Windows 电脑接手步骤
 

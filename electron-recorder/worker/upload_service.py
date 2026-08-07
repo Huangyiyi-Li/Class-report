@@ -20,6 +20,7 @@ class UploadResult:
     status: str
     retry_at: int | None = None
     error: str = ""
+    stage: str = ""
 
 
 class UploadService:
@@ -27,6 +28,15 @@ class UploadService:
         self.store = store
         self.uploader = uploader
         self.metadata_client = metadata_client
+        self._status_listener = None
+
+    def set_status_listener(self, listener) -> None:
+        self._status_listener = listener
+
+    def diagnostics(self) -> dict:
+        if hasattr(self.uploader, "diagnostics"):
+            return dict(self.uploader.diagnostics())
+        return {}
 
     def set_device_auth_listener(self, on_success, on_failure) -> None:
         if hasattr(self.metadata_client, "set_device_auth_listener"):
@@ -47,11 +57,13 @@ class UploadService:
         return self._upload(item, current)
 
     def _upload(self, item, current):
+        self._notify("upload", "started", item, current)
         try:
             path = Path(item.local_path)
             uploaded_url = self.uploader.upload(path)
             self.store.mark_uploaded(item.id, uploaded_url)
-            return UploadResult(item.id, "uploaded")
+            self._notify("upload", "succeeded", item, current)
+            return UploadResult(item.id, "uploaded", stage="upload")
         except Exception as exc:
             failure_message = str(exc).strip() or type(exc).__name__
             try:
@@ -66,29 +78,75 @@ class UploadService:
                 pass
             retry_at = current + timedelta(seconds=retry_delay(item.attempts))
             self.store.mark_failed(item.id, failure_message, retry_at)
-            return UploadResult(
+            result = UploadResult(
                 item.id,
                 "failed",
                 int(retry_at.timestamp() * 1000),
                 failure_message,
+                "upload",
             )
+            self._notify(
+                "upload",
+                "waiting_retry",
+                item,
+                current,
+                error=failure_message,
+                retry_at=result.retry_at,
+            )
+            return result
 
     def _register(self, item, current):
+        self._notify("registration", "started", item, current)
         try:
             self.metadata_client.save_audio_file_info(_metadata_payload(item))
             self.store.mark_completed(item.id)
-            return UploadResult(item.id, "completed")
+            self._notify("registration", "succeeded", item, current)
+            return UploadResult(item.id, "completed", stage="registration")
         except Exception as exc:
             retry_at = current + timedelta(
                 seconds=retry_delay(item.metadata_attempts)
             )
             self.store.mark_metadata_failed(item.id, str(exc), retry_at)
-            return UploadResult(
+            result = UploadResult(
                 item.id,
                 "metadata_failed",
                 int(retry_at.timestamp() * 1000),
                 str(exc),
+                "registration",
             )
+            self._notify(
+                "registration",
+                "waiting_retry",
+                item,
+                current,
+                error=str(exc),
+                retry_at=result.retry_at,
+            )
+            return result
+
+    def _notify(
+        self,
+        stage: str,
+        status: str,
+        item,
+        current: datetime,
+        *,
+        error: str = "",
+        retry_at: int | None = None,
+    ) -> None:
+        if self._status_listener is None:
+            return
+        payload = {
+            "stage": stage,
+            "status": status,
+            "segmentIndex": item.segment_index,
+            "updatedAt": current.isoformat(),
+        }
+        if error:
+            payload["error"] = error
+        if retry_at is not None:
+            payload["retryAt"] = retry_at
+        self._status_listener(payload)
 
 
 def _metadata_payload(

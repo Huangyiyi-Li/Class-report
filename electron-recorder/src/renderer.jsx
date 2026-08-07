@@ -71,6 +71,7 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
   const [rebindPending, setRebindPending] = useState(false);
   const [actionPending, setActionPending] = useState("");
   const [actionError, setActionError] = useState("");
+  const [clockNow, setClockNow] = useState(Date.now());
   const home = getHomeState(snapshot, runtime);
   const binding = snapshot.binding || runtime.binding;
   const uploadAttention =
@@ -78,6 +79,13 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
     ["failed", "metadata_failed", "network_error", "waiting_network"].includes(
       runtime.upload
     );
+  const uploadSummary = formatUploadSummary(snapshot, runtime);
+  useEffect(() => {
+    if (runtime.recording !== "recording") return undefined;
+    setClockNow(Date.now());
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [runtime.recording, snapshot.recordingStartedAt]);
   const runRecorderAction = async (name, action) => {
     if (!action || actionPending) return;
     setActionPending(name);
@@ -248,6 +256,20 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
             </button>
           ) : null}
         </div>
+        {runtime.recording === "recording" ? (
+          <div className="recording-metrics" aria-label="本次录音进度">
+            <span>
+              录音时长
+              <strong>
+                {formatElapsed(snapshot.recordingStartedAt, clockNow)}
+              </strong>
+            </span>
+            <span>
+              已形成
+              <strong>{Number(snapshot.recordingSegments || 0)}</strong> 段
+            </span>
+          </div>
+        ) : null}
         {actionError ? (
           <div className="inline-notice danger" role="alert">
             <AlertTriangle size={18} />
@@ -259,22 +281,20 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
       <footer className={`upload-footer ${uploadAttention ? "attention" : ""}`}>
         <div>
           <UploadCloud size={17} />
-          <span>
-            {runtime.pending > 0
-              ? `待上传 ${runtime.pending} 段`
-              : "待上传 0 段 · 队列已清空"}
-          </span>
+          <span>{uploadSummary}</span>
           {snapshot.bindingServiceMode === "mock" ? <em>模拟数据</em> : null}
         </div>
         {uploadAttention ? (
           <button
             className="footer-retry"
-            disabled={Boolean(actionPending)}
+            disabled={Boolean(actionPending || snapshot.manualFlushActive)}
             onClick={() =>
               runRecorderAction("flush", () => shell?.flushQueue?.())
             }
           >
-            {actionPending === "flush" ? "正在重试…" : "立即重试"}
+            {actionPending === "flush" || snapshot.manualFlushActive
+              ? "正在重试…"
+              : "立即重试"}
           </button>
         ) : null}
       </footer>
@@ -668,7 +688,38 @@ function SettingsModal({
                 <HardDrive size={21} />
                 运行诊断
               </h3>
-              <SettingRow title="待上传队列" value={`${runtime.pending} 段`} />
+              <SettingRow
+                title="设备认证"
+                value={formatDiagnosticStatus(
+                  snapshot.uploadDiagnostics?.deviceAuth
+                )}
+              />
+              <SettingRow
+                title="上传凭证"
+                value={formatDiagnosticStatus(
+                  snapshot.uploadDiagnostics?.ossCredentials
+                )}
+              />
+              <SettingRow
+                title="OSS 目标"
+                value={formatOssTarget(snapshot.uploadDiagnostics)}
+              />
+              <SettingRow
+                title="等待上传"
+                value={`${countQueueStatuses(snapshot.queueDiagnostics, [
+                  "pending",
+                  "uploading",
+                  "failed",
+                ])} 段`}
+              />
+              <SettingRow
+                title="已上传，等待登记"
+                value={`${countQueueStatuses(snapshot.queueDiagnostics, [
+                  "uploaded",
+                  "registering",
+                  "metadata_failed",
+                ])} 段`}
+              />
               {Number(snapshot.localMissing || 0) > 0 ? (
                 <SettingRow
                   title="本地文件已缺失"
@@ -685,7 +736,16 @@ function SettingsModal({
               />
               <SettingRow
                 title="最近错误"
-                value={snapshot.latestError || "无"}
+                value={
+                  snapshot.uploadDetail?.error ||
+                  snapshot.uploadDiagnostics?.lastError ||
+                  snapshot.latestError ||
+                  "无"
+                }
+              />
+              <SettingRow
+                title="下次自动重试"
+                value={formatRetryAt(snapshot.uploadDetail?.retryAt)}
               />
               <button
                 className="secondary-action compact"
@@ -703,10 +763,29 @@ function SettingsModal({
             </section>
           </div>
           <details className="diagnostics-panel">
-            <summary>技术诊断日志</summary>
+            <summary>最近录音分段处理记录</summary>
             <p>录音：{runtime.recording}</p>
             <p>上传：{runtime.upload}</p>
             <p>健康：{runtime.health}</p>
+            <div className="queue-diagnostic-list">
+              {(snapshot.queueDiagnostics?.recent || []).length ? (
+                snapshot.queueDiagnostics.recent.map((item) => (
+                  <div
+                    className="queue-diagnostic-item"
+                    key={`${item.segmentIndex}-${item.fileName}`}
+                  >
+                    <strong>{item.fileName}</strong>
+                    <span>{formatQueueStatus(item.status)}</span>
+                    <small>
+                      {item.lastError ||
+                        (item.fileExists ? "本地文件可用" : "本地文件不存在")}
+                    </small>
+                  </div>
+                ))
+              ) : (
+                <p>暂无分段处理记录</p>
+              )}
+            </div>
           </details>
           <section className="api-routes-section">
             <div className="api-routes-heading">
@@ -901,6 +980,87 @@ function formatAutoLaunchStatus(value) {
   return value.actual === null
     ? value.error || "未验证"
     : `未验证（实际${value.actual ? "已开启" : "未开启"}）`;
+}
+
+function formatElapsed(startedAt, now = Date.now()) {
+  const start = Date.parse(startedAt || "");
+  if (!Number.isFinite(start)) return "00:00:00";
+  const seconds = Math.max(0, Math.floor((now - start) / 1000));
+  const hours = String(Math.floor(seconds / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+  const remainder = String(seconds % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${remainder}`;
+}
+
+function countQueueStatuses(queueDiagnostics, statuses) {
+  const counts = queueDiagnostics?.counts || {};
+  return statuses.reduce(
+    (total, status) => total + Number(counts[status] || 0),
+    0
+  );
+}
+
+function formatUploadSummary(snapshot, runtime) {
+  if (snapshot.manualFlushActive) return "正在检查待处理录音并重试";
+  const detail = snapshot.uploadDetail || {};
+  if (detail.status === "started") {
+    return detail.stage === "registration"
+      ? "文件已上传，正在登记录音信息"
+      : "正在上传录音文件";
+  }
+  const waitingRegistration = countQueueStatuses(snapshot.queueDiagnostics, [
+    "uploaded",
+    "registering",
+    "metadata_failed",
+  ]);
+  const waitingUpload = countQueueStatuses(snapshot.queueDiagnostics, [
+    "pending",
+    "uploading",
+    "failed",
+  ]);
+  if (waitingUpload > 0 && waitingRegistration > 0) {
+    return `等待上传 ${waitingUpload} 段 · 等待登记 ${waitingRegistration} 段`;
+  }
+  if (waitingUpload > 0) return `等待上传 ${waitingUpload} 段`;
+  if (waitingRegistration > 0)
+    return `已上传，等待登记 ${waitingRegistration} 段`;
+  return runtime.pending > 0
+    ? `待处理 ${runtime.pending} 段`
+    : "没有待处理的录音";
+}
+
+function formatDiagnosticStatus(status) {
+  const labels = {
+    available: "已获取",
+    checking: "正在获取",
+    failed: "获取失败",
+  };
+  return labels[status] || "尚未验证";
+}
+
+function formatOssTarget(diagnostics = {}) {
+  const values = [diagnostics?.bucket, diagnostics?.endpoint].filter(Boolean);
+  return values.length ? values.join(" · ") : "尚未获取";
+}
+
+function formatRetryAt(value) {
+  const time = Number(value);
+  if (!Number.isFinite(time) || time <= 0) return "无等待中的重试";
+  return new Date(time).toLocaleString("zh-CN", { hour12: false });
+}
+
+function formatQueueStatus(status) {
+  const labels = {
+    pending: "等待上传",
+    uploading: "正在上传",
+    failed: "上传失败，等待重试",
+    uploaded: "已上传，等待登记",
+    registering: "正在登记",
+    metadata_failed: "登记失败，等待重试",
+    completed: "处理完成",
+    local_missing: "本地文件不存在",
+  };
+  return labels[status] || status || "状态未知";
 }
 
 function safeApiEnvironment(routes) {

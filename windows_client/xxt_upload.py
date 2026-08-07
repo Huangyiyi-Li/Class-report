@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,10 +31,23 @@ def build_device_auth_payload(device_no: str, timestamp: int | None = None) -> d
     }
 
 
-def build_oss_object_key(file_name: str, upload_dir: str) -> str:
+def build_oss_object_key(
+    file_name: str, upload_dir: str, *, device_no: str = ""
+) -> str:
     authorized_prefix = str(upload_dir or "").strip("/")
     if not authorized_prefix:
-        raise ValueError("OSS uploadDir is required")
+        day_match = re.search(r"_(\d{8})_", Path(file_name).name)
+        recording_day = (
+            day_match.group(1)
+            if day_match is not None
+            else datetime.now().strftime("%Y%m%d")
+        )
+        normalized_device = re.sub(r"[^A-Za-z0-9_-]", "", device_no)
+        if not normalized_device:
+            raise ValueError("deviceNo is required when OSS uploadDir is absent")
+        authorized_prefix = (
+            f"ai-lesson-eval/{normalized_device}/{recording_day}"
+        )
     return f"{authorized_prefix}/{Path(file_name).name}"
 
 
@@ -182,14 +196,23 @@ class OssConfig:
 
     @classmethod
     def from_response(cls, data: dict[str, Any]) -> "OssConfig":
+        bucket = data.get("bucketName") or data.get("bucket")
+        endpoint = data.get("endpoint") or data.get("endPoint")
+        expire_at = (
+            data.get("expireDate")
+            if data.get("expireDate") is not None
+            else data.get("expiration")
+        )
+        if not bucket or not endpoint or expire_at is None:
+            raise ValueError("OSS 上传凭证缺少 bucket、endpoint 或 expiration")
         return cls(
             access_key_id=str(data["accessKeyId"]),
             access_key_secret=str(data["accessKeySecret"]),
             security_token=str(data["securityToken"]),
-            bucket=str(data["bucketName"]),
-            endpoint=str(data["endpoint"]),
-            expire_at=_millis_to_datetime(int(data["expireDate"])),
-            upload_dir=str(data["uploadDir"]),
+            bucket=str(bucket),
+            endpoint=_endpoint_host(str(endpoint)),
+            expire_at=_millis_to_datetime(int(expire_at)),
+            upload_dir=str(data.get("uploadDir") or ""),
         )
 
     def public_url(self, object_key: str) -> str:
@@ -266,18 +289,58 @@ class XxtUploadManager:
         self.on_device_auth = on_device_auth
         self.device_auth_data: DeviceAuth | None = None
         self.oss_config: OssConfig | None = None
+        self._diagnostics: dict[str, Any] = {
+            "stage": "idle",
+            "status": "idle",
+            "deviceAuth": "unknown",
+            "ossCredentials": "unknown",
+            "lastError": "",
+        }
 
     def upload(self, local_path: str | Path) -> str:
         self._ensure_oss_config()
         object_key = build_oss_object_key(
-            Path(local_path).name, self.oss_config.upload_dir
+            Path(local_path).name,
+            self.oss_config.upload_dir,
+            device_no=self.device_no,
+        )
+        self._set_diagnostics(
+            stage="oss_upload",
+            status="started",
+            objectPrefix=str(Path(object_key).parent).replace("\\", "/"),
+            lastError="",
         )
         uploader = self.uploader_factory(self.oss_config)
-        return uploader.upload(local_path, object_key)
+        try:
+            uploaded_url = uploader.upload(local_path, object_key)
+        except Exception as exc:
+            self._set_diagnostics(
+                stage="oss_upload", status="failed", lastError=str(exc)
+            )
+            raise
+        self._set_diagnostics(stage="oss_upload", status="succeeded")
+        return uploaded_url
 
     def _ensure_device_auth(self, *, refresh: bool = False) -> None:
         if refresh or self.device_auth_data is None:
-            self.device_auth_data = self.api_client.device_auth(self.device_no)
+            self._set_diagnostics(
+                stage="device_auth", status="started", lastError=""
+            )
+            try:
+                self.device_auth_data = self.api_client.device_auth(self.device_no)
+            except Exception as exc:
+                self._set_diagnostics(
+                    stage="device_auth",
+                    status="failed",
+                    deviceAuth="failed",
+                    lastError=str(exc),
+                )
+                raise
+            self._set_diagnostics(
+                stage="device_auth",
+                status="succeeded",
+                deviceAuth="available",
+            )
             if self.on_device_auth is not None:
                 self.on_device_auth(self.device_auth_data)
 
@@ -291,7 +354,38 @@ class XxtUploadManager:
         state = XxtTokenState(expire_at=self.oss_config.expire_at if self.oss_config else None)
         if state.needs_refresh():
             self._ensure_device_auth(refresh=True)
-            self.oss_config = self.api_client.get_oss_upload_token(self.device_auth_data.access_token)
+            self._set_diagnostics(
+                stage="oss_credentials", status="started", lastError=""
+            )
+            try:
+                self.oss_config = self.api_client.get_oss_upload_token(
+                    self.device_auth_data.access_token
+                )
+            except Exception as exc:
+                self._set_diagnostics(
+                    stage="oss_credentials",
+                    status="failed",
+                    ossCredentials="failed",
+                    lastError=str(exc),
+                )
+                raise
+            self._set_diagnostics(
+                stage="oss_credentials",
+                status="succeeded",
+                ossCredentials="available",
+                bucket=self.oss_config.bucket,
+                endpoint=self.oss_config.endpoint,
+                credentialExpiresAt=self.oss_config.expire_at.isoformat(),
+            )
+
+    def diagnostics(self) -> dict[str, Any]:
+        return dict(self._diagnostics)
+
+    def _set_diagnostics(self, **changes: Any) -> None:
+        self._diagnostics.update(
+            changes,
+            updatedAt=datetime.now(timezone.utc).isoformat(),
+        )
 
 
 class XxtDeviceApiClient(ClassroomApiClient):
@@ -409,6 +503,13 @@ class XxtDeviceApiClient(ClassroomApiClient):
 
 def _millis_to_datetime(value: int) -> datetime:
     return datetime.fromtimestamp(value / 1000)
+
+
+def _endpoint_host(value: str) -> str:
+    parsed = urlparse(value if "://" in value else f"https://{value}")
+    if not parsed.hostname:
+        raise ValueError("OSS endpoint is invalid")
+    return parsed.netloc
 
 
 def _record_time(value: str) -> datetime:

@@ -931,6 +931,74 @@ def test_snapshot_reports_queue_binding_disk_and_latest_error(tmp_path: Path):
     assert snapshot["latestError"] == "microphone gone"
 
 
+def test_snapshot_exposes_recording_timing_queue_and_upload_diagnostics(tmp_path: Path):
+    class Service:
+        def set_status_listener(self, listener):
+            self.listener = listener
+
+        def diagnostics(self):
+            return {
+                "deviceAuth": "available",
+                "ossCredentials": "available",
+                "bucket": "book-reading",
+                "endpoint": "oss-cn-beijing.aliyuncs.com",
+                "objectPrefix": "ai-lesson-eval/AABBCCDDEEFF/20260807",
+            }
+
+    path = tmp_path / "one.ogg"
+    path.write_bytes(b"audio")
+    store = QueueStore(tmp_path / "queue.db")
+    store.enqueue({"local_path": str(path), "segment_index": 1})
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="AABBCCDDEEFF"),
+        queue_store=store,
+        upload_service=Service(),
+        session_factory=lambda **_: FakeSession(),
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=allow_startup,
+        emit_event=lambda *_: None,
+        upload_poll_seconds=60,
+    )
+    worker.startup()
+    worker.execute_command(command("start"))
+
+    snapshot = worker.snapshot()
+
+    assert snapshot["recordingStartedAt"]
+    assert snapshot["recordingSegments"] == 0
+    assert snapshot["queueDiagnostics"]["counts"] == {"pending": 1}
+    assert snapshot["uploadDiagnostics"]["deviceAuth"] == "available"
+    worker.shutdown()
+
+
+def test_upload_status_listener_updates_snapshot_with_retry_reason(tmp_path: Path):
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path)),
+        recover=lambda *_args, **_kwargs: [],
+        emit_event=lambda *_: None,
+    )
+
+    worker._upload_status_changed(
+        {
+            "stage": "upload",
+            "status": "waiting_retry",
+            "segmentIndex": 2,
+            "error": "获取 OSS 上传凭证失败",
+            "retryAt": 1786066320000,
+            "updatedAt": "2026-08-07T01:30:00+00:00",
+        }
+    )
+
+    assert worker.snapshot()["uploadDetail"] == {
+        "stage": "upload",
+        "status": "waiting_retry",
+        "segmentIndex": 2,
+        "error": "获取 OSS 上传凭证失败",
+        "retryAt": 1786066320000,
+        "updatedAt": "2026-08-07T01:30:00+00:00",
+    }
+
+
 def test_startup_excludes_deleted_audio_from_pending_count(tmp_path: Path):
     store = QueueStore(tmp_path / "queue.db")
     store.enqueue({
@@ -977,11 +1045,13 @@ def test_flush_queue_runs_asynchronously_without_blocking_recording_commands(tmp
 
     assert time.monotonic() - started_at < 0.2
     assert service.started.wait(timeout=0.5)
+    assert worker.snapshot()["manualFlushActive"] is True
     worker.handle(command("stop"))
     service.release.set()
     worker.shutdown()
     assert service.calls == 1
     assert worker.state["upload"] == "clear"
+    assert worker.snapshot()["manualFlushActive"] is False
 
 
 def test_update_settings_rejects_unknown_fields_without_persisting_partial_changes(tmp_path: Path):

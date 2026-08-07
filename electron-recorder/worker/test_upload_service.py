@@ -227,6 +227,49 @@ def test_bottom_layer_timeout_becomes_retryable(tmp_path):
     assert "timed out" in result.error
 
 
+def test_upload_service_reports_actionable_stage_progress_and_retry(tmp_path):
+    store = seeded_store(tmp_path, ["one.ogg"])
+    events = []
+    service = UploadService(
+        store, FakeUploader({"one.ogg"}), FakeMetadataClient()
+    )
+    service.set_status_listener(events.append)
+
+    result = service.run_once("2026-08-07T01:30:00Z")
+
+    assert result.stage == "upload"
+    assert events == [
+        {
+            "stage": "upload",
+            "status": "started",
+            "segmentIndex": 1,
+            "updatedAt": "2026-08-07T01:30:00+00:00",
+        },
+        {
+            "stage": "upload",
+            "status": "waiting_retry",
+            "segmentIndex": 1,
+            "error": "offline",
+            "retryAt": result.retry_at,
+            "updatedAt": "2026-08-07T01:30:00+00:00",
+        },
+    ]
+
+
+def test_metadata_failure_is_reported_as_registration_not_file_upload(tmp_path):
+    store = seeded_store(tmp_path, ["one.ogg"])
+    events = []
+    service = UploadService(store, FakeUploader(), FakeMetadataClient(failures=1))
+    service.set_status_listener(events.append)
+    service.run_once("2026-08-07T01:30:00Z")
+
+    result = service.run_once("2026-08-07T01:30:01Z")
+
+    assert result.stage == "registration"
+    assert events[-1]["stage"] == "registration"
+    assert events[-1]["status"] == "waiting_retry"
+
+
 def test_upload_service_runs_network_call_synchronously(tmp_path, monkeypatch):
     store = seeded_store(tmp_path, ["one.wav"])
     monkeypatch.setattr(

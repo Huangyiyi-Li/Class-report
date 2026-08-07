@@ -1059,6 +1059,40 @@ h1 {
   margin: 5px 0;
 }
 
+.diagnostics-panel .queue-diagnostic-list {
+  max-height: 220px;
+  display: grid;
+  gap: 6px;
+}
+
+.diagnostics-panel .queue-diagnostic-item {
+  max-height: none;
+  margin-top: 0;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  border: 1px solid #dce5e9;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.queue-diagnostic-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #34444c;
+}
+
+.queue-diagnostic-item span {
+  color: #53656e;
+}
+
+.queue-diagnostic-item small {
+  grid-column: 1 / -1;
+  color: #7a8990;
+}
+
 .state-switcher p {
   margin: 0 0 12px;
   color: var(--muted);
@@ -1976,6 +2010,33 @@ body:not(.float-mode) {
 .home-actions {
   gap: 12px;
   margin-top: 20px;
+}
+
+.recording-metrics {
+  width: fit-content;
+  margin-top: 18px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  border: 1px solid #dbe3df;
+  border-radius: 8px;
+  color: #64747c;
+  background: rgba(255, 255, 255, 0.68);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.recording-metrics span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.recording-metrics strong {
+  color: #26333a;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
 }
 
 .home-primary,

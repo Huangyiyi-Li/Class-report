@@ -47,6 +47,7 @@ class CaptureSession:
         clock: Callable[[], float] = time.monotonic,
         on_error: Callable[[Exception], None] | None = None,
         on_ready: Callable[[], None] | None = None,
+        on_segment_finalized: Callable[[dict], None] | None = None,
         queue_store: QueueStore | None = None,
     ):
         self.config = config
@@ -58,6 +59,7 @@ class CaptureSession:
         self.clock = clock
         self.on_error = on_error
         self.on_ready = on_ready
+        self.on_segment_finalized = on_segment_finalized
         self._ready = False
         self._ready_event = threading.Event()
         self.queue_store = queue_store
@@ -141,6 +143,7 @@ class CaptureSession:
                 finalized_at = datetime.now(timezone.utc)
                 wav_path = journal.finalize(finalized_at)
                 final_path = self.encoder(wav_path, self.ffmpeg_path)
+                segment_index = 0
                 if self.queue_store is not None:
                     segment_index = self.queue_store.next_segment_index(
                         journal.device_id, finalized_at.date().isoformat()
@@ -160,6 +163,15 @@ class CaptureSession:
                             "channel": journal.channels,
                             "audio_type": 1,
                             "audio_format": final_path.suffix.lstrip(".").lower(),
+                        }
+                    )
+                if self.on_segment_finalized is not None:
+                    self.on_segment_finalized(
+                        {
+                            "segmentIndex": segment_index,
+                            "fileName": final_path.name,
+                            "fileExists": final_path.is_file(),
+                            "finalizedAt": finalized_at.isoformat(),
                         }
                     )
                 self.finalized_paths.put(
@@ -327,7 +339,12 @@ class RecorderWorker:
         self.legacy_queue_path: Path | None = None
         self.state = {
             "recording": "idle",
+            "recordingStartedAt": None,
+            "recordingSegments": 0,
+            "lastLocalSegmentAt": None,
             "upload": "clear",
+            "uploadDetail": {},
+            "manualFlushActive": False,
             "health": "healthy",
             "recovered": 0,
             "latestError": "",
@@ -481,6 +498,7 @@ class RecorderWorker:
                 journal=journal,
                 ffmpeg_path=self.ffmpeg_path,
                 on_error=lambda exc: self._capture_error(exc, generation),
+                on_segment_finalized=self._segment_finalized,
                 queue_store=self.queue_store,
             )
             candidate = self.session
@@ -517,7 +535,16 @@ class RecorderWorker:
                 return
             self._capture_retry_attempt = 0
             self.state["recording"] = "recording"
+            self.state["recordingStartedAt"] = datetime.now(timezone.utc).isoformat()
+            self.state["recordingSegments"] = 0
+            self.state["lastLocalSegmentAt"] = None
             self.state["health"] = "healthy"
+        self.emit_event("snapshot", self.snapshot())
+
+    def _segment_finalized(self, detail: dict) -> None:
+        with self._state_lock:
+            self.state["recordingSegments"] += 1
+            self.state["lastLocalSegmentAt"] = detail.get("finalizedAt")
         self.emit_event("snapshot", self.snapshot())
 
     def _evaluate_startup_gate(self) -> StartupGate:
@@ -610,6 +637,27 @@ class RecorderWorker:
 
     def snapshot(self) -> dict:
         counts = self.queue_store.counts() if self.queue_store is not None else {}
+        try:
+            queue_diagnostics = (
+                self.queue_store.diagnostics(limit=20)
+                if self.queue_store is not None
+                else {"counts": {}, "recent": []}
+            )
+        except Exception as exc:
+            queue_diagnostics = {
+                "counts": counts,
+                "recent": [],
+                "error": str(exc),
+            }
+        try:
+            upload_diagnostics = (
+                self.upload_service.diagnostics()
+                if self.upload_service is not None
+                and hasattr(self.upload_service, "diagnostics")
+                else {}
+            )
+        except Exception as exc:
+            upload_diagnostics = {"status": "unknown", "lastError": str(exc)}
         pending = sum(
             count
             for status, count in counts.items()
@@ -648,6 +696,8 @@ class RecorderWorker:
             "pending": pending,
             "completed": counts.get("completed", 0),
             "localMissing": counts.get("local_missing", 0),
+            "queueDiagnostics": queue_diagnostics,
+            "uploadDiagnostics": upload_diagnostics,
             "deviceNo": self.config.device_no,
             "binding": binding,
             "dataRoot": self.config.data_root,
@@ -772,18 +822,21 @@ class RecorderWorker:
         with self._manual_flush_thread_lock:
             if self._manual_flush_thread is not None and self._manual_flush_thread.is_alive():
                 return
+            self.state["manualFlushActive"] = True
             self._manual_flush_thread = threading.Thread(
                 target=self._drain_upload_queue,
                 name="manual-upload-flush",
                 daemon=True,
             )
             self._manual_flush_thread.start()
+        self.emit_event("snapshot", self.snapshot())
 
     def _drain_upload_queue(self) -> None:
         try:
             with self._upload_lock:
                 if self.queue_store is not None:
                     self.queue_store.reconcile_missing_files()
+                    self.queue_store.make_retryable_now()
             self.emit_event("snapshot", self.snapshot())
             while not self._upload_stop.is_set():
                 with self._upload_lock:
@@ -808,10 +861,11 @@ class RecorderWorker:
             self.state["upload"] = "failed"
             self.emit_event("error", {"message": f"manual upload failed: {exc}"})
         finally:
-            self.emit_event("snapshot", self.snapshot())
+            self.state["manualFlushActive"] = False
             with self._manual_flush_thread_lock:
                 if self._manual_flush_thread is threading.current_thread():
                     self._manual_flush_thread = None
+            self.emit_event("snapshot", self.snapshot())
 
     def _check_device_auth(self) -> None:
         if self.upload_service is None:
@@ -858,11 +912,31 @@ class RecorderWorker:
         ).start()
 
     def _configure_upload_service(self, service) -> None:
+        if service is not None and hasattr(service, "set_status_listener"):
+            service.set_status_listener(self._upload_status_changed)
         if service is not None and hasattr(service, "set_device_auth_listener"):
             service.set_device_auth_listener(
                 self._device_auth_succeeded,
                 self._device_auth_failed,
             )
+
+    def _upload_status_changed(self, detail: dict) -> None:
+        self.state["uploadDetail"] = dict(detail)
+        stage = detail.get("stage")
+        status = detail.get("status")
+        if status == "started":
+            self.state["upload"] = (
+                "registering" if stage == "registration" else "uploading"
+            )
+        elif status == "waiting_retry":
+            self.state["upload"] = (
+                "metadata_failed" if stage == "registration" else "failed"
+            )
+        elif status == "succeeded":
+            self.state["upload"] = (
+                "completed" if stage == "registration" else "uploaded"
+            )
+        self.emit_event("snapshot", self.snapshot())
 
     def _device_auth_succeeded(self, auth) -> None:
         if self.config_path is None:
@@ -999,6 +1073,9 @@ class XxtProductionAdapter:
     def set_device_auth_listener(self, on_success, on_failure):
         self._on_auth_success = on_success
         self._on_auth_failure = on_failure
+
+    def diagnostics(self):
+        return self.upload_manager.diagnostics()
 
     def _device_auth_succeeded(self, auth):
         if self._on_auth_success is not None:

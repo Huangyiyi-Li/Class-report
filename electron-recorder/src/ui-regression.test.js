@@ -70,3 +70,19 @@ test("settings distinguish missing local files from retryable uploads", () => {
   assert.match(renderer, /本地文件已缺失/);
   assert.match(renderer, /snapshot\.localMissing/);
 });
+
+test("recording home shows elapsed time and completed local segments", () => {
+  assert.match(renderer, /录音时长/);
+  assert.match(renderer, /recordingStartedAt/);
+  assert.match(renderer, /recordingSegments/);
+});
+
+test("upload diagnostics explain auth credentials cloud upload and registration", () => {
+  assert.match(renderer, /设备认证/);
+  assert.match(renderer, /上传凭证/);
+  assert.match(renderer, /OSS/);
+  assert.match(renderer, /等待登记/);
+  assert.match(renderer, /queueDiagnostics/);
+  assert.match(renderer, /uploadDiagnostics/);
+  assert.match(renderer, /retryAt/);
+});

@@ -257,6 +257,51 @@ class QueueStore:
             ).fetchall()
         return {row["status"]: row["count"] for row in rows}
 
+    def diagnostics(self, *, limit: int = 20) -> dict:
+        bounded_limit = max(1, min(int(limit), 100))
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT local_path, segment_index, status, last_error, retry_at,
+                       attempts, metadata_attempts, start_time, end_time
+                FROM segments
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (bounded_limit,),
+            ).fetchall()
+        return {
+            "counts": self.counts(),
+            "recent": [
+                {
+                    "segmentIndex": int(row["segment_index"]),
+                    "fileName": Path(row["local_path"]).name,
+                    "status": row["status"],
+                    "lastError": row["last_error"],
+                    "retryAt": row["retry_at"],
+                    "attempts": int(row["attempts"]),
+                    "metadataAttempts": int(row["metadata_attempts"]),
+                    "startTime": row["start_time"],
+                    "endTime": row["end_time"],
+                    "fileExists": Path(row["local_path"]).is_file(),
+                }
+                for row in rows
+            ],
+        }
+
+    def make_retryable_now(self) -> int:
+        """Clear backoff and stale leases after an explicit user retry."""
+        with self._connect() as connection:
+            changed = connection.execute(
+                """
+                UPDATE segments SET retry_at = 0
+                WHERE status IN (
+                    'failed', 'metadata_failed', 'uploading', 'registering'
+                )
+                """
+            ).rowcount
+        return int(changed)
+
     def reconcile_missing_files(self) -> int:
         """Retire upload records whose local audio was deleted outside the client."""
         with self._connect() as connection:

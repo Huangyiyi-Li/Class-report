@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from windows_client.xxt_upload import (
     DeviceAuthError,
+    OssConfig,
     XxtDeviceApiClient,
     XxtUploadManager,
     build_device_auth_payload,
@@ -149,6 +150,105 @@ def test_upload_uses_wisdom_oss_contract_and_server_authorized_directory(tmp_pat
         ("upload", "one.ogg", "recordings/device-1/20260725/one.ogg"),
     ]
     assert result.endswith("/recordings/device-1/20260725/one.ogg")
+
+
+def test_oss_config_accepts_current_xxt_wisdom_response_fields():
+    config = OssConfig.from_response(
+        {
+            "accessKeyId": "key-id",
+            "accessKeySecret": "key-secret",
+            "securityToken": "security-token",
+            "bucket": "book-reading",
+            "endPoint": "oss-cn-beijing.aliyuncs.com",
+            "expiration": 4102444800000,
+        }
+    )
+
+    assert config.bucket == "book-reading"
+    assert config.endpoint == "oss-cn-beijing.aliyuncs.com"
+    assert config.upload_dir == ""
+
+
+def test_upload_without_server_directory_uses_stable_ai_lesson_eval_prefix(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "AABBCCDDEEFF_20260807_093000_000001.ogg"
+    path.write_bytes(b"audio")
+    client = XxtDeviceApiClient("https://example.test")
+    observed = []
+
+    def post(endpoint, payload, *, auth=True):
+        if endpoint.endswith("device-auth"):
+            return {"accessToken": "device-token", "schoolId": 9001}
+        return {
+            "accessKeyId": "key-id",
+            "accessKeySecret": "key-secret",
+            "securityToken": "security-token",
+            "bucket": "book-reading",
+            "endPoint": "oss-cn-beijing.aliyuncs.com",
+            "expiration": 4102444800000,
+        }
+
+    class Uploader:
+        def __init__(self, config):
+            self.config = config
+
+        def upload(self, local_path, object_key):
+            observed.append(object_key)
+            return self.config.public_url(object_key)
+
+    monkeypatch.setattr(client, "_post_json", post)
+    manager = XxtUploadManager(
+        client, "AABBCCDDEEFF", uploader_factory=Uploader
+    )
+
+    result = manager.upload(path)
+
+    assert observed == [
+        "ai-lesson-eval/AABBCCDDEEFF/20260807/"
+        "AABBCCDDEEFF_20260807_093000_000001.ogg"
+    ]
+    assert result.startswith(
+        "https://book-reading.oss-cn-beijing.aliyuncs.com/ai-lesson-eval/"
+    )
+    diagnostics = manager.diagnostics()
+    assert diagnostics["deviceAuth"] == "available"
+    assert diagnostics["ossCredentials"] == "available"
+    assert diagnostics["bucket"] == "book-reading"
+    assert diagnostics["endpoint"] == "oss-cn-beijing.aliyuncs.com"
+    assert diagnostics["objectPrefix"] == (
+        "ai-lesson-eval/AABBCCDDEEFF/20260807"
+    )
+    assert "accessToken" not in diagnostics
+    assert "securityToken" not in diagnostics
+
+
+def test_upload_diagnostics_identifies_device_auth_failure_without_exposing_token(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "one.ogg"
+    path.write_bytes(b"audio")
+    client = XxtDeviceApiClient("https://example.test")
+    monkeypatch.setattr(
+        client,
+        "device_auth",
+        lambda _device: (_ for _ in ()).throw(
+            DeviceAuthError(
+                "device_auth_failed", "认证服务不可用", rebind_required=False
+            )
+        ),
+    )
+    manager = XxtUploadManager(client, "AABBCCDDEEFF")
+
+    try:
+        manager.upload(path)
+    except DeviceAuthError:
+        pass
+
+    diagnostics = manager.diagnostics()
+    assert diagnostics["stage"] == "device_auth"
+    assert diagnostics["status"] == "failed"
+    assert diagnostics["lastError"] == "认证服务不可用"
 
 
 def test_audio_metadata_uses_confirmed_server_contract(monkeypatch):
