@@ -322,6 +322,8 @@ class RecorderWorker:
         self._upload_lock = threading.Lock()
         self._upload_stop = threading.Event()
         self._upload_thread: threading.Thread | None = None
+        self._manual_flush_thread: threading.Thread | None = None
+        self._manual_flush_thread_lock = threading.Lock()
         self.legacy_queue_path: Path | None = None
         self.state = {
             "recording": "idle",
@@ -355,6 +357,7 @@ class RecorderWorker:
         self.state["recovered"] = len(recovered)
         for path in recovered:
             self.emit_event("recovered", {"path": str(path)})
+        self.queue_store.reconcile_missing_files()
         if self.config.binding_source == "mock":
             self.upload_service = None
             self.state["upload"] = "mock_blocked"
@@ -400,6 +403,7 @@ class RecorderWorker:
             with self._capture_transition_lock:
                 self._desired_recording = True
                 if not self._guarded_start():
+                    self.emit_event("snapshot", self.snapshot())
                     raise CommandRejected(self.state["latestError"] or "recording start rejected")
         elif command.command == "pause":
             with self._capture_transition_lock:
@@ -606,7 +610,11 @@ class RecorderWorker:
 
     def snapshot(self) -> dict:
         counts = self.queue_store.counts() if self.queue_store is not None else {}
-        pending = sum(count for status, count in counts.items() if status != "completed")
+        pending = sum(
+            count
+            for status, count in counts.items()
+            if status not in {"completed", "local_missing"}
+        )
         try:
             if self.recordings_dir is None:
                 raise OSError("data root is not configured")
@@ -639,6 +647,7 @@ class RecorderWorker:
             **self.state,
             "pending": pending,
             "completed": counts.get("completed", 0),
+            "localMissing": counts.get("local_missing", 0),
             "deviceNo": self.config.device_no,
             "binding": binding,
             "dataRoot": self.config.data_root,
@@ -709,6 +718,7 @@ class RecorderWorker:
                 if "queue_store" not in str(exc):
                     raise
                 recovered = self.recover(recordings_dir, on_error)
+        queue_store.reconcile_missing_files()
         return recordings_dir, queue_store, legacy_queue_path, recovered, recovery_errors
 
     def _clear_binding(self) -> None:
@@ -759,9 +769,49 @@ class RecorderWorker:
     def _flush_queue(self) -> None:
         if self.upload_service is None:
             return
-        with self._upload_lock:
-            while self.upload_service.run_once(datetime.now(timezone.utc)) is not None:
-                pass
+        with self._manual_flush_thread_lock:
+            if self._manual_flush_thread is not None and self._manual_flush_thread.is_alive():
+                return
+            self._manual_flush_thread = threading.Thread(
+                target=self._drain_upload_queue,
+                name="manual-upload-flush",
+                daemon=True,
+            )
+            self._manual_flush_thread.start()
+
+    def _drain_upload_queue(self) -> None:
+        try:
+            with self._upload_lock:
+                if self.queue_store is not None:
+                    self.queue_store.reconcile_missing_files()
+            self.emit_event("snapshot", self.snapshot())
+            while not self._upload_stop.is_set():
+                with self._upload_lock:
+                    service = self.upload_service
+                    result = (
+                        service.run_once(datetime.now(timezone.utc))
+                        if service is not None
+                        else None
+                    )
+                if result is None:
+                    counts = self.queue_store.counts() if self.queue_store is not None else {}
+                    retryable = sum(
+                        count
+                        for status, count in counts.items()
+                        if status not in {"completed", "local_missing"}
+                    )
+                    if retryable == 0:
+                        self.state["upload"] = "clear"
+                    break
+                self.state["upload"] = result.status
+        except Exception as exc:
+            self.state["upload"] = "failed"
+            self.emit_event("error", {"message": f"manual upload failed: {exc}"})
+        finally:
+            self.emit_event("snapshot", self.snapshot())
+            with self._manual_flush_thread_lock:
+                if self._manual_flush_thread is threading.current_thread():
+                    self._manual_flush_thread = None
 
     def _check_device_auth(self) -> None:
         if self.upload_service is None:
@@ -879,7 +929,11 @@ class RecorderWorker:
             raise ValueError("cannot switch data root with an externally managed queue")
         if self.queue_store is not None:
             counts = self.queue_store.counts()
-            pending = sum(count for status, count in counts.items() if status != "completed")
+            pending = sum(
+                count
+                for status, count in counts.items()
+                if status not in {"completed", "local_missing"}
+            )
             if pending:
                 raise ValueError("待上传队列未清空，不允许切换数据目录")
         root = Path(candidate.data_root)
@@ -920,6 +974,14 @@ class RecorderWorker:
                 )
             else:
                 self._upload_thread = None
+        with self._manual_flush_thread_lock:
+            manual_thread = self._manual_flush_thread
+        if manual_thread is not None and manual_thread is not threading.current_thread():
+            manual_thread.join(timeout=self.shutdown_join_seconds)
+            if not manual_thread.is_alive():
+                with self._manual_flush_thread_lock:
+                    if self._manual_flush_thread is manual_thread:
+                        self._manual_flush_thread = None
 
 
 def emit(name: str, payload: dict) -> None:

@@ -722,7 +722,7 @@ if (hasSingleInstanceLock)
         workerSnapshot = { ...workerSnapshot, latestError: error.message };
         publishSnapshot({});
       });
-      publishSnapshot({ health: "blocked", latestError: "正在连接录音服务" });
+      publishSnapshot({ health: "blocked", latestError: "正在启动录音服务" });
       supervisor.start().catch((error) => {
         if (!app.isQuitting)
           publishSnapshot({ health: "blocked", latestError: error.message });

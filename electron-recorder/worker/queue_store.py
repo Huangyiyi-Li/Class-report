@@ -257,6 +257,35 @@ class QueueStore:
             ).fetchall()
         return {row["status"]: row["count"] for row in rows}
 
+    def reconcile_missing_files(self) -> int:
+        """Retire upload records whose local audio was deleted outside the client."""
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """
+                SELECT id, local_path FROM segments
+                WHERE status NOT IN ('completed', 'local_missing')
+                """
+            ).fetchall()
+            missing_ids = [
+                int(row["id"])
+                for row in rows
+                if not Path(row["local_path"]).is_file()
+            ]
+            if missing_ids:
+                placeholders = ",".join("?" for _ in missing_ids)
+                connection.execute(
+                    f"""
+                    UPDATE segments
+                    SET status = 'local_missing', retry_at = NULL,
+                        last_error = '本地录音文件已不存在'
+                    WHERE id IN ({placeholders})
+                    """,
+                    missing_ids,
+                )
+            connection.commit()
+        return len(missing_ids)
+
     def completed_before(self, before: str | datetime) -> list[QueueItem]:
         cutoff = _to_utc_datetime(before).strftime("%Y-%m-%d %H:%M:%S")
         with self._connect() as connection:

@@ -8,7 +8,7 @@ import pytest
 
 from worker.config import DEFAULT_API_ROUTES, StartupGate, WorkerConfig
 from worker.queue_store import QueueStore
-from worker.recorder_worker import RecorderWorker, main, run_worker
+from worker.recorder_worker import CommandRejected, RecorderWorker, main, run_worker
 
 
 def command(name: str, payload=None):
@@ -626,6 +626,29 @@ def test_missing_microphone_maps_to_microphone_unavailable(tmp_path: Path):
     worker.handle(command("stop"))
 
 
+def test_rejected_start_emits_the_updated_microphone_state(tmp_path: Path):
+    class MissingMicrophone(FakeSession):
+        def start(self): raise RuntimeError("No input device")
+
+    events = []
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        session_factory=lambda **_: MissingMicrophone(), recover=lambda *_: [],
+        startup_gate=allow_startup,
+        emit_event=lambda name, payload: events.append((name, payload)),
+    )
+    worker.startup()
+    events.clear()
+
+    with pytest.raises(CommandRejected):
+        worker.execute_command(command("start"))
+
+    snapshots = [payload for name, payload in events if name == "snapshot"]
+    assert snapshots[-1]["recording"] == "microphone_unavailable"
+    assert "No input device" in snapshots[-1]["latestError"]
+    worker.handle(command("stop"))
+
+
 def test_unexpected_capture_failure_retries_and_stop_cancels_future_retry(tmp_path: Path):
     callbacks, sessions = [], []
     def session_factory(**kwargs):
@@ -908,15 +931,37 @@ def test_snapshot_reports_queue_binding_disk_and_latest_error(tmp_path: Path):
     assert snapshot["latestError"] == "microphone gone"
 
 
-def test_flush_queue_runs_until_no_immediately_claimable_item(tmp_path: Path):
+def test_startup_excludes_deleted_audio_from_pending_count(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    store.enqueue({
+        "local_path": str(tmp_path / "recordings" / "deleted.ogg"),
+        "segment_index": 1,
+    })
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        queue_store=store, recover=lambda *_: [], startup_gate=allow_startup,
+        emit_event=lambda *_: None,
+    )
+
+    worker.startup()
+    snapshot = worker.snapshot()
+
+    assert snapshot["pending"] == 0
+    assert snapshot["localMissing"] == 1
+
+
+def test_flush_queue_runs_asynchronously_without_blocking_recording_commands(tmp_path: Path):
     class Service:
         def __init__(self):
-            self.results = [SimpleNamespace(status="uploaded"), SimpleNamespace(status="completed"), None]
+            self.release = threading.Event()
+            self.started = threading.Event()
             self.calls = 0
 
         def run_once(self, now):
             self.calls += 1
-            return self.results.pop(0)
+            self.started.set()
+            self.release.wait(timeout=1)
+            return None
 
     service = Service()
     events = []
@@ -926,10 +971,17 @@ def test_flush_queue_runs_until_no_immediately_claimable_item(tmp_path: Path):
         recover=lambda root, on_error: [],
         upload_service=service,
     )
+    worker.state["upload"] = "failed"
+    started_at = time.monotonic()
     worker.handle(command("flush_queue"))
 
-    assert service.calls == 3
-    assert events[-1][0] == "snapshot"
+    assert time.monotonic() - started_at < 0.2
+    assert service.started.wait(timeout=0.5)
+    worker.handle(command("stop"))
+    service.release.set()
+    worker.shutdown()
+    assert service.calls == 1
+    assert worker.state["upload"] == "clear"
 
 
 def test_update_settings_rejects_unknown_fields_without_persisting_partial_changes(tmp_path: Path):

@@ -73,6 +73,46 @@ def test_counts_groups_items_by_status(tmp_path: Path):
     assert store.counts() == {"failed": 1, "pending": 1}
 
 
+def test_reconcile_missing_files_removes_only_unavailable_audio_from_pending_queue(
+    tmp_path: Path,
+):
+    store = QueueStore(tmp_path / "queue.db")
+    existing = tmp_path / "existing.ogg"
+    existing.write_bytes(b"audio")
+    store.enqueue({"local_path": str(existing), "segment_index": 1})
+    missing_id = store.enqueue(
+        {"local_path": str(tmp_path / "deleted.ogg"), "segment_index": 2}
+    )
+
+    assert store.reconcile_missing_files() == 1
+    assert store.reconcile_missing_files() == 0
+    assert store.counts() == {"local_missing": 1, "pending": 1}
+    assert store.claim_next("2026-07-07T00:00:00Z").local_path == str(existing)
+
+    with sqlite3.connect(store.database_path) as connection:
+        status, retry_at, error = connection.execute(
+            "SELECT status, retry_at, last_error FROM segments WHERE id = ?",
+            (missing_id,),
+        ).fetchone()
+    assert status == "local_missing"
+    assert retry_at is None
+    assert error == "本地录音文件已不存在"
+
+
+def test_reconcile_missing_files_preserves_completed_history(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    item_id = store.enqueue(
+        {"local_path": str(tmp_path / "uploaded.ogg"), "segment_index": 1}
+    )
+    store.claim_next("2026-07-07T00:00:00Z")
+    store.mark_uploaded(item_id, "https://example.test/uploaded.ogg")
+    store.claim_next("2026-07-07T00:00:00Z")
+    store.mark_completed(item_id)
+
+    assert store.reconcile_missing_files() == 0
+    assert store.counts() == {"completed": 1}
+
+
 def test_completed_item_rejects_transition_to_failed(tmp_path: Path):
     store = QueueStore(tmp_path / "queue.db")
     item_id = _completed_item(store)

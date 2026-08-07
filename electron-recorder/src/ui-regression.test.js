@@ -58,3 +58,15 @@ test("rebind is exposed only as unbind followed by a fresh binding flow", () => 
   assert.doesNotMatch(wizard, /继续重新绑定/);
   assert.doesNotMatch(wizard, /isRebinding/);
 });
+
+test("recording and upload actions expose progress instead of failing silently", () => {
+  assert.match(renderer, /runRecorderAction/);
+  assert.match(renderer, /正在启动…/);
+  assert.match(renderer, /正在重试…/);
+  assert.match(renderer, /actionError/);
+});
+
+test("settings distinguish missing local files from retryable uploads", () => {
+  assert.match(renderer, /本地文件已缺失/);
+  assert.match(renderer, /snapshot\.localMissing/);
+});

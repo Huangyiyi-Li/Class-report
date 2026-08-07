@@ -69,6 +69,8 @@ function App() {
 function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
   const [bindingOpen, setBindingOpen] = useState(false);
   const [rebindPending, setRebindPending] = useState(false);
+  const [actionPending, setActionPending] = useState("");
+  const [actionError, setActionError] = useState("");
   const home = getHomeState(snapshot, runtime);
   const binding = snapshot.binding || runtime.binding;
   const uploadAttention =
@@ -76,6 +78,18 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
     ["failed", "metadata_failed", "network_error", "waiting_network"].includes(
       runtime.upload
     );
+  const runRecorderAction = async (name, action) => {
+    if (!action || actionPending) return;
+    setActionPending(name);
+    setActionError("");
+    try {
+      await action();
+    } catch (error) {
+      setActionError(error?.message || "操作未完成，请根据当前状态检查后重试");
+    } finally {
+      setActionPending("");
+    }
+  };
   const fullRebind = async () => {
     setRebindPending(true);
     try {
@@ -170,19 +184,29 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
           {home.primary === "pause" ? (
             <button
               className="home-primary"
-              onClick={() => shell?.pauseRecording?.()}
+              disabled={Boolean(actionPending)}
+              onClick={() =>
+                runRecorderAction("pause", () => shell?.pauseRecording?.())
+              }
             >
               <Pause size={20} />
-              暂停录音
+              {actionPending === "pause" ? "正在暂停…" : "暂停录音"}
             </button>
           ) : null}
           {home.primary === "start" ? (
             <button
               className="home-primary"
-              onClick={() => shell?.startRecording?.()}
+              disabled={Boolean(actionPending)}
+              onClick={() =>
+                runRecorderAction("start", () => shell?.startRecording?.())
+              }
             >
               <Play size={20} />
-              {runtime.recording === "paused" ? "继续录音" : "开始录音"}
+              {actionPending === "start"
+                ? "正在启动…"
+                : runtime.recording === "paused"
+                  ? "继续录音"
+                  : "开始录音"}
             </button>
           ) : null}
           {home.primary === "settings" ? (
@@ -214,13 +238,22 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
           {home.showStop ? (
             <button
               className="home-secondary"
-              onClick={() => shell?.stopRecording?.()}
+              disabled={Boolean(actionPending)}
+              onClick={() =>
+                runRecorderAction("stop", () => shell?.stopRecording?.())
+              }
             >
               <Power size={19} />
               停止录音
             </button>
           ) : null}
         </div>
+        {actionError ? (
+          <div className="inline-notice danger" role="alert">
+            <AlertTriangle size={18} />
+            <span>{actionError}</span>
+          </div>
+        ) : null}
       </section>
 
       <footer className={`upload-footer ${uploadAttention ? "attention" : ""}`}>
@@ -236,9 +269,12 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
         {uploadAttention ? (
           <button
             className="footer-retry"
-            onClick={() => shell?.flushQueue?.()}
+            disabled={Boolean(actionPending)}
+            onClick={() =>
+              runRecorderAction("flush", () => shell?.flushQueue?.())
+            }
           >
-            立即重试
+            {actionPending === "flush" ? "正在重试…" : "立即重试"}
           </button>
         ) : null}
       </footer>
@@ -348,12 +384,23 @@ function getHomeState(snapshot, runtime) {
       description: "采集服务正在启动，请稍候，不要重复操作。",
     };
   }
+  if (
+    runtime.health === "blocked" &&
+    snapshot.latestError === "正在启动录音服务"
+  ) {
+    return {
+      tone: "preparing",
+      icon: <RefreshCcw size={29} />,
+      title: "正在准备录音",
+      description: "录音服务正在启动，请稍候。",
+    };
+  }
   if (["blocked", "error"].includes(runtime.health)) {
     return {
       tone: "danger",
       icon: <AlertTriangle size={29} />,
       title: "暂时无法确认录音状态",
-      description: "正在连接录音服务。",
+      description: snapshot.latestError || "录音服务暂时不可用。",
       notice: "客户端正在尝试恢复连接，界面会在服务恢复后自动更新。",
       primary: "settings",
     };
@@ -622,6 +669,12 @@ function SettingsModal({
                 运行诊断
               </h3>
               <SettingRow title="待上传队列" value={`${runtime.pending} 段`} />
+              {Number(snapshot.localMissing || 0) > 0 ? (
+                <SettingRow
+                  title="本地文件已缺失"
+                  value={`${snapshot.localMissing} 段（不再重试）`}
+                />
+              ) : null}
               <SettingRow
                 title="已完成队列"
                 value={`${snapshot.completed ?? "--"} 段`}
