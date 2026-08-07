@@ -479,6 +479,26 @@ def test_capture_session_uses_configured_input_device(tmp_path: Path):
     assert captured["device"] == "mic-2"
 
 
+def test_worker_lists_system_default_and_available_input_devices(monkeypatch):
+    worker = RecorderWorker(WorkerConfig())
+    monkeypatch.setattr(
+        "worker.recorder_worker.query_input_devices",
+        lambda: [
+            {"value": "default", "label": "系统默认麦克风"},
+            {"value": "Microphone 1", "label": "Microphone 1"},
+        ],
+    )
+
+    result = worker.execute_command(command("list_input_devices"))
+
+    assert result == {
+        "devices": [
+            {"value": "default", "label": "系统默认麦克风"},
+            {"value": "Microphone 1", "label": "Microphone 1"},
+        ]
+    }
+
+
 def test_commands_control_real_capture_sessions(tmp_path: Path):
     sessions = []
 

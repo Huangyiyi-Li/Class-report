@@ -59,8 +59,11 @@ class _ControlHandler(socketserver.StreamRequestHandler):
                     command = parse_command(raw_line.decode("utf-8"))
                     with server.command_lock:
                         execute = getattr(server.worker, "execute_command", server.worker.handle)
-                        execute(command)
-                    self._send("command_result", {"id": command.id, "success": True})
+                        result = execute(command)
+                    payload = {"id": command.id, "success": True}
+                    if result is not None and type(result) is not bool:
+                        payload["result"] = result
+                    self._send("command_result", payload)
                 except Exception as exc:
                     command_id = command.id if command is not None else ""
                     self._send("command_result", {"id": command_id, "success": False, "error": str(exc)})

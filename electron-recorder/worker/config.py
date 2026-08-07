@@ -86,6 +86,8 @@ class WorkerConfig:
         if not path.exists():
             return cls()
         payload = json.loads(path.read_text(encoding="utf-8"))
+        if str(payload.get("input_device") or "").strip().lower() == "default":
+            payload["input_device"] = ""
         if "bind_type" not in payload and payload.get("location_type") in {"classroom", "studio"}:
             classroom_binding = payload["location_type"] == "classroom"
             payload["bind_type"] = 1 if classroom_binding else 2
@@ -126,7 +128,7 @@ def validate_settings_patch(patch: object, system_drive: str = "C:") -> dict:
         value = value.strip()
         if not value or len(value) > 256 or "\0" in value or "\n" in value or "\r" in value:
             raise ValueError("inputDevice is invalid")
-        changes["input_device"] = value
+        changes["input_device"] = "" if value.lower() == "default" else value
     if "dataRoot" in patch:
         value = patch["dataRoot"]
         if not isinstance(value, str):

@@ -4,6 +4,10 @@ function errorMessage(error, fallback) {
   return message || fallback;
 }
 
+export function canInstallWorkerUpdate(snapshot = {}) {
+  return !["starting", "recording"].includes(snapshot.recording);
+}
+
 export function createUpdateController({
   updater,
   currentVersion,

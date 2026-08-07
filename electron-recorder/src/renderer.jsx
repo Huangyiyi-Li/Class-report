@@ -444,6 +444,10 @@ function SettingsModal({
     apiRoutes: initial.apiRoutes || PRODUCTION_API_ROUTES,
   });
   const [saveError, setSaveError] = useState("");
+  const [inputDevices, setInputDevices] = useState([
+    { value: "default", label: "系统默认麦克风" },
+  ]);
+  const [deviceLoadError, setDeviceLoadError] = useState("");
   const rebindAllowed = canRebind({ ...snapshot, runtime });
   const update = (key, value) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -452,6 +456,31 @@ function SettingsModal({
       ...current,
       apiRoutes: { ...current.apiRoutes, [key]: value },
     }));
+  useEffect(() => {
+    let active = true;
+    shell
+      ?.listInputDevices?.()
+      .then((devices) => {
+        if (!active || !Array.isArray(devices)) return;
+        setInputDevices(devices);
+        setDeviceLoadError("");
+      })
+      .catch(() => {
+        if (active)
+          setDeviceLoadError("暂时无法读取麦克风列表，请稍后重新打开设置");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const chooseDataRoot = async () => {
+    if (snapshot.dataRootLocked) {
+      await shell?.openDataDir?.();
+      return;
+    }
+    const selected = await shell?.chooseDataRoot?.();
+    if (selected) update("dataRoot", selected);
+  };
   const save = async () => {
     setSaveError("");
     const workerSettings = buildWorkerSettingsPatch(form, {
@@ -508,21 +537,45 @@ function SettingsModal({
               />
               <label>
                 <span>麦克风设备</span>
-                <input
+                <select
                   value={form.inputDevice}
                   onChange={(event) =>
                     update("inputDevice", event.target.value)
                   }
-                />
+                >
+                  {!inputDevices.some(
+                    (device) => device.value === form.inputDevice
+                  ) && form.inputDevice !== "default" ? (
+                    <option value={form.inputDevice} disabled>
+                      {form.inputDevice}（当前不可用）
+                    </option>
+                  ) : null}
+                  {inputDevices.map((device) => (
+                    <option key={device.value} value={device.value}>
+                      {device.label}
+                    </option>
+                  ))}
+                </select>
+                {deviceLoadError ? <small>{deviceLoadError}</small> : null}
               </label>
               <label>
                 <span>录音保存位置</span>
-                <input
-                  value={form.dataRoot}
-                  readOnly={snapshot.dataRootLocked}
-                  aria-readonly={snapshot.dataRootLocked}
-                  onChange={(event) => update("dataRoot", event.target.value)}
-                />
+                <div className="setting-field-action">
+                  <input
+                    value={form.dataRoot}
+                    readOnly
+                    aria-readonly="true"
+                    placeholder="请选择非系统盘文件夹"
+                  />
+                  <button
+                    type="button"
+                    className="quiet-action compact"
+                    onClick={chooseDataRoot}
+                  >
+                    <FolderOpen size={17} />
+                    {snapshot.dataRootLocked ? "打开文件夹" : "选择文件夹"}
+                  </button>
+                </div>
                 {snapshot.dataRootLocked ? (
                   <small>
                     保存位置已固定，避免影响现有录音和待上传文件。切换接口环境不会修改此目录。

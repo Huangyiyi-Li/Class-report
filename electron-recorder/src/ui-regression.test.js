@@ -30,9 +30,26 @@ test("settings diagnostics preserve readable columns and stack on compact window
 
 test("settings labels describe user-facing choices instead of implementation fields", () => {
   assert.match(renderer, />麦克风设备</);
+  assert.match(renderer, /<select[\s\S]*?<\/select>/);
+  assert.match(renderer, /系统默认麦克风/);
+  assert.match(renderer, /listInputDevices/);
   assert.match(renderer, />录音保存位置</);
+  assert.match(renderer, /chooseDataRoot/);
+  assert.match(renderer, /选择文件夹/);
+  assert.match(renderer, /打开文件夹/);
   assert.match(renderer, /保存位置已固定，避免影响现有录音和待上传文件/);
   assert.doesNotMatch(renderer, />麦克风设备 ID</);
+});
+
+test("preload and main process expose bounded device and directory pickers", () => {
+  const preload = readFileSync(path.join(root, "preload.cjs"), "utf8");
+  const main = readFileSync(path.join(root, "main.js"), "utf8");
+  assert.match(preload, /listInputDevices/);
+  assert.match(preload, /chooseDataRoot/);
+  assert.match(main, /recorder:list-input-devices/);
+  assert.match(main, /recorder:choose-data-root/);
+  assert.match(main, /showOpenDialog/);
+  assert.match(main, /openDirectory/);
 });
 
 test("rebind is exposed only as unbind followed by a fresh binding flow", () => {

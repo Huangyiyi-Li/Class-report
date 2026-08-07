@@ -3,10 +3,13 @@ import { EventEmitter } from "node:events";
 import test from "node:test";
 
 let createUpdateController;
+let canInstallWorkerUpdate;
 try {
-  ({ createUpdateController } = await import("./update-manager.js"));
+  ({ createUpdateController, canInstallWorkerUpdate } =
+    await import("./update-manager.js"));
 } catch {
   createUpdateController = undefined;
+  canInstallWorkerUpdate = undefined;
 }
 
 class FakeUpdater extends EventEmitter {
@@ -92,6 +95,20 @@ test("install is blocked while recording and never stops the worker", async () =
   await assert.rejects(controller.install(), /录音中不能安装更新/);
   assert.equal(prepared, 0);
   assert.equal(updater.installs, 0);
+});
+
+test("update installation only treats active capture as recording", () => {
+  assert.equal(typeof canInstallWorkerUpdate, "function");
+  assert.equal(canInstallWorkerUpdate({ recording: "recording" }), false);
+  assert.equal(canInstallWorkerUpdate({ recording: "starting" }), false);
+  assert.equal(
+    canInstallWorkerUpdate({ recording: "error", health: "binding_required" }),
+    true
+  );
+  assert.equal(
+    canInstallWorkerUpdate({ recording: "microphone_unavailable" }),
+    true
+  );
 });
 
 test("ready update shuts down safely before restarting the installed app", async () => {

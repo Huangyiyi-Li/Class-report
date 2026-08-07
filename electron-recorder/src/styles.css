@@ -770,7 +770,8 @@ h1 {
   font-weight: 900;
 }
 
-.settings-section input {
+.settings-section input,
+.settings-section select {
   width: 100%;
   height: 44px;
   border: 1px solid #dbe5ec;
@@ -781,6 +782,22 @@ h1 {
   font:
     800 16px "Microsoft YaHei UI",
     sans-serif;
+}
+
+.settings-section select {
+  padding: 0 38px 0 14px;
+}
+
+.setting-field-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-field-action .quiet-action {
+  min-width: 112px;
+  margin: 0;
 }
 
 .device-management {

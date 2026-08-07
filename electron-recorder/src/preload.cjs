@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("recorderShell", {
   recheckRecording: () => ipcRenderer.invoke("recorder:recheck"),
   openSystemTimeSettings: () => ipcRenderer.invoke("system:open-date-time"),
   flushQueue: () => ipcRenderer.invoke("recorder:flush"),
+  listInputDevices: () => ipcRenderer.invoke("recorder:list-input-devices"),
   updateSettings: (patch) =>
     ipcRenderer.invoke("recorder:update-settings", patch),
   createBindingSession: () => ipcRenderer.invoke("binding:create-session"),
@@ -27,6 +28,7 @@ contextBridge.exposeInMainWorld("recorderShell", {
   checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
   installUpdate: () => ipcRenderer.invoke("app:install-update"),
   openDataDir: () => ipcRenderer.invoke("recorder:open-data-dir"),
+  chooseDataRoot: () => ipcRenderer.invoke("recorder:choose-data-root"),
   exportDiagnostics: () => ipcRenderer.invoke("recorder:export-diagnostics"),
   minimizeToTray: () => ipcRenderer.invoke("window:minimize-to-tray"),
   showMain: () => ipcRenderer.invoke("window:show-main"),

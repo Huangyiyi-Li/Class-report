@@ -42,7 +42,10 @@ import {
 } from "./passport-login.js";
 import { resolveDeviceNo } from "./backend.js";
 import { clampFloatingPosition } from "./floating-drag.js";
-import { createUpdateController } from "./update-manager.js";
+import {
+  canInstallWorkerUpdate,
+  createUpdateController,
+} from "./update-manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -514,8 +517,7 @@ function initializeUpdateController() {
       updateState = nextState;
       publishSnapshot({});
     },
-    canInstall: () =>
-      ["idle", "paused"].includes(createRuntimeState(workerSnapshot).recording),
+    canInstall: () => canInstallWorkerUpdate(workerSnapshot),
     prepareInstall: async () => {
       if (supervisor) await supervisor.sendCommand("shutdown");
       supervisor?.disconnect();
@@ -865,6 +867,13 @@ if (hasSingleInstanceLock)
       "recorder:flush",
       () => supervisor?.send("flush_queue") ?? false
     );
+    ipcMain.handle("recorder:list-input-devices", async () => {
+      if (!supervisor?.socket) throw new Error("录音服务未连接，请稍后重试");
+      const response = await supervisor.sendCommand("list_input_devices");
+      return Array.isArray(response?.result?.devices)
+        ? response.result.devices
+        : [];
+    });
     ipcMain.handle("recorder:update-settings", async (_event, patch) => {
       const validatedPatch = validateSettingsPatch(patch);
       const result = await applyWorkerSettings({
@@ -921,6 +930,15 @@ if (hasSingleInstanceLock)
       const dataDir = workerSnapshot.dataRoot || settings.dataRoot;
       if (dataDir) electronShell.openPath(dataDir);
       return true;
+    });
+    ipcMain.handle("recorder:choose-data-root", async () => {
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: "选择录音保存位置",
+        defaultPath: settings.dataRoot || undefined,
+        properties: ["openDirectory", "createDirectory"],
+      });
+      if (result.canceled || !result.filePaths[0]) return "";
+      return result.filePaths[0];
     });
     ipcMain.handle("recorder:export-diagnostics", async () => {
       const result = await dialog.showSaveDialog(mainWindow, {

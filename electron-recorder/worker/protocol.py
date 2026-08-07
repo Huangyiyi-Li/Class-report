@@ -15,6 +15,7 @@ ALLOWED_COMMANDS = {
     "prepare_unbind",
     "clear_binding",
     "check_device_auth",
+    "list_input_devices",
 }
 
 

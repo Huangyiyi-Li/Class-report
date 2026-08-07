@@ -215,6 +215,19 @@ def test_worker_validates_core_settings_patch_strictly():
     }
 
 
+def test_system_default_microphone_is_stored_as_empty_device_selector():
+    assert validate_settings_patch({"inputDevice": "default"}) == {
+        "input_device": ""
+    }
+
+
+def test_load_migrates_literal_default_microphone_to_system_default(tmp_path: Path):
+    path = tmp_path / "worker-config.json"
+    path.write_text(json.dumps({"input_device": "default"}), encoding="utf-8")
+
+    assert WorkerConfig.load(path).input_device == ""
+
+
 def test_worker_validates_complete_editable_api_routes():
     routes = {
         "deviceAuth": "http://rest-test.xxt.cn/wisdom/book-reading/device-auth",

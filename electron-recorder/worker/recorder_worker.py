@@ -261,6 +261,22 @@ def _sounddevice_input_stream(**kwargs):
     return sounddevice.InputStream(**kwargs)
 
 
+def query_input_devices() -> list[dict[str, str]]:
+    import sounddevice
+
+    devices = [{"value": "default", "label": "系统默认麦克风"}]
+    seen = set()
+    for device in sounddevice.query_devices():
+        if int(device.get("max_input_channels", 0)) <= 0:
+            continue
+        name = str(device.get("name") or "").strip()
+        if not name or name in seen or name.lower() == "default":
+            continue
+        seen.add(name)
+        devices.append({"value": name, "label": name})
+    return devices
+
+
 class RecorderWorker:
     def __init__(
         self,
@@ -373,7 +389,9 @@ class RecorderWorker:
                 self.emit_event("error", {"message": f"upload worker failed: {exc}"})
             self._upload_stop.wait(self.upload_poll_seconds)
 
-    def execute_command(self, command) -> bool:
+    def execute_command(self, command) -> bool | dict:
+        if command.command == "list_input_devices":
+            return {"devices": query_input_devices()}
         if command.command == "shutdown":
             self._shutdown_capture()
             self.emit_event("snapshot", self.snapshot())

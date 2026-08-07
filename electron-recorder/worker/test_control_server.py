@@ -61,6 +61,27 @@ def test_authenticated_client_can_command_worker(tmp_path):
         sock.close()
 
 
+def test_command_result_can_return_data_to_electron(tmp_path):
+    class ResultWorker(FakeWorker):
+        def execute_command(self, command):
+            self.commands.append(command.command)
+            return {"devices": [{"value": "Microphone 1", "label": "Microphone 1"}]}
+
+    worker = ResultWorker()
+    with ControlServer(worker, tmp_path) as server:
+        sock, stream = connect(server, server.token)
+        read_message(stream)
+        stream.write(b'{"id":"devices","command":"snapshot","payload":{}}\n')
+        stream.flush()
+
+        result = read_message(stream)
+
+        assert result["payload"]["result"] == {
+            "devices": [{"value": "Microphone 1", "label": "Microphone 1"}]
+        }
+        sock.close()
+
+
 def test_wrong_token_is_rejected(tmp_path):
     worker = FakeWorker()
     with ControlServer(worker, tmp_path) as server:
