@@ -100,11 +100,29 @@ class QueueStore:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT id FROM segments WHERE local_path = ?", (local_path,)
+                "SELECT id, status FROM segments WHERE local_path = ?", (local_path,)
             ).fetchone()
             if existing is not None:
+                if existing["status"] == "local_missing" and Path(local_path).is_file():
+                    connection.execute(
+                        """UPDATE segments
+                           SET status = 'pending', last_error = '', retry_at = NULL,
+                               completed_at = NULL
+                           WHERE id = ? AND status = 'local_missing'""",
+                        (existing["id"],),
+                    )
                 connection.commit()
                 return int(existing["id"])
+            supplied_index = segment.get("segment_index")
+            if (
+                isinstance(supplied_index, int)
+                and not isinstance(supplied_index, bool)
+                and supplied_index > 0
+            ):
+                values = _segment_values(segment)
+                item_id = self._insert(connection, values)
+                connection.commit()
+                return item_id
             row = connection.execute(
                 "SELECT current_index FROM segment_counters WHERE device_id = ? AND day = ?",
                 (device_id, day),

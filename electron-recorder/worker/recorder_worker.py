@@ -44,6 +44,7 @@ class CaptureSession:
         encoder: Callable[[Path, Path], Path] = encode_ogg_opus,
         stream_factory=None,
         journal_factory=None,
+        next_segment_index: Callable[[], int] | None = None,
         clock: Callable[[], float] = time.monotonic,
         on_error: Callable[[Exception], None] | None = None,
         on_ready: Callable[[], None] | None = None,
@@ -56,6 +57,7 @@ class CaptureSession:
         self.encoder = encoder
         self.stream_factory = stream_factory
         self.journal_factory = journal_factory
+        self.next_segment_index = next_segment_index
         self.clock = clock
         self.on_error = on_error
         self.on_ready = on_ready
@@ -114,14 +116,17 @@ class CaptureSession:
                 except queue.Empty:
                     continue
                 now = self.clock()
-                if now - segment_started >= self.config.segment_seconds:
+                if (
+                    now - segment_started >= self.config.segment_seconds
+                    and self._journal_has_audio(self.journal)
+                ):
                     self.finalize_queue.put(self.journal)
                     self.journal = self._new_journal()
                     segment_started = now
                     last_checkpoint = now
                 self.journal.append(pcm)
                 if not self._ready or now - last_checkpoint >= self.config.checkpoint_seconds:
-                    self.journal.checkpoint()
+                    self._checkpoint_journal(self.journal)
                     last_checkpoint = now
                     if not self._ready:
                         self._ready = True
@@ -141,13 +146,24 @@ class CaptureSession:
                 return
             try:
                 finalized_at = datetime.now(timezone.utc)
+                if not self._journal_has_audio(journal):
+                    if hasattr(journal, "discard"):
+                        journal.discard()
+                    continue
+                if getattr(journal, "segment_index", None) is None:
+                    self._checkpoint_journal(journal)
                 wav_path = journal.finalize(finalized_at)
                 final_path = self.encoder(wav_path, self.ffmpeg_path)
-                segment_index = 0
+                segment_index = getattr(journal, "segment_index", None) or 0
                 if self.queue_store is not None:
-                    segment_index = self.queue_store.next_segment_index(
-                        journal.device_id, finalized_at.date().isoformat()
-                    )
+                    if segment_index == 0:
+                        segment_index = (
+                            self.next_segment_index()
+                            if self.next_segment_index is not None
+                            else self.queue_store.next_segment_index(
+                                journal.device_id, finalized_at.date().isoformat()
+                            )
+                        )
                     self.queue_store.enqueue(
                         {
                             "local_path": str(final_path),
@@ -183,6 +199,30 @@ class CaptureSession:
                 )
             except Exception as exc:
                 self._record_failure(exc)
+
+    def _journal_has_audio(self, journal) -> bool:
+        if hasattr(journal, "has_audio"):
+            return bool(journal.has_audio())
+        return True
+
+    def _assign_segment_index(self, journal) -> None:
+        if (
+            getattr(journal, "segment_index", None) is None
+            and self.next_segment_index is not None
+            and hasattr(journal, "assign_segment_index")
+        ):
+            journal.assign_segment_index(self.next_segment_index())
+
+    def _checkpoint_journal(self, journal) -> None:
+        if (
+            hasattr(journal, "checkpoint_with_segment_index")
+            and self.next_segment_index is not None
+        ):
+            journal.checkpoint_with_segment_index(self.next_segment_index)
+            return
+        if hasattr(journal, "checkpoint"):
+            journal.checkpoint()
+        self._assign_segment_index(journal)
 
     def _new_journal(self):
         if self.journal_factory is not None:
@@ -329,6 +369,8 @@ class RecorderWorker:
         self._capture_retry_attempt = 0
         self._capture_retry_timer: threading.Timer | None = None
         self._desired_recording = False
+        self._recording_session_active = False
+        self._recording_session_segment_index = 0
         self._capture_generation = 0
         self._capture_transition_lock = threading.RLock()
         self._upload_lock = threading.Lock()
@@ -363,14 +405,9 @@ class RecorderWorker:
         assert self.legacy_queue_path is not None
         self.recordings_dir.mkdir(parents=True, exist_ok=True)
         migrate_json_queue(self.legacy_queue_path, self.queue_store)
-        try:
-            recovered = self.recover(
-                self.recordings_dir, self._recovery_error, queue_store=self.queue_store
-            )
-        except TypeError as exc:
-            if "queue_store" not in str(exc):
-                raise
-            recovered = self.recover(self.recordings_dir, self._recovery_error)
+        recovered = self._recover_recordings(
+            self.recordings_dir, self.queue_store, self._recovery_error
+        )
         self.state["recovered"] = len(recovered)
         for path in recovered:
             self.emit_event("recovered", {"path": str(path)})
@@ -418,6 +455,7 @@ class RecorderWorker:
             return False
         if command.command == "start":
             with self._capture_transition_lock:
+                self._begin_recording_session()
                 self._desired_recording = True
                 if not self._guarded_start():
                     self.emit_event("snapshot", self.snapshot())
@@ -434,6 +472,7 @@ class RecorderWorker:
                 self._capture_generation += 1
                 self._cancel_capture_retry()
                 self._stop_session("idle")
+                self._end_recording_session()
         elif command.command == "flush_queue":
             self._flush_queue()
         elif command.command == "check_device_auth":
@@ -470,6 +509,7 @@ class RecorderWorker:
     def maybe_auto_start(self) -> None:
         if self.config.auto_record_enabled:
             with self._capture_transition_lock:
+                self._begin_recording_session()
                 self._desired_recording = True
                 self._guarded_start()
 
@@ -499,6 +539,7 @@ class RecorderWorker:
                 ffmpeg_path=self.ffmpeg_path,
                 on_error=lambda exc: self._capture_error(exc, generation),
                 on_segment_finalized=self._segment_finalized,
+                next_segment_index=self._next_recording_segment_index,
                 queue_store=self.queue_store,
             )
             candidate = self.session
@@ -577,6 +618,24 @@ class RecorderWorker:
             self._capture_generation += 1
             self._cancel_capture_retry()
             self._stop_session("idle")
+            self._end_recording_session()
+
+    def _begin_recording_session(self) -> None:
+        if self._recording_session_active:
+            return
+        self._recording_session_segment_index = 0
+        self._recording_session_active = True
+
+    def _end_recording_session(self) -> None:
+        self._recording_session_active = False
+        self._recording_session_segment_index = 0
+
+    def _next_recording_segment_index(self) -> int:
+        with self._state_lock:
+            if not self._recording_session_active:
+                raise RuntimeError("recording session is not active")
+            self._recording_session_segment_index += 1
+            return self._recording_session_segment_index
 
     def _capture_error(self, exc: Exception, generation: int | None = None) -> None:
         with self._state_lock:
@@ -776,14 +835,29 @@ class RecorderWorker:
         if self.queue_store is None:
             migrate_json_queue(legacy_queue_path, queue_store)
             on_error = lambda exc: recovery_errors.append(exc)
-            try:
-                recovered = self.recover(recordings_dir, on_error, queue_store=queue_store)
-            except TypeError as exc:
-                if "queue_store" not in str(exc):
-                    raise
-                recovered = self.recover(recordings_dir, on_error)
+            recovered = self._recover_recordings(
+                recordings_dir, queue_store, on_error
+            )
         queue_store.reconcile_missing_files()
         return recordings_dir, queue_store, legacy_queue_path, recovered, recovery_errors
+
+    def _recover_recordings(self, recordings_dir, queue_store, on_error):
+        if self.recover is recover_journals:
+            return self.recover(
+                recordings_dir,
+                on_error,
+                queue_store=queue_store,
+                encoder=encode_ogg_opus,
+                ffmpeg_path=self.ffmpeg_path,
+            )
+        try:
+            return self.recover(
+                recordings_dir, on_error, queue_store=queue_store
+            )
+        except TypeError as exc:
+            if "queue_store" not in str(exc):
+                raise
+            return self.recover(recordings_dir, on_error)
 
     def _clear_binding(self) -> None:
         with self._capture_transition_lock:

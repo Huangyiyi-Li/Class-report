@@ -288,6 +288,28 @@ def test_enqueue_recovered_is_idempotent_without_consuming_another_index(tmp_pat
     assert store.next_segment_index("device-1", "2026-07-12") == 2
 
 
+def test_recovered_file_revives_an_existing_local_missing_queue_item(tmp_path: Path):
+    store = QueueStore(tmp_path / "queue.db")
+    recovered = tmp_path / "recovered.ogg"
+    recovered.write_bytes(b"ogg")
+    segment = {
+        "local_path": str(recovered),
+        "segment_index": 1,
+        "code": "device-1",
+        "device_no": "device-1",
+    }
+    item_id = store.enqueue_recovered(segment, "device-1", "2026-07-12")
+    recovered.unlink()
+    store.reconcile_missing_files()
+    assert store.counts() == {"local_missing": 1}
+
+    recovered.write_bytes(b"recovered-ogg")
+    assert store.enqueue_recovered(segment, "device-1", "2026-07-12") == item_id
+
+    assert store.counts() == {"pending": 1}
+    assert store.claim_next(datetime.now(timezone.utc)).id == item_id
+
+
 def test_finalized_encoded_path_is_persisted_in_queue(tmp_path: Path):
     class Journal:
         rate = 16000

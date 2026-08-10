@@ -421,12 +421,7 @@ function normalizeCatalogClass(value, grade) {
 }
 
 function requireSuccessfulMutation(value, fallback) {
-  const success =
-    value === true ||
-    value?.success === true ||
-    value?.data?.success === true ||
-    value?.content === "success" ||
-    value?.data?.content === "success";
+  const success = value?.content === "success";
   if (!success) {
     throw bindingError(
       "BINDING_REJECTED",

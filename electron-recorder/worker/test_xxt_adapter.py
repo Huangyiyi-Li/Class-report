@@ -5,6 +5,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from datetime import datetime, timezone
 
+import pytest
+
 from windows_client.xxt_upload import (
     DeviceAuth,
     DeviceAuthError,
@@ -293,7 +295,7 @@ def test_audio_metadata_uses_confirmed_server_contract(monkeypatch):
 
     def post(endpoint, payload, *, auth=True):
         calls.append((endpoint, payload, client.token, auth))
-        return {"success": True}
+        return {"content": "success"}
 
     monkeypatch.setattr(client, "_post_json", post)
 
@@ -311,7 +313,7 @@ def test_audio_metadata_uses_confirmed_server_contract(monkeypatch):
         }
     )
 
-    assert result == {"success": True}
+    assert result == {"content": "success"}
     assert calls == [
         (
             "/ai-lesson-eval/audio/save-audio-file-info",
@@ -332,6 +334,35 @@ def test_audio_metadata_uses_confirmed_server_contract(monkeypatch):
             True,
         )
     ]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"success": True},
+        {"data": {"content": "success"}},
+        {"content": "failed"},
+        {},
+    ],
+)
+def test_audio_metadata_accepts_only_top_level_simple_success(response, monkeypatch):
+    client = XxtDeviceApiClient("https://example.test")
+    monkeypatch.setattr(client, "_post_json", lambda *_args, **_kwargs: response)
+
+    with pytest.raises(RuntimeError, match="录音信息登记失败"):
+        client.save_audio_file_info(
+            {
+                "schoolId": 9001,
+                "deviceNo": "device-1",
+                "segmentIndex": 1,
+                "fileName": "one.ogg",
+                "filePath": "https://files.test/one.ogg",
+                "fileSize": 1024,
+                "format": "ogg",
+                "startTime": "2026-07-25T00:00:00+00:00",
+                "endTime": "2026-07-25T00:05:00+00:00",
+            }
+        )
 
 
 def test_uploaded_restart_authenticates_then_registers_without_upload(tmp_path, monkeypatch):
@@ -365,7 +396,7 @@ def test_uploaded_restart_authenticates_then_registers_without_upload(tmp_path, 
                 "groupId": 701,
                 "groupName": "七年级一班",
             }
-        return {"ok": True}
+        return {"content": "success"}
 
     monkeypatch.setattr(client, "_post_json", post)
     manager = XxtUploadManager(
@@ -405,7 +436,7 @@ def test_metadata_registration_refreshes_device_auth_without_using_expiry_fields
             }
         observed.append((endpoint, client.token))
         assert payload["schoolId"] == 9001
-        return {"ok": True}
+        return {"content": "success"}
 
     monkeypatch.setattr(client, "_post_json", post)
     manager = XxtUploadManager(client, "device-1")

@@ -20,6 +20,7 @@ class AudioJournal:
         *,
         school_id: int | None = None,
         location_id: str = "",
+        segment_index: int | None = None,
     ):
         root.mkdir(parents=True, exist_ok=True)
         self.root = root
@@ -34,25 +35,67 @@ class AudioJournal:
         self.sample_width = sample_width
         self.school_id = school_id
         self.location_id = location_id
+        self.segment_index = segment_index
         self.file = self.part_path.open("ab", buffering=0)
         self._metadata = {
-                "rate": rate, "channels": channels, "sampleWidth": sample_width,
-                "deviceId": device_id, "schoolId": school_id,
-                "locationId": location_id, "startedAt": started_at.isoformat(),
-                "durableFrames": 0,
-            }
+            "rate": rate,
+            "channels": channels,
+            "sampleWidth": sample_width,
+            "deviceId": device_id,
+            "schoolId": school_id,
+            "locationId": location_id,
+            "startedAt": started_at.isoformat(),
+            "segmentIndex": segment_index,
+            "durableFrames": 0,
+        }
+        _write_metadata(self.meta_path, self._metadata)
+
+    def assign_segment_index(self, value: int) -> None:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise ValueError("segment index must be a positive integer")
+        if self.segment_index is not None and self.segment_index != value:
+            raise ValueError("segment index is already assigned")
+        self.segment_index = value
+        self._metadata["segmentIndex"] = value
         _write_metadata(self.meta_path, self._metadata)
 
     def append(self, pcm: bytes) -> None:
         self.file.write(pcm)
 
     def checkpoint(self) -> None:
+        self.checkpoint_with_segment_index()
+
+    def checkpoint_with_segment_index(
+        self, next_segment_index: Callable[[], int] | None = None
+    ) -> None:
         self.file.flush()
         os.fsync(self.file.fileno())
         self._metadata["durableFrames"] = (
             self.file.tell() // (self.sample_width * self.channels)
         )
+        if self.segment_index is None and next_segment_index is not None:
+            value = next_segment_index()
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError("segment index must be a positive integer")
+            self.segment_index = value
+            self._metadata["segmentIndex"] = value
         _write_metadata(self.meta_path, self._metadata)
+
+    def has_audio(self) -> bool:
+        if self.file.closed:
+            return self.part_path.is_file() and self.part_path.stat().st_size > 0
+        return self.file.tell() > 0
+
+    def discard(self) -> None:
+        if not self.file.closed:
+            self.file.close()
+        self.part_path.unlink(missing_ok=True)
+        self.meta_path.unlink(missing_ok=True)
+        self.wav_path.unlink(missing_ok=True)
+        self.wav_path.with_suffix(self.wav_path.suffix + ".tmp").unlink(
+            missing_ok=True
+        )
+        _fsync_directory(self.root)
 
     def finalize(self, end_time: datetime | None = None) -> Path:
         self.checkpoint()
@@ -102,7 +145,12 @@ def _pcm_to_wav(
 
 
 def recover_journals(
-    root: Path, on_error: Callable[[Exception], None] | None = None, *, queue_store=None
+    root: Path,
+    on_error: Callable[[Exception], None] | None = None,
+    *,
+    queue_store=None,
+    encoder: Callable[[Path, Path], Path] | None = None,
+    ffmpeg_path: Path = Path("ffmpeg.exe"),
 ) -> list[Path]:
     recovered = []
     for part in root.glob("*.pcm.part"):
@@ -120,6 +168,11 @@ def recover_journals(
                 or durable_frames < 0
             ):
                 raise ValueError("journal durableFrames must be a non-negative integer")
+            if durable_frames == 0:
+                part.unlink(missing_ok=True)
+                meta_path.unlink(missing_ok=True)
+                _fsync_directory(root)
+                continue
             _pcm_to_wav(
                 part,
                 target,
@@ -128,6 +181,13 @@ def recover_journals(
                 meta["sampleWidth"],
                 frame_count=durable_frames,
             )
+            final_path = encoder(target, ffmpeg_path) if encoder else target
+            if encoder and (
+                final_path.suffix.lower() != ".ogg"
+                or not final_path.is_file()
+                or final_path.stat().st_size <= 0
+            ):
+                raise RuntimeError("断电恢复录音未能转换为 Ogg Opus")
             if queue_store is not None:
                 started_at = datetime.fromisoformat(meta["startedAt"])
                 ended_at = started_at + timedelta(
@@ -135,14 +195,19 @@ def recover_journals(
                 )
                 device_id = meta["deviceId"]
                 segment = {
-                    "local_path": str(target),
-                    "code": device_id, "device_no": device_id,
+                    "local_path": str(final_path),
+                    "segment_index": meta.get("segmentIndex"),
+                    "code": device_id,
+                    "device_no": device_id,
                     "school_id": meta.get("schoolId"),
                     "location_id": meta.get("locationId", ""),
-                    "start_time": meta["startedAt"], "end_time": ended_at.isoformat(),
-                    "rate": meta["rate"], "bits": meta["sampleWidth"] * 8,
-                    "channel": meta["channels"], "audio_type": 1,
-                    "audio_format": "wav",
+                    "start_time": meta["startedAt"],
+                    "end_time": ended_at.isoformat(),
+                    "rate": meta["rate"],
+                    "bits": meta["sampleWidth"] * 8,
+                    "channel": meta["channels"],
+                    "audio_type": 1,
+                    "audio_format": final_path.suffix.lstrip(".").lower(),
                 }
                 queue_store.enqueue_recovered(
                     segment, device_id, started_at.date().isoformat()
@@ -150,7 +215,7 @@ def recover_journals(
             part.unlink(missing_ok=True)
             meta_path.unlink(missing_ok=True)
             _fsync_directory(root)
-            recovered.append(target)
+            recovered.append(final_path)
         except Exception as exc:
             if on_error is not None:
                 on_error(exc)

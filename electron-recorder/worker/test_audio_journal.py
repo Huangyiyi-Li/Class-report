@@ -24,6 +24,20 @@ def test_checkpoint_persists_pcm_before_finalize(tmp_path: Path):
     journal.file.close()
 
 
+def test_first_durable_checkpoint_persists_session_index_in_same_metadata(tmp_path: Path):
+    journal = AudioJournal(
+        tmp_path, "device-1", datetime.now(timezone.utc), 16000, 1, 2
+    )
+    journal.append(b"\x00\x01" * 10)
+
+    journal.checkpoint_with_segment_index(lambda: 2)
+
+    metadata = json.loads(journal.meta_path.read_text(encoding="utf-8"))
+    assert metadata["durableFrames"] == 10
+    assert metadata["segmentIndex"] == 2
+    journal.file.close()
+
+
 def test_recovers_unfinished_part_as_wav(tmp_path: Path):
     journal = AudioJournal(
         tmp_path, "device-1", datetime.now(timezone.utc), 16000, 1, 2
@@ -37,6 +51,169 @@ def test_recovers_unfinished_part_as_wav(tmp_path: Path):
     assert len(recovered) == 1
     assert recovered[0].suffix == ".wav"
     assert recovered[0].exists()
+
+
+def test_recovery_encodes_ogg_before_adding_segment_to_upload_queue(tmp_path: Path):
+    journal = AudioJournal(
+        tmp_path,
+        "device-1",
+        datetime(2026, 8, 10, tzinfo=timezone.utc),
+        16000,
+        1,
+        2,
+        school_id=7,
+    )
+    journal.append(b"\x00\x01" * 1600)
+    journal.checkpoint()
+    journal.file.close()
+    store = QueueStore(tmp_path / "queue.db")
+
+    def encode(wav_path, ffmpeg_path):
+        assert ffmpeg_path == Path("ffmpeg.exe")
+        target = wav_path.with_suffix(".ogg")
+        target.write_bytes(b"ogg-opus")
+        wav_path.unlink()
+        return target
+
+    recovered = recover_journals(
+        tmp_path,
+        queue_store=store,
+        encoder=encode,
+        ffmpeg_path=Path("ffmpeg.exe"),
+    )
+
+    assert recovered == [next(tmp_path.glob("*.ogg"))]
+    item = store.claim_next(datetime.now(timezone.utc))
+    assert item is not None
+    assert item.local_path.endswith(".ogg")
+    assert item.audio_format == "ogg"
+    assert not list(tmp_path.glob("*.wav"))
+
+
+def test_recovery_keeps_journal_out_of_queue_when_ogg_encoding_fails(tmp_path: Path):
+    journal = AudioJournal(
+        tmp_path,
+        "device-1",
+        datetime(2026, 8, 10, tzinfo=timezone.utc),
+        16000,
+        1,
+        2,
+    )
+    journal.append(b"\x00\x01" * 1600)
+    journal.checkpoint()
+    journal.file.close()
+    store = QueueStore(tmp_path / "queue.db")
+    errors = []
+
+    recovered = recover_journals(
+        tmp_path,
+        on_error=errors.append,
+        queue_store=store,
+        encoder=lambda wav_path, _ffmpeg_path: wav_path,
+        ffmpeg_path=Path("ffmpeg.exe"),
+    )
+
+    assert recovered == []
+    assert store.counts() == {}
+    assert journal.part_path.exists()
+    assert journal.meta_path.exists()
+    assert errors and "Ogg Opus" in str(errors[0])
+
+
+def test_recovery_preserves_the_recording_session_segment_index(tmp_path: Path):
+    journal = AudioJournal(
+        tmp_path,
+        "device-1",
+        datetime(2026, 8, 10, tzinfo=timezone.utc),
+        16000,
+        1,
+        2,
+        segment_index=3,
+    )
+    journal.append(b"\x00\x01" * 1600)
+    journal.checkpoint()
+    journal.file.close()
+    store = QueueStore(tmp_path / "queue.db")
+
+    def encode(wav_path, _ffmpeg_path):
+        target = wav_path.with_suffix(".ogg")
+        target.write_bytes(b"ogg-opus")
+        wav_path.unlink()
+        return target
+
+    recover_journals(
+        tmp_path,
+        queue_store=store,
+        encoder=encode,
+        ffmpeg_path=Path("ffmpeg.exe"),
+    )
+
+    item = store.claim_next(datetime.now(timezone.utc))
+    assert item is not None
+    assert item.segment_index == 3
+
+
+def test_writer_assigns_segment_index_after_first_durable_checkpoint(tmp_path: Path):
+    class Journal(FakeJournal):
+        segment_index = None
+
+        def assign_segment_index(self, value):
+            self.segment_index = value
+
+    journal = Journal(tmp_path / "segment.wav")
+    session = CaptureSession(
+        WorkerConfig(checkpoint_seconds=1000),
+        journal,
+        Path("ffmpeg.exe"),
+        next_segment_index=iter([1]).__next__,
+        clock=iter([0.0, 1.0]).__next__,
+    )
+    session.pcm_queue.put(b"pcm")
+    session.stop_event.set()
+
+    session.writer_loop()
+
+    assert journal.segment_index == 1
+    assert journal.checkpoints == 1
+
+
+def test_empty_journal_is_discarded_without_consuming_a_segment_index(tmp_path: Path):
+    journal = AudioJournal(
+        tmp_path, "device-1", datetime.now(timezone.utc), 16000, 1, 2
+    )
+    allocated = []
+    encoded = []
+    session = CaptureSession(
+        WorkerConfig(),
+        journal,
+        Path("ffmpeg.exe"),
+        encoder=lambda wav, ffmpeg: encoded.append(wav) or wav,
+        next_segment_index=lambda: allocated.append(1) or 1,
+        queue_store=QueueStore(tmp_path / "queue.db"),
+    )
+    session.finalize_queue.put(journal)
+    session.finalize_queue.put(None)
+
+    session.finalizer_loop()
+
+    assert allocated == []
+    assert encoded == []
+    assert not journal.part_path.exists()
+    assert not journal.meta_path.exists()
+    assert session.queue_store.counts() == {}
+
+
+def test_recovery_discards_empty_journal_without_uploading_it(tmp_path: Path):
+    journal = AudioJournal(
+        tmp_path, "device-1", datetime.now(timezone.utc), 16000, 1, 2
+    )
+    journal.file.close()
+    store = QueueStore(tmp_path / "queue.db")
+
+    assert recover_journals(tmp_path, queue_store=store) == []
+    assert store.counts() == {}
+    assert not journal.part_path.exists()
+    assert not journal.meta_path.exists()
 
 
 def test_recovery_enqueues_once_with_journal_time_binding_metadata(tmp_path: Path):

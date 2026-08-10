@@ -455,13 +455,21 @@ class XxtDeviceApiClient(ClassroomApiClient):
             self.token = original_token
 
     def save_audio_file_info(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._post_json(
+        response = self._post_json(
             self._route(
                 "saveAudioFileInfo",
                 "/ai-lesson-eval/audio/save-audio-file-info",
             ),
             self._server_audio_metadata(payload),
         )
+        if not isinstance(response, dict) or response.get("content") != "success":
+            detail = ""
+            if isinstance(response, dict):
+                detail = str(
+                    response.get("message") or response.get("msg") or ""
+                ).strip()
+            raise RuntimeError(f"录音信息登记失败: {detail or repr(response)}")
+        return response
 
     @staticmethod
     def _server_audio_metadata(payload: dict[str, Any]) -> dict[str, Any]:

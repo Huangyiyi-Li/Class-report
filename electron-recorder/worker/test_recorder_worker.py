@@ -526,6 +526,49 @@ def test_commands_control_real_capture_sessions(tmp_path: Path):
     assert keep_running is False
 
 
+def test_segment_index_resets_only_for_a_new_recording_session(tmp_path: Path):
+    allocators = []
+
+    def session_factory(**kwargs):
+        allocators.append(kwargs["next_segment_index"])
+        return FakeSession()
+
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        emit_event=lambda *_: None,
+        session_factory=session_factory,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=allow_startup,
+    )
+    worker.startup()
+
+    worker.execute_command(command("start"))
+    assert [allocators[0](), allocators[0]()] == [1, 2]
+    worker.execute_command(command("pause"))
+    worker.execute_command(command("start"))
+    assert allocators[1]() == 3
+    worker.execute_command(command("stop"))
+    worker.execute_command(command("start"))
+    assert allocators[2]() == 1
+    worker.shutdown()
+
+    restarted_allocators = []
+    restarted = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path), device_no="device-1"),
+        emit_event=lambda *_: None,
+        session_factory=lambda **kwargs: (
+            restarted_allocators.append(kwargs["next_segment_index"])
+            or FakeSession()
+        ),
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=allow_startup,
+    )
+    restarted.startup()
+    restarted.execute_command(command("start"))
+    assert restarted_allocators[0]() == 1
+    restarted.shutdown()
+
+
 def test_startup_reports_recovered_journals(tmp_path: Path):
     recovered = tmp_path / "recordings" / "recovered.wav"
     events = []

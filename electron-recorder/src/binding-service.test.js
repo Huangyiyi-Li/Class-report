@@ -77,7 +77,7 @@ test("default remote mode fails closed and never exposes mock data", async () =>
   assert.equal(service.mode, "remote");
 });
 
-function remoteFixture(requests) {
+function remoteFixture(requests, mutationResponse = { content: "success" }) {
   return createBindingService({
     mode: "remote",
     createId: () => "passport-session-1",
@@ -104,7 +104,7 @@ function remoteFixture(requests) {
               },
             ],
           };
-        return { success: true };
+        return mutationResponse;
       },
     }),
     getApiRoutes: () => TEST_API_ROUTES,
@@ -211,7 +211,7 @@ test("remote binding rejects business failure and consumes a successful session 
       code: "BINDING_REJECTED",
     }
   );
-  response = { success: true };
+  response = { content: "success" };
   await service.confirmBinding("passport-session-1", selection);
   await assert.rejects(
     service.confirmBinding("passport-session-1", selection),
@@ -245,6 +245,32 @@ test("remote binding accepts the backend SimpleSuccessVO contract", async () => 
 
   assert.equal(binding.classId, "701");
   assert.equal(binding.classroom, "七年级一班录音设备");
+});
+
+test("remote mutation accepts only top-level SimpleSuccessVO content", async () => {
+  const service = createBindingService({
+    mode: "remote",
+    createId: () => "passport-session-1",
+    authenticate: async () => ({
+      user: {
+        schoolId: 9001,
+        schoolName: "众享中学",
+        userName: "测试教师",
+        userType: 0,
+      },
+      post: async () => ({ success: true }),
+    }),
+  });
+  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+
+  await assert.rejects(
+    service.confirmBinding("passport-session-1", {
+      bindType: 1,
+      classId: 701,
+      className: "七年级一班",
+    }),
+    { code: "BINDING_REJECTED" }
+  );
 });
 
 test("remote binding reports the backend business message when code is not successful", async () => {
@@ -344,4 +370,19 @@ test("remote public classroom omits classId and unbind only sends deviceNo", asy
     TEST_API_ROUTES.unbindDevice,
     { deviceNo: "AABBCCDDEEFF" },
   ]);
+});
+
+test("remote unbind accepts only top-level content success", async () => {
+  for (const response of [
+    { success: true },
+    { data: { content: "success" } },
+    { content: "failed" },
+  ]) {
+    const service = remoteFixture([], response);
+    await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+    await assert.rejects(
+      service.unbindDevice("passport-session-1"),
+      (error) => error.code === "BINDING_REJECTED"
+    );
+  }
 });
