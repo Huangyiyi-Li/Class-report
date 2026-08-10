@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from datetime import datetime, timezone
 
 from windows_client.xxt_upload import (
+    DeviceAuth,
     DeviceAuthError,
     OssConfig,
     XxtDeviceApiClient,
@@ -104,6 +105,39 @@ def test_device_auth_reads_business_code_from_http_error_body():
     )
 
     assert (error.reason, error.rebind_required) == ("clock_invalid", False)
+
+
+def test_ensure_device_auth_returns_the_verified_non_optional_value(monkeypatch):
+    client = XxtDeviceApiClient("https://example.test")
+    expected = DeviceAuth(access_token="device-token", school_id=9001)
+    monkeypatch.setattr(client, "device_auth", lambda _device: expected)
+    manager = XxtUploadManager(client, "AABBCCDDEEFF")
+
+    assert manager._ensure_device_auth(refresh=True) is expected
+
+
+def test_ensure_oss_config_returns_the_verified_non_optional_value(monkeypatch):
+    client = XxtDeviceApiClient("https://example.test")
+    auth = DeviceAuth(access_token="device-token", school_id=9001)
+    expected = OssConfig.from_response(
+        {
+            "accessKeyId": "key-id",
+            "accessKeySecret": "key-secret",
+            "securityToken": "security-token",
+            "bucket": "book-reading",
+            "endPoint": "oss-cn-beijing.aliyuncs.com",
+            "expiration": 4102444800000,
+        }
+    )
+    monkeypatch.setattr(client, "device_auth", lambda _device: auth)
+    monkeypatch.setattr(
+        client,
+        "get_oss_upload_token",
+        lambda access_token: expected,
+    )
+    manager = XxtUploadManager(client, "AABBCCDDEEFF")
+
+    assert manager._ensure_oss_config() is expected
 
 
 def test_upload_uses_wisdom_oss_contract_and_server_authorized_directory(tmp_path, monkeypatch):

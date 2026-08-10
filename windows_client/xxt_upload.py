@@ -298,10 +298,10 @@ class XxtUploadManager:
         }
 
     def upload(self, local_path: str | Path) -> str:
-        self._ensure_oss_config()
+        oss_config = self._ensure_oss_config()
         object_key = build_oss_object_key(
             Path(local_path).name,
-            self.oss_config.upload_dir,
+            oss_config.upload_dir,
             device_no=self.device_no,
         )
         self._set_diagnostics(
@@ -310,7 +310,7 @@ class XxtUploadManager:
             objectPrefix=str(Path(object_key).parent).replace("\\", "/"),
             lastError="",
         )
-        uploader = self.uploader_factory(self.oss_config)
+        uploader = self.uploader_factory(oss_config)
         try:
             uploaded_url = uploader.upload(local_path, object_key)
         except Exception as exc:
@@ -321,13 +321,14 @@ class XxtUploadManager:
         self._set_diagnostics(stage="oss_upload", status="succeeded")
         return uploaded_url
 
-    def _ensure_device_auth(self, *, refresh: bool = False) -> None:
-        if refresh or self.device_auth_data is None:
+    def _ensure_device_auth(self, *, refresh: bool = False) -> DeviceAuth:
+        auth = self.device_auth_data
+        if refresh or auth is None:
             self._set_diagnostics(
                 stage="device_auth", status="started", lastError=""
             )
             try:
-                self.device_auth_data = self.api_client.device_auth(self.device_no)
+                auth = self.api_client.device_auth(self.device_no)
             except Exception as exc:
                 self._set_diagnostics(
                     stage="device_auth",
@@ -336,30 +337,36 @@ class XxtUploadManager:
                     lastError=str(exc),
                 )
                 raise
+            if auth is None:
+                raise RuntimeError("设备认证结果为空")
+            self.device_auth_data = auth
             self._set_diagnostics(
                 stage="device_auth",
                 status="succeeded",
                 deviceAuth="available",
             )
             if self.on_device_auth is not None:
-                self.on_device_auth(self.device_auth_data)
+                self.on_device_auth(auth)
+        return auth
 
     def ensure_device_auth(self) -> DeviceAuth:
         # The confirmed response contract exposes only accessToken, so refresh
         # before each authenticated metadata request instead of inferring TTL.
-        self._ensure_device_auth(refresh=True)
-        return self.device_auth_data
+        return self._ensure_device_auth(refresh=True)
 
-    def _ensure_oss_config(self) -> None:
-        state = XxtTokenState(expire_at=self.oss_config.expire_at if self.oss_config else None)
+    def _ensure_oss_config(self) -> OssConfig:
+        oss_config = self.oss_config
+        state = XxtTokenState(
+            expire_at=oss_config.expire_at if oss_config else None
+        )
         if state.needs_refresh():
-            self._ensure_device_auth(refresh=True)
+            auth = self._ensure_device_auth(refresh=True)
             self._set_diagnostics(
                 stage="oss_credentials", status="started", lastError=""
             )
             try:
-                self.oss_config = self.api_client.get_oss_upload_token(
-                    self.device_auth_data.access_token
+                oss_config = self.api_client.get_oss_upload_token(
+                    auth.access_token
                 )
             except Exception as exc:
                 self._set_diagnostics(
@@ -369,14 +376,20 @@ class XxtUploadManager:
                     lastError=str(exc),
                 )
                 raise
+            if oss_config is None:
+                raise RuntimeError("上传凭证结果为空")
+            self.oss_config = oss_config
             self._set_diagnostics(
                 stage="oss_credentials",
                 status="succeeded",
                 ossCredentials="available",
-                bucket=self.oss_config.bucket,
-                endpoint=self.oss_config.endpoint,
-                credentialExpiresAt=self.oss_config.expire_at.isoformat(),
+                bucket=oss_config.bucket,
+                endpoint=oss_config.endpoint,
+                credentialExpiresAt=oss_config.expire_at.isoformat(),
             )
+        if oss_config is None:
+            raise RuntimeError("上传凭证结果为空")
+        return oss_config
 
     def diagnostics(self) -> dict[str, Any]:
         return dict(self._diagnostics)
