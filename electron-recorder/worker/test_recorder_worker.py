@@ -999,6 +999,37 @@ def test_upload_status_listener_updates_snapshot_with_retry_reason(tmp_path: Pat
     }
 
 
+def test_snapshot_keeps_latest_queue_error_after_upload_detail_changes(tmp_path: Path):
+    path = tmp_path / "one.ogg"
+    path.write_bytes(b"audio")
+    store = QueueStore(tmp_path / "queue.db")
+    item_id = store.enqueue({"local_path": str(path), "segment_index": 2})
+    store.claim_next("2026-08-10T07:30:00Z")
+    store.mark_failed(
+        item_id,
+        "JSON parse error: recordStartTime",
+        "2026-08-10T07:32:00Z",
+    )
+    worker = RecorderWorker(
+        WorkerConfig(data_root=str(tmp_path)),
+        queue_store=store,
+        recover=lambda *_args, **_kwargs: [],
+        emit_event=lambda *_: None,
+    )
+    worker._upload_status_changed(
+        {
+            "stage": "upload",
+            "status": "started",
+            "segmentIndex": 3,
+            "updatedAt": "2026-08-10T07:31:00+00:00",
+        }
+    )
+
+    assert worker.snapshot()["latestUploadError"] == (
+        "JSON parse error: recordStartTime"
+    )
+
+
 def test_startup_excludes_deleted_audio_from_pending_count(tmp_path: Path):
     store = QueueStore(tmp_path / "queue.db")
     store.enqueue({

@@ -85,4 +85,5 @@ test("upload diagnostics explain auth credentials cloud upload and registration"
   assert.match(renderer, /queueDiagnostics/);
   assert.match(renderer, /uploadDiagnostics/);
   assert.match(renderer, /retryAt/);
+  assert.match(renderer, /latestUploadError/);
 });

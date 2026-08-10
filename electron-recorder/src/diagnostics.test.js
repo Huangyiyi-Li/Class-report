@@ -34,10 +34,33 @@ test("redacts sensitive fields recursively without mutating the source", () => {
 });
 
 test("writes a redacted diagnostic JSON file", () => {
-  const filePath = path.join(mkdtempSync(path.join(tmpdir(), "recorder-diagnostics-")), "diagnostics.json");
+  const filePath = path.join(
+    mkdtempSync(path.join(tmpdir(), "recorder-diagnostics-")),
+    "diagnostics.json"
+  );
   writeDiagnosticFile(filePath, { token: "hidden", status: "healthy" });
   assert.deepEqual(JSON.parse(readFileSync(filePath, "utf8")), {
     token: "[REDACTED]",
     status: "healthy",
+  });
+});
+
+test("keeps the OSS route visible while redacting actual access tokens", () => {
+  const source = {
+    settings: {
+      apiRoutes: {
+        ossToken: "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token",
+      },
+    },
+    accessToken: "device-token",
+  };
+
+  assert.deepEqual(redactDiagnostics(source), {
+    settings: {
+      apiRoutes: {
+        ossToken: "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token",
+      },
+    },
+    accessToken: "[REDACTED]",
   });
 });

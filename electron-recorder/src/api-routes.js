@@ -3,7 +3,7 @@ const ROUTE_PATHS = Object.freeze({
   gradeClassList: "/wisdom/group/grade-class-list",
   bindDevice: "/ai-lesson-eval/recording-device/bind-device",
   unbindDevice: "/ai-lesson-eval/recording-device/unbind-device",
-  ossToken: "/wisdom/ali-oss/get-ali-oss-upload-token",
+  ossToken: "/wisdom/ali-oss/get-ali-oss-token",
   saveAudioFileInfo: "/ai-lesson-eval/audio/save-audio-file-info",
 });
 
@@ -29,6 +29,31 @@ function createPreset(origin) {
 
 export const TEST_API_ROUTES = createPreset("https://rest-test.xxt.cn");
 export const PRODUCTION_API_ROUTES = createPreset("https://rest.xxt.cn");
+
+const LEGACY_OFFICIAL_OSS_ROUTES = new Map([
+  [
+    "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+    "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token",
+  ],
+  [
+    "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+    "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token",
+  ],
+  [
+    "http://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+    "http://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-token",
+  ],
+  [
+    "https://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+    "https://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-token",
+  ],
+]);
+
+export function migrateOfficialApiRoutes(value) {
+  const routes = validateApiRoutes(value);
+  const migratedOssRoute = LEGACY_OFFICIAL_OSS_ROUTES.get(routes.ossToken);
+  return migratedOssRoute ? { ...routes, ossToken: migratedOssRoute } : routes;
+}
 
 export function validateApiRoutes(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {

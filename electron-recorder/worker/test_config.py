@@ -35,6 +35,37 @@ def test_defaults_contain_no_school_or_credentials(tmp_path: Path):
     assert config.mirror_server_url == ""
 
 
+def test_worker_default_oss_route_uses_current_upload_token_contract(tmp_path: Path):
+    config = WorkerConfig.load(tmp_path / "missing.json")
+
+    assert config.api_routes["ossToken"] == (
+        "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token"
+    )
+
+
+def test_worker_load_migrates_official_legacy_oss_route(tmp_path: Path):
+    path = tmp_path / "worker-config.json"
+    path.write_text(
+        json.dumps(
+            {
+                "api_routes": {
+                    "deviceAuth": "https://rest-test.xxt.cn/wisdom/book-reading/device-auth",
+                    "gradeClassList": "https://rest-test.xxt.cn/wisdom/group/grade-class-list",
+                    "bindDevice": "https://rest-test.xxt.cn/ai-lesson-eval/recording-device/bind-device",
+                    "unbindDevice": "https://rest-test.xxt.cn/ai-lesson-eval/recording-device/unbind-device",
+                    "ossToken": "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+                    "saveAudioFileInfo": "https://rest-test.xxt.cn/ai-lesson-eval/audio/save-audio-file-info",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert WorkerConfig.load(path).api_routes["ossToken"] == (
+        "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token"
+    )
+
+
 def test_rejects_system_drive_data_root(tmp_path: Path):
     with pytest.raises(ValueError, match="非系统盘"):
         validate_data_root(Path("C:/ClassroomRecorderData"), "C:")
@@ -234,7 +265,7 @@ def test_worker_validates_complete_editable_api_routes():
         "gradeClassList": "http://rest-test.xxt.cn/wisdom/group/grade-class-list",
         "bindDevice": "http://rest-test.xxt.cn/ai-lesson-eval/recording-device/bind-device",
         "unbindDevice": "http://rest-test.xxt.cn/ai-lesson-eval/recording-device/unbind-device",
-        "ossToken": "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+        "ossToken": "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token",
         "saveAudioFileInfo": "http://rest-test.xxt.cn/ai-lesson-eval/audio/save-audio-file-info",
     }
     assert validate_settings_patch({"apiRoutes": routes}) == {

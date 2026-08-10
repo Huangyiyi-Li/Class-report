@@ -26,6 +26,14 @@ test("test and production presets expose every editable recorder API", () => {
     PRODUCTION_API_ROUTES.gradeClassList,
     "https://rest.xxt.cn/wisdom/group/grade-class-list"
   );
+  assert.equal(
+    TEST_API_ROUTES.ossToken,
+    "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token"
+  );
+  assert.equal(
+    PRODUCTION_API_ROUTES.ossToken,
+    "https://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-token"
+  );
   assert.equal(API_ROUTE_DEFINITIONS.length, 6);
 });
 

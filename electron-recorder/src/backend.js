@@ -424,8 +424,8 @@ export class RecorderBackend extends EventEmitter {
       return this.ossConfig;
     this.log("正在获取上传凭证");
     const result = await postJson(
-      `${this.config.baseUrl}/book-reading/ali-oss/get-ali-oss-upload-token`,
-      {},
+      `${this.config.baseUrl}/wisdom/ali-oss/get-ali-oss-token`,
+      { flag: 0 },
       { "Device-Access-Token": accessToken }
     );
     if (!result.accessKeyId)

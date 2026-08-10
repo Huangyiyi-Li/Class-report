@@ -4,7 +4,10 @@ import {
   atomicWriteJson,
   validateBootstrapDataRoot,
 } from "./worker-bootstrap.js";
-import { PRODUCTION_API_ROUTES, validateApiRoutes } from "./api-routes.js";
+import {
+  PRODUCTION_API_ROUTES,
+  migrateOfficialApiRoutes,
+} from "./api-routes.js";
 
 export const DEFAULT_SETTINGS = Object.freeze({
   autoLaunch: false,
@@ -72,7 +75,7 @@ export function validateSettingsPatch(patch, options = {}) {
     validated.dataRoot = root;
   }
   if (Object.hasOwn(patch, "apiRoutes")) {
-    validated.apiRoutes = validateApiRoutes(patch.apiRoutes);
+    validated.apiRoutes = migrateOfficialApiRoutes(patch.apiRoutes);
   }
   return validated;
 }
@@ -89,7 +92,7 @@ function validatePersisted(payload) {
     inputDevice: validateSettingsPatch({ inputDevice: payload.inputDevice })
       .inputDevice,
     apiRoutes: Object.hasOwn(payload, "apiRoutes")
-      ? validateApiRoutes(payload.apiRoutes)
+      ? migrateOfficialApiRoutes(payload.apiRoutes)
       : { ...PRODUCTION_API_ROUTES },
   };
 }
@@ -130,7 +133,7 @@ export function loadWorkerCoreSettings(configPath) {
     const inputDevice = payload.input_device.trim();
     if (inputDevice.length > 256 || /\0|[\r\n]/u.test(inputDevice)) return {};
     const apiRoutes = payload.api_routes
-      ? validateApiRoutes(payload.api_routes)
+      ? migrateOfficialApiRoutes(payload.api_routes)
       : { ...PRODUCTION_API_ROUTES };
     return {
       autoRecordEnabled: payload.auto_record_enabled,

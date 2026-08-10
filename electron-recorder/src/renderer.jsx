@@ -737,6 +737,7 @@ function SettingsModal({
               <SettingRow
                 title="最近错误"
                 value={
+                  snapshot.latestUploadError ||
                   snapshot.uploadDetail?.error ||
                   snapshot.uploadDiagnostics?.lastError ||
                   snapshot.latestError ||

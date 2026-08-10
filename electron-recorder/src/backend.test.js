@@ -50,6 +50,48 @@ test("device auth signs the device number with its persisted device credential",
   }
 });
 
+test("OSS credentials use the current route body and device access token header", async () => {
+  const originalFetch = globalThis.fetch;
+  let observed;
+  globalThis.fetch = async (url, options) => {
+    observed = { url, options };
+    return {
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          accessKeyId: "key-id",
+          accessKeySecret: "key-secret",
+          securityToken: "security-token",
+          expiration: Date.now() + 60 * 60 * 1000,
+        }),
+    };
+  };
+
+  try {
+    const backend = new RecorderBackend({
+      userDataPath: path.join(
+        os.tmpdir(),
+        `classroom-recorder-oss-test-${Date.now()}`
+      ),
+    });
+    backend.config.baseUrl = "https://rest-test.xxt.cn";
+
+    await backend.ensureOssConfig("device-token");
+
+    assert.equal(
+      observed.url,
+      "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token"
+    );
+    assert.deepEqual(JSON.parse(observed.options.body), { flag: 0 });
+    assert.equal(
+      observed.options.headers["Device-Access-Token"],
+      "device-token"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("deriveDeviceNoFromNetworkInterfaces skips virtual adapters and returns uppercase physical MAC", () => {
   const value = deriveDeviceNoFromNetworkInterfaces({
     lo0: [{ internal: true, mac: "00:00:00:00:00:00" }],

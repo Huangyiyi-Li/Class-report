@@ -34,6 +34,41 @@ test("API routes persist with settings and are accepted by the worker patch boun
   );
 });
 
+test("official legacy OSS routes migrate without replacing custom routes", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-routes-"));
+  const configPath = path.join(root, "worker-config.json");
+  const legacyRoutes = {
+    ...PRODUCTION_API_ROUTES,
+    ossToken: "https://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+  };
+  fs.writeFileSync(
+    path.join(root, "settings.json"),
+    JSON.stringify({
+      autoLaunch: false,
+      autoRecordEnabled: true,
+      inputDevice: "default",
+      apiRoutes: legacyRoutes,
+    })
+  );
+
+  assert.deepEqual(loadSettings(configPath).apiRoutes, PRODUCTION_API_ROUTES);
+
+  const customRoutes = {
+    ...legacyRoutes,
+    ossToken: "https://gateway.example.test/get-ali-oss-upload-token",
+  };
+  fs.writeFileSync(
+    path.join(root, "settings.json"),
+    JSON.stringify({
+      autoLaunch: false,
+      autoRecordEnabled: true,
+      inputDevice: "default",
+      apiRoutes: customRoutes,
+    })
+  );
+  assert.deepEqual(loadSettings(configPath).apiRoutes, customRoutes);
+});
+
 test("preferences stay default before bootstrap and persist beside worker config", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-data-"));
   const configPath = path.join(
@@ -112,6 +147,27 @@ test("worker core settings are loaded as authority instead of stale Electron def
     autoRecordEnabled: true,
     inputDevice: "mic-authoritative",
     apiRoutes: PRODUCTION_API_ROUTES,
+  });
+});
+
+test("worker core settings migrate the official legacy OSS route", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-settings-"));
+  const configPath = path.join(root, "worker.json");
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({
+      auto_record_enabled: true,
+      input_device: "",
+      api_routes: {
+        ...PRODUCTION_API_ROUTES,
+        ossToken: "https://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+      },
+    })
+  );
+
+  assert.deepEqual(loadWorkerCoreSettings(configPath).apiRoutes, {
+    ...PRODUCTION_API_ROUTES,
+    ossToken: "https://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-token",
   });
 });
 

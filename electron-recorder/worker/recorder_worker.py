@@ -658,6 +658,19 @@ class RecorderWorker:
             )
         except Exception as exc:
             upload_diagnostics = {"status": "unknown", "lastError": str(exc)}
+        upload_detail = self.state.get("uploadDetail") or {}
+        latest_upload_error = str(
+            upload_detail.get("error")
+            or upload_diagnostics.get("lastError")
+            or ""
+        ).strip()
+        if not latest_upload_error:
+            for item in queue_diagnostics.get("recent", []):
+                if item.get("status") not in {"failed", "metadata_failed"}:
+                    continue
+                latest_upload_error = str(item.get("lastError") or "").strip()
+                if latest_upload_error:
+                    break
         pending = sum(
             count
             for status, count in counts.items()
@@ -698,6 +711,7 @@ class RecorderWorker:
             "localMissing": counts.get("local_missing", 0),
             "queueDiagnostics": queue_diagnostics,
             "uploadDiagnostics": upload_diagnostics,
+            "latestUploadError": latest_upload_error,
             "deviceNo": self.config.device_no,
             "binding": binding,
             "dataRoot": self.config.data_root,

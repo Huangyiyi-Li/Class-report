@@ -26,7 +26,7 @@ DEFAULT_API_ROUTES = {
     "gradeClassList": "http://rest-test.xxt.cn/wisdom/group/grade-class-list",
     "bindDevice": "http://rest-test.xxt.cn/ai-lesson-eval/recording-device/bind-device",
     "unbindDevice": "http://rest-test.xxt.cn/ai-lesson-eval/recording-device/unbind-device",
-    "ossToken": "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token",
+    "ossToken": "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token",
     "saveAudioFileInfo": "http://rest-test.xxt.cn/ai-lesson-eval/audio/save-audio-file-info",
 }
 RUNTIME_SETTING_KEYS = {
@@ -86,6 +86,10 @@ class WorkerConfig:
         if not path.exists():
             return cls()
         payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload.get("api_routes"), dict):
+            payload["api_routes"] = migrate_official_api_routes(
+                payload["api_routes"]
+            )
         if str(payload.get("input_device") or "").strip().lower() == "default":
             payload["input_device"] = ""
         if "bind_type" not in payload and payload.get("location_type") in {"classroom", "studio"}:
@@ -139,7 +143,9 @@ def validate_settings_patch(patch: object, system_drive: str = "C:") -> dict:
         validate_data_root(value, system_drive)
         changes["data_root"] = value
     if "apiRoutes" in patch:
-        changes["api_routes"] = validate_api_routes(patch["apiRoutes"])
+        changes["api_routes"] = migrate_official_api_routes(
+            validate_api_routes(patch["apiRoutes"])
+        )
     return changes
 
 
@@ -171,6 +177,28 @@ def validate_api_routes(value: object) -> dict[str, str]:
         ):
             raise ValueError(f"apiRoutes.{key} must be an http/https URL")
         routes[key] = route.rstrip("/")
+    return routes
+
+
+def migrate_official_api_routes(value: dict[str, str]) -> dict[str, str]:
+    routes = dict(value)
+    legacy_routes = {
+        "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token": (
+            "http://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token"
+        ),
+        "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token": (
+            "https://rest-test.xxt.cn/wisdom/ali-oss/get-ali-oss-token"
+        ),
+        "http://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token": (
+            "http://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-token"
+        ),
+        "https://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-upload-token": (
+            "https://rest.xxt.cn/wisdom/ali-oss/get-ali-oss-token"
+        ),
+    }
+    current = routes.get("ossToken")
+    if current in legacy_routes:
+        routes["ossToken"] = legacy_routes[current]
     return routes
 
 

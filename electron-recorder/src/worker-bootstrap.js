@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { PRODUCTION_API_ROUTES, validateApiRoutes } from "./api-routes.js";
+import {
+  PRODUCTION_API_ROUTES,
+  migrateOfficialApiRoutes,
+} from "./api-routes.js";
 
 const CONFIG_DEFAULTS = {
   data_root: "",
@@ -120,7 +123,7 @@ export function bootstrapWorkerConfig({
       patch.inputDevice === "default"
         ? ""
         : String(patch.inputDevice ?? existing.input_device ?? ""),
-    api_routes: validateApiRoutes(
+    api_routes: migrateOfficialApiRoutes(
       patch.apiRoutes ?? existing.api_routes ?? PRODUCTION_API_ROUTES
     ),
   };

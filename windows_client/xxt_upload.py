@@ -444,9 +444,9 @@ class XxtDeviceApiClient(ClassroomApiClient):
             response = self._post_json(
                 self._route(
                     "ossToken",
-                    "/wisdom/ali-oss/get-ali-oss-upload-token",
+                    "/wisdom/ali-oss/get-ali-oss-token",
                 ),
-                {},
+                {"flag": 0},
             )
             if "accessKeyId" not in response:
                 raise RuntimeError(response.get("message") or f"获取 OSS token 失败: {response}")
@@ -480,8 +480,8 @@ class XxtDeviceApiClient(ClassroomApiClient):
             "fileSize": int(payload.get("fileSize") or 0),
             "fileFormat": str(payload["format"]).upper(),
             "duration": max(0, int((end_time - start_time).total_seconds())),
-            "recordStartTime": start_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "recordEndTime": end_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "recordStartTime": int(start_time.timestamp() * 1000),
+            "recordEndTime": int(end_time.timestamp() * 1000),
             "uploadStatus": upload_status,
         }
         if upload_status == 3:

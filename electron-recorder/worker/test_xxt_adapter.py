@@ -176,8 +176,9 @@ def test_upload_uses_wisdom_oss_contract_and_server_authorized_directory(tmp_pat
 
     assert [call[0] for call in calls] == [
         "/wisdom/book-reading/device-auth",
-        "/wisdom/ali-oss/get-ali-oss-upload-token",
+        "/wisdom/ali-oss/get-ali-oss-token",
     ]
+    assert calls[1][1] == {"flag": 0}
     assert calls[1][2:] == ("device-token", True)
     assert uploads == [
         ("config", "recording-bucket", "oss-cn-example.aliyuncs.com"),
@@ -323,8 +324,8 @@ def test_audio_metadata_uses_confirmed_server_contract(monkeypatch):
                 "fileSize": 1024,
                 "fileFormat": "OGG",
                 "duration": 300,
-                "recordStartTime": "2026-07-25 08:00:00",
-                "recordEndTime": "2026-07-25 08:05:00",
+                "recordStartTime": 1784937600000,
+                "recordEndTime": 1784937900000,
                 "uploadStatus": 1,
             },
             "device-token",
