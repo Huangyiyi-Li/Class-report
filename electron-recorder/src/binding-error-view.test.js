@@ -3,6 +3,12 @@ import test from "node:test";
 
 import { bindingErrorView } from "./binding-error-view.js";
 
+test("empty initial error state renders a safe generic binding message", () => {
+  const view = bindingErrorView(null);
+  assert.equal(view.title, "绑定没有完成");
+  assert.equal(view.primary, "restart");
+});
+
 test("binding technical errors show a photo-ready device number and problem code", () => {
   assert.deepEqual(
     bindingErrorView(

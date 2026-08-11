@@ -580,6 +580,13 @@ async function runSmokeTest() {
     ]);
 
     const mainResult = await mainWindow.webContents.executeJavaScript(`
+      window.__electronSmokeErrors = [];
+      window.addEventListener("error", (event) => {
+        window.__electronSmokeErrors.push(event.error?.stack || event.message || "renderer error");
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        window.__electronSmokeErrors.push(event.reason?.stack || String(event.reason || "unhandled rejection"));
+      });
       Promise.resolve({
         bridge: Boolean(window.recorderShell),
         hasMainShell: Boolean(document.querySelector(".app-shell")),
@@ -655,6 +662,7 @@ async function runSmokeTest() {
             hasIdentityIcon: Boolean(identityIcon),
             hasMockBadge: mockBadge,
             reachedBindingType: Boolean(bindingTypeStep),
+            errors: window.__electronSmokeErrors || [],
             overflowing
           });
         })
@@ -676,7 +684,8 @@ async function runSmokeTest() {
             hasFooter: Boolean(footer),
             footerVisible: Boolean(footerRect && modalRect && footerRect.bottom <= modalRect.bottom && footerRect.top >= modalRect.top),
             modalBottom: modalRect?.bottom || 0,
-            footerBottom: footerRect?.bottom || 0
+            footerBottom: footerRect?.bottom || 0,
+            errors: window.__electronSmokeErrors || []
           });
         }, 120);
       })

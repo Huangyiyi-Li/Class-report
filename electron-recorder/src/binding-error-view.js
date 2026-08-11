@@ -1,8 +1,9 @@
 export function bindingErrorView(error = {}, context = {}) {
-  const operation = error.operation || "bind";
-  const code = Number(error.businessCode);
-  if (operation === "unbind") return unbindErrorView(code, context, error);
-  return bindErrorView(code, context, error);
+  const source = error || {};
+  const operation = source.operation || "bind";
+  const code = Number(source.businessCode);
+  if (operation === "unbind") return unbindErrorView(code, context, source);
+  return bindErrorView(code, context, source);
 }
 
 function bindErrorView(code, context, error) {
