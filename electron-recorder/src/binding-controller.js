@@ -28,7 +28,7 @@ export class BindingController {
         "未找到可用的物理网卡设备标识"
       );
     }
-    return this.service.createSession({ deviceNo });
+    return this.service.createSession({ deviceNo, scopeDeviceNo: true });
   }
 
   createReplacementSession() {
@@ -37,6 +37,10 @@ export class BindingController {
 
   getSession(sessionId) {
     return this.service.getSession(sessionId);
+  }
+
+  resetAuthentication() {
+    return this.service.resetAuthentication();
   }
 
   listGrades(sessionId) {
@@ -70,6 +74,20 @@ export class BindingController {
     return binding;
   }
 
+  async replaceBinding(sessionId, selection) {
+    this.#requireBindingChangeAllowed();
+    try {
+      const binding = await this.service.replaceBinding(sessionId, selection);
+      await this.sendWorkerCommand("apply_binding", binding);
+      return binding;
+    } catch (error) {
+      if (error?.unbound) {
+        await this.sendWorkerCommand("clear_binding", {});
+      }
+      throw error;
+    }
+  }
+
   async unbindDevice() {
     const snapshot = this.getSnapshot() || {};
     if (!snapshot.binding) {
@@ -79,6 +97,7 @@ export class BindingController {
     await this.sendWorkerCommand("prepare_unbind", {});
     const session = await this.service.createSession({
       deviceNo: snapshot.binding.deviceNo,
+      scopeDeviceNo: false,
     });
     await this.service.unbindDevice(session.id);
     await this.sendWorkerCommand("clear_binding", {});
@@ -98,10 +117,27 @@ export class BindingController {
       );
     }
   }
+
+  #requireBindingChangeAllowed() {
+    const snapshot = this.getSnapshot() || {};
+    const recording =
+      snapshot.recordingState ||
+      snapshot.recording ||
+      snapshot.runtime?.recording ||
+      "idle";
+    if (["starting", "recording"].includes(recording)) {
+      throw controllerError(
+        "BINDING_REQUIRES_IDLE",
+        "请先停止录音，再更换设备绑定"
+      );
+    }
+  }
 }
 
 function normalizeMacDeviceNo(value) {
   const text = typeof value === "string" ? value.trim().toUpperCase() : "";
+  const scoped = text.match(/^([0-9A-F]{12})-\d+$/);
+  if (scoped) return /^0{12}$/.test(scoped[1]) ? "" : scoped[1];
   if (!/^[0-9A-F]{2}(?:[:-]?[0-9A-F]{2}){5}$/.test(text)) return "";
   const normalized = text.replace(/[:-]/g, "");
   return /^0{12}$/.test(normalized) ? "" : normalized;

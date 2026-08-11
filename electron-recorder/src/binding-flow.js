@@ -101,6 +101,12 @@ export function bindingFlowReducer(state, action) {
       return { ...state, phase: "error", error: action.error };
     case "BACK":
       return back(state);
+    case "RETURN_TO_SELECTION":
+      return {
+        ...state,
+        phase: state.selection.bindType === 2 ? "publicClassroom" : "class",
+        error: null,
+      };
     case "CLOSE":
       return initialBindingFlow;
     default:

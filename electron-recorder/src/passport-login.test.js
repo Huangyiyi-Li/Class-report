@@ -8,6 +8,7 @@ import {
   createPassportAuthenticator,
   getPassportWindowLayout,
   isPassportConsoleUrl,
+  resetPassportSession,
 } from "./passport-login.js";
 
 class FakeWebContents extends EventEmitter {
@@ -238,6 +239,18 @@ test("Passport window fits a desktop page into the available display area", () =
     { width: 1318, height: 680 }
   );
   assert.ok(compact.zoomFactor >= 0.75 && compact.zoomFactor <= 0.76);
+});
+
+test("resetPassportSession clears the isolated login state before switching identity", async () => {
+  const calls = [];
+  await resetPassportSession({
+    clearStorageData: async (options) => calls.push(["storage", options]),
+    clearAuthCache: async () => calls.push(["auth"]),
+  });
+  assert.deepEqual(calls, [
+    ["storage", { storages: ["cookies", "localstorage", "sessionstorage"] }],
+    ["auth"],
+  ]);
 });
 
 test("closing the Passport window before console login rejects the session", async () => {

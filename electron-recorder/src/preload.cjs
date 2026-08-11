@@ -1,4 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
+const { unwrapResult } = require("./ipc-result.cjs");
+
+const invokeStructured = (channel, ...args) =>
+  ipcRenderer.invoke(channel, ...args).then(unwrapResult);
 
 contextBridge.exposeInMainWorld("recorderShell", {
   getSnapshot: () => ipcRenderer.invoke("recorder:get-snapshot"),
@@ -7,22 +11,27 @@ contextBridge.exposeInMainWorld("recorderShell", {
   stopRecording: () => ipcRenderer.invoke("recorder:stop"),
   recheckRecording: () => ipcRenderer.invoke("recorder:recheck"),
   openSystemTimeSettings: () => ipcRenderer.invoke("system:open-date-time"),
+  calibrateSystemTime: () => invokeStructured("system:calibrate-date-time"),
   flushQueue: () => ipcRenderer.invoke("recorder:flush"),
   listInputDevices: () => ipcRenderer.invoke("recorder:list-input-devices"),
   updateSettings: (patch) =>
     ipcRenderer.invoke("recorder:update-settings", patch),
-  createBindingSession: () => ipcRenderer.invoke("binding:create-session"),
+  createBindingSession: () => invokeStructured("binding:create-session"),
   createReplacementBindingSession: () =>
-    ipcRenderer.invoke("binding:create-replacement-session"),
+    invokeStructured("binding:create-replacement-session"),
+  resetBindingAuthentication: () =>
+    invokeStructured("binding:reset-authentication"),
   getBindingSession: (sessionId) =>
-    ipcRenderer.invoke("binding:get-session", sessionId),
+    invokeStructured("binding:get-session", sessionId),
   listBindingGrades: (sessionId) =>
-    ipcRenderer.invoke("binding:list-grades", sessionId),
+    invokeStructured("binding:list-grades", sessionId),
   listBindingClasses: (sessionId, query) =>
-    ipcRenderer.invoke("binding:list-classes", sessionId, query),
+    invokeStructured("binding:list-classes", sessionId, query),
   confirmBinding: (sessionId, selection) =>
-    ipcRenderer.invoke("binding:confirm", sessionId, selection),
-  unbindDevice: () => ipcRenderer.invoke("binding:unbind"),
+    invokeStructured("binding:confirm", sessionId, selection),
+  replaceBinding: (sessionId, selection) =>
+    invokeStructured("binding:replace", sessionId, selection),
+  unbindDevice: () => invokeStructured("binding:unbind"),
   setAutoLaunch: (enabled) =>
     ipcRenderer.invoke("app:set-auto-launch", enabled),
   checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),

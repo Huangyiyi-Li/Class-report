@@ -41,6 +41,10 @@ function createFixture(overrides = {}) {
       calls.push(["unbindDevice", id]),
       { success: true }
     ),
+    replaceBinding: async (id, selection) => (
+      calls.push(["replaceBinding", id, selection]),
+      binding
+    ),
     ...overrides.service,
   };
   const workerCommands = [];
@@ -58,7 +62,9 @@ function createFixture(overrides = {}) {
 test("controller creates a session for the resolved device identity", async () => {
   const { controller, calls } = createFixture();
   assert.equal((await controller.createSession()).status, "authenticated");
-  assert.deepEqual(calls, [["createSession", { deviceNo: "AABBCCDDEEFF" }]]);
+  assert.deepEqual(calls, [
+    ["createSession", { deviceNo: "AABBCCDDEEFF", scopeDeviceNo: true }],
+  ]);
 });
 
 test("normal rebind keeps the persisted MAC when another adapter is available", async () => {
@@ -72,7 +78,9 @@ test("normal rebind keeps the persisted MAC when another adapter is available", 
     },
   });
   await controller.createSession();
-  assert.deepEqual(calls, [["createSession", { deviceNo: "AABBCCDDEEFF" }]]);
+  assert.deepEqual(calls, [
+    ["createSession", { deviceNo: "AABBCCDDEEFF", scopeDeviceNo: true }],
+  ]);
 });
 
 test("fresh binding after unbind keeps the worker's persisted device number", async () => {
@@ -87,7 +95,9 @@ test("fresh binding after unbind keeps the worker's persisted device number", as
     },
   });
   await controller.createSession();
-  assert.deepEqual(calls, [["createSession", { deviceNo: "AABBCCDDEEFF" }]]);
+  assert.deepEqual(calls, [
+    ["createSession", { deviceNo: "AABBCCDDEEFF", scopeDeviceNo: true }],
+  ]);
 });
 
 test("fresh binding replaces a persisted test fixture with the physical MAC", async () => {
@@ -104,7 +114,9 @@ test("fresh binding replaces a persisted test fixture with the physical MAC", as
 
   await controller.createSession();
 
-  assert.deepEqual(calls, [["createSession", { deviceNo: "112233445566" }]]);
+  assert.deepEqual(calls, [
+    ["createSession", { deviceNo: "112233445566", scopeDeviceNo: true }],
+  ]);
 });
 
 test("persisted MAC separators are normalized before binding", async () => {
@@ -121,7 +133,9 @@ test("persisted MAC separators are normalized before binding", async () => {
 
   await controller.createSession();
 
-  assert.deepEqual(calls, [["createSession", { deviceNo: "AABBCCDDEEFF" }]]);
+  assert.deepEqual(calls, [
+    ["createSession", { deviceNo: "AABBCCDDEEFF", scopeDeviceNo: true }],
+  ]);
 });
 
 test("explicit device replacement uses the currently resolved physical MAC", async () => {
@@ -135,7 +149,9 @@ test("explicit device replacement uses the currently resolved physical MAC", asy
     },
   });
   await controller.createReplacementSession();
-  assert.deepEqual(calls, [["createSession", { deviceNo: "112233445566" }]]);
+  assert.deepEqual(calls, [
+    ["createSession", { deviceNo: "112233445566", scopeDeviceNo: true }],
+  ]);
 });
 
 test("controller proxies Passport-backed grade and class operations", async () => {
@@ -158,6 +174,17 @@ test("confirmation sends exactly one canonical apply_binding command", async () 
     binding
   );
   assert.deepEqual(calls, [["confirmBinding", "session-1", selection]]);
+  assert.deepEqual(workerCommands, [["apply_binding", binding]]);
+});
+
+test("replacement applies the new binding after the service unbinds and binds", async () => {
+  const { controller, calls, workerCommands, binding } = createFixture();
+  const selection = { bindType: 1, classId: 101, className: "1.1班" };
+  assert.deepEqual(
+    await controller.replaceBinding("session-1", selection),
+    binding
+  );
+  assert.deepEqual(calls, [["replaceBinding", "session-1", selection]]);
   assert.deepEqual(workerCommands, [["apply_binding", binding]]);
 });
 
@@ -185,7 +212,7 @@ test("unbind authenticates, calls the service, then clears the worker binding", 
   });
   await controller.unbindDevice();
   assert.deepEqual(calls, [
-    ["createSession", { deviceNo: "AABBCCDDEEFF" }],
+    ["createSession", { deviceNo: "AABBCCDDEEFF", scopeDeviceNo: false }],
     ["unbindDevice", "session-1"],
   ]);
   assert.deepEqual(workerCommands, [

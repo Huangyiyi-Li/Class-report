@@ -42,6 +42,7 @@ import {
 } from "./passport-login.js";
 import { resolveDeviceNo } from "./backend.js";
 import { clampFloatingPosition } from "./floating-drag.js";
+import ipcResult from "./ipc-result.cjs";
 import {
   canInstallWorkerUpdate,
   createUpdateController,
@@ -50,6 +51,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 const { autoUpdater } = electronUpdater;
+const { captureResult } = ipcResult;
 
 let mainWindow;
 let floatingBallWindow;
@@ -95,6 +97,39 @@ let updateState = {
 
 function isScreenPoint(point) {
   return Number.isFinite(point?.x) && Number.isFinite(point?.y);
+}
+
+function structuredIpc(operation) {
+  return (...args) => captureResult(() => operation(...args));
+}
+
+function calibrateWindowsTime() {
+  if (process.platform !== "win32") {
+    throw new Error("自动校准时间仅支持 Windows");
+  }
+  const elevatedCommand = [
+    'tzutil /s "China Standard Time"',
+    "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+    "w32tm /resync /rediscover",
+    "exit $LASTEXITCODE",
+  ].join("; ");
+  const encoded = Buffer.from(elevatedCommand, "utf16le").toString("base64");
+  const launcher =
+    `$process = Start-Process -FilePath 'powershell.exe' ` +
+    `-ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encoded}' ` +
+    `-Verb RunAs -Wait -PassThru; exit $process.ExitCode`;
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", launcher],
+      { windowsHide: true }
+    );
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve({ success: true });
+      else reject(new Error("未能自动校准时间，请打开系统时间设置手动调整"));
+    });
+  });
 }
 
 function initializeBindingController() {
@@ -832,25 +867,52 @@ if (hasSingleInstanceLock)
     }));
     ipcMain.handle("app:check-for-updates", () => updateController.check());
     ipcMain.handle("app:install-update", () => updateController.install());
-    ipcMain.handle("binding:create-session", () =>
-      bindingController.createSession()
+    ipcMain.handle(
+      "binding:create-session",
+      structuredIpc(() => bindingController.createSession())
     );
-    ipcMain.handle("binding:create-replacement-session", () =>
-      bindingController.createReplacementSession()
+    ipcMain.handle(
+      "binding:create-replacement-session",
+      structuredIpc(() => bindingController.createReplacementSession())
     );
-    ipcMain.handle("binding:get-session", (_event, sessionId) =>
-      bindingController.getSession(sessionId)
+    ipcMain.handle(
+      "binding:reset-authentication",
+      structuredIpc(() => bindingController.resetAuthentication())
     );
-    ipcMain.handle("binding:list-grades", (_event, sessionId) =>
-      bindingController.listGrades(sessionId)
+    ipcMain.handle(
+      "binding:get-session",
+      structuredIpc((_event, sessionId) =>
+        bindingController.getSession(sessionId)
+      )
     );
-    ipcMain.handle("binding:list-classes", (_event, sessionId, query) =>
-      bindingController.listClasses(sessionId, query)
+    ipcMain.handle(
+      "binding:list-grades",
+      structuredIpc((_event, sessionId) =>
+        bindingController.listGrades(sessionId)
+      )
     );
-    ipcMain.handle("binding:confirm", (_event, sessionId, selection) =>
-      bindingController.confirmBinding(sessionId, selection)
+    ipcMain.handle(
+      "binding:list-classes",
+      structuredIpc((_event, sessionId, query) =>
+        bindingController.listClasses(sessionId, query)
+      )
     );
-    ipcMain.handle("binding:unbind", () => bindingController.unbindDevice());
+    ipcMain.handle(
+      "binding:confirm",
+      structuredIpc((_event, sessionId, selection) =>
+        bindingController.confirmBinding(sessionId, selection)
+      )
+    );
+    ipcMain.handle(
+      "binding:replace",
+      structuredIpc((_event, sessionId, selection) =>
+        bindingController.replaceBinding(sessionId, selection)
+      )
+    );
+    ipcMain.handle(
+      "binding:unbind",
+      structuredIpc(() => bindingController.unbindDevice())
+    );
     ipcMain.handle("recorder:start", () => supervisor?.send("start") ?? false);
     ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
     ipcMain.handle("recorder:stop", () => supervisor?.send("stop") ?? false);
@@ -863,6 +925,10 @@ if (hasSingleInstanceLock)
       await electronShell.openExternal("ms-settings:dateandtime");
       return true;
     });
+    ipcMain.handle(
+      "system:calibrate-date-time",
+      structuredIpc(() => calibrateWindowsTime())
+    );
     ipcMain.handle(
       "recorder:flush",
       () => supervisor?.send("flush_queue") ?? false

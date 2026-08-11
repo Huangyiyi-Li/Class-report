@@ -21,6 +21,8 @@ import { getHealthMeta, getRecordingMeta, getUploadMeta } from "./state.js";
 import { buildWorkerSettingsPatch, saveSettings } from "./settings-save.js";
 import { beginFullRebinding, canRebind } from "./binding-flow.js";
 import { BindingWizard } from "./binding-wizard.jsx";
+import { authIssueView } from "./auth-issue-view.js";
+import { bindingErrorView } from "./binding-error-view.js";
 import { createFloatingDragController } from "./floating-drag.js";
 import {
   API_ROUTE_DEFINITIONS,
@@ -98,11 +100,13 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
       setActionPending("");
     }
   };
-  const fullRebind = async () => {
+  const fullRebind = async (skipConfirmation = false) => {
+    const shouldSkipConfirmation = skipConfirmation === true;
     setRebindPending(true);
     try {
       await beginFullRebinding({
         confirm: () =>
+          shouldSkipConfirmation ||
           window.confirm(
             "重新绑定会先解除当前设备归属，并停止当前录音和上传处理。解除后需要重新登录并选择学校和教室。确认继续吗？"
           ),
@@ -113,7 +117,27 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
         },
       });
     } catch (error) {
-      window.alert(error?.message || "解除绑定失败，请稍后重试");
+      const view = bindingErrorView(error, {
+        deviceNo: binding?.deviceNo || snapshot.deviceNo,
+        boundSchoolName: binding?.schoolName,
+      });
+      const message = [
+        view.title,
+        view.detail,
+        view.guidance,
+        view.deviceNo ? `设备编号：${view.deviceNo}` : "",
+        view.problemCode ? `问题代码：${view.problemCode}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      if (
+        view.primary === "switch_identity" &&
+        window.confirm(`${message}\n\n是否切换账号或学校后重试？`)
+      ) {
+        await shell.resetBindingAuthentication();
+        return fullRebind(true);
+      }
+      window.alert(message);
     } finally {
       setRebindPending(false);
     }
@@ -179,6 +203,19 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
           </div>
         ) : null}
 
+        {home.deviceNo ? (
+          <dl className="home-support-reference">
+            <div>
+              <dt>设备编号</dt>
+              <dd>{home.deviceNo}</dd>
+            </div>
+            <div>
+              <dt>问题代码</dt>
+              <dd>{home.problemCode}</dd>
+            </div>
+          </dl>
+        ) : null}
+
         <div className="home-actions">
           {home.primary === "bind" ? (
             <button
@@ -186,7 +223,7 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
               onClick={() => setBindingOpen(true)}
               data-testid="open-binding"
             >
-              登录并绑定设备
+              {home.primaryLabel || "登录并绑定设备"}
             </button>
           ) : null}
           {home.primary === "pause" ? (
@@ -226,22 +263,44 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
               打开设置
             </button>
           ) : null}
-          {home.primary === "clock" ? (
+          {home.primary === "calibrate_clock" ? (
             <>
               <button
                 className="home-primary"
-                onClick={() => shell?.openSystemTimeSettings?.()}
+                disabled={Boolean(actionPending)}
+                onClick={() =>
+                  runRecorderAction("calibrate-clock", async () => {
+                    await shell?.calibrateSystemTime?.();
+                    await shell?.recheckRecording?.();
+                  })
+                }
               >
-                打开系统时间设置
+                {actionPending === "calibrate-clock"
+                  ? "正在校准…"
+                  : "自动校准时间"}
               </button>
               <button
                 className="home-secondary"
-                onClick={() => shell?.recheckRecording?.()}
+                disabled={Boolean(actionPending)}
+                onClick={() => shell?.openSystemTimeSettings?.()}
               >
-                <RefreshCcw size={18} />
-                重新检测
+                打开时间设置
               </button>
             </>
+          ) : null}
+          {home.primary === "recheck_auth" ? (
+            <button
+              className="home-primary"
+              disabled={Boolean(actionPending)}
+              onClick={() =>
+                runRecorderAction("recheck-auth", () =>
+                  shell?.recheckRecording?.()
+                )
+              }
+            >
+              <RefreshCcw size={18} />
+              {actionPending === "recheck-auth" ? "正在检测…" : "重新检测"}
+            </button>
           ) : null}
           {home.showStop ? (
             <button
@@ -310,6 +369,7 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
       <BindingWizard
         open={bindingOpen}
         bindingServiceMode={snapshot.bindingServiceMode || "remote"}
+        replacementRequired={snapshot.authIssue?.reason === "class_not_found"}
         onClose={() => setBindingOpen(false)}
         onBound={() => {}}
       />
@@ -319,39 +379,13 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
 
 function getHomeState(snapshot, runtime) {
   const auth = snapshot.authIssue;
-  if (auth?.reason === "clock_invalid") {
+  const authView = authIssueView(auth, { deviceNo: snapshot.deviceNo });
+  if (authView)
     return {
-      tone: "danger",
+      ...authView,
       icon: <AlertTriangle size={29} />,
-      title: "设备时间不正确",
-      description: "当前设备时间与服务器时间不一致，暂时无法录音。",
-      notice: "请将 Windows 时间调整为北京时间，返回客户端后重新检测。",
       noticeTone: "danger",
-      primary: "clock",
     };
-  }
-  if (auth?.reason === "signature_invalid") {
-    return {
-      tone: "danger",
-      icon: <AlertTriangle size={29} />,
-      title: "暂时无法完成设备认证",
-      description: "录音服务已停止。",
-      notice: "请联系市场人员并提交维修工单。",
-      noticeTone: "danger",
-      primary: "settings",
-    };
-  }
-  if (auth?.rebindRequired) {
-    return {
-      tone: "danger",
-      icon: <AlertTriangle size={29} />,
-      title: "设备需要重新绑定",
-      description: "当前设备归属已失效，暂时无法录音。",
-      notice: "请重新完成设备初始化绑定。",
-      noticeTone: "danger",
-      primary: "bind",
-    };
-  }
   if (!snapshot.binding && runtime.health === "binding_required") {
     return {
       tone: "idle",

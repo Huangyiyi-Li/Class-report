@@ -22,9 +22,10 @@ const MOCK_CLASSES = Object.freeze({
   ],
 });
 
-function bindingError(code, message) {
+function bindingError(code, message, details = {}) {
   const error = new Error(message);
   error.code = code;
+  Object.assign(error, details);
   return error;
 }
 
@@ -47,8 +48,11 @@ export class MockBindingService {
     this.sessions = new Map();
   }
 
-  async createSession({ deviceNo } = {}) {
-    const normalizedDeviceNo = requireNonEmptyString(deviceNo, "deviceNo");
+  async createSession({ deviceNo, scopeDeviceNo = false } = {}) {
+    const rawDeviceNo = requireNonEmptyString(deviceNo, "deviceNo");
+    const normalizedDeviceNo = scopeDeviceNo
+      ? buildSchoolDeviceNo(rawDeviceNo, MOCK_USER.schoolId)
+      : rawDeviceNo;
     const id = String(this.createId());
     const session = {
       id,
@@ -117,6 +121,17 @@ export class MockBindingService {
     return { success: true };
   }
 
+  async replaceBinding(sessionId, selection = {}) {
+    const session = this.#getSession(sessionId);
+    await this.unbindDevice(sessionId);
+    session.status = "authenticated";
+    return this.confirmBinding(sessionId, selection);
+  }
+
+  async resetAuthentication() {
+    this.sessions.clear();
+  }
+
   #getSession(sessionId) {
     const session = this.sessions.get(String(sessionId));
     if (!session) {
@@ -149,6 +164,12 @@ export class UnavailableRemoteBindingService {
   async confirmBinding() {
     throw this.#unavailable();
   }
+  async replaceBinding() {
+    throw this.#unavailable();
+  }
+  async resetAuthentication() {
+    throw this.#unavailable();
+  }
 
   #unavailable() {
     return bindingError(
@@ -179,10 +200,13 @@ export class RemoteBindingService {
     this.sessions = new Map();
   }
 
-  async createSession({ deviceNo } = {}) {
-    const normalizedDeviceNo = requireNonEmptyString(deviceNo, "deviceNo");
+  async createSession({ deviceNo, scopeDeviceNo = false } = {}) {
+    const rawDeviceNo = requireNonEmptyString(deviceNo, "deviceNo");
     const authenticated = await this.authenticate();
     const user = normalizeAuthenticatedUser(authenticated?.user);
+    const normalizedDeviceNo = scopeDeviceNo
+      ? buildSchoolDeviceNo(rawDeviceNo, user.schoolId)
+      : rawDeviceNo;
     if (typeof authenticated?.post !== "function") {
       throw bindingError(
         "PASSPORT_SESSION_INVALID",
@@ -248,21 +272,8 @@ export class RemoteBindingService {
     const request = bindingRequest(session, selection);
     const routes = validateApiRoutes(this.getApiRoutes());
     const response = await session.post(routes.bindDevice, request);
-    requireSuccessfulMutation(response, "绑定失败");
-    const classroomBinding = request.bindType === 1;
-    const binding = {
-      deviceNo: session.deviceNo,
-      schoolId: session.user.schoolId,
-      schoolName: session.user.schoolName,
-      bindType: request.bindType,
-      classId: classroomBinding ? String(request.classId) : "",
-      className: classroomBinding
-        ? requireNonEmptyString(selection.className, "className")
-        : "",
-      classroom: request.classroom,
-      bindingSource: "remote",
-      boundAt: new Date(this.now()).toISOString(),
-    };
+    requireSuccessfulMutation(response, "绑定失败", "bind");
+    const binding = createRemoteBinding(session, request, selection, this.now);
     session.status = "confirmed";
     session.binding = binding;
     this.sessions.delete(String(sessionId));
@@ -281,9 +292,49 @@ export class RemoteBindingService {
     const response = await session.post(routes.unbindDevice, {
       deviceNo: session.deviceNo,
     });
-    requireSuccessfulMutation(response, "解绑失败");
+    requireSuccessfulMutation(response, "解绑失败", "unbind");
     session.status = "confirmed";
     this.sessions.delete(String(sessionId));
+    return { success: true };
+  }
+
+  async replaceBinding(sessionId, selection = {}) {
+    const session = this.#getSession(sessionId);
+    if (session.status !== "authenticated") {
+      throw bindingError(
+        "BINDING_SESSION_INVALID_STATE",
+        "绑定会话已经使用，请重新登录"
+      );
+    }
+    const routes = validateApiRoutes(this.getApiRoutes());
+    if (!session.replacementUnbound) {
+      const unbindResponse = await session.post(routes.unbindDevice, {
+        deviceNo: session.deviceNo,
+      });
+      requireSuccessfulMutation(unbindResponse, "解绑失败", "unbind");
+      session.replacementUnbound = true;
+    }
+
+    const request = bindingRequest(session, selection);
+    const bindResponse = await session.post(routes.bindDevice, request);
+    try {
+      requireSuccessfulMutation(bindResponse, "绑定失败", "bind");
+    } catch (error) {
+      error.unbound = true;
+      throw error;
+    }
+    const binding = createRemoteBinding(session, request, selection, this.now);
+    session.status = "confirmed";
+    session.binding = binding;
+    this.sessions.delete(String(sessionId));
+    return copy(binding);
+  }
+
+  async resetAuthentication() {
+    this.sessions.clear();
+    if (typeof this.authenticate.reset === "function") {
+      await this.authenticate.reset();
+    }
     return { success: true };
   }
 
@@ -420,16 +471,56 @@ function normalizeCatalogClass(value, grade) {
   };
 }
 
-function requireSuccessfulMutation(value, fallback) {
+function requireSuccessfulMutation(value, fallback, operation) {
   const success = value?.content === "success";
   if (!success) {
+    const businessCode = numericBusinessCode(
+      value?.code ?? value?.status ?? value?.data?.code
+    );
     throw bindingError(
       "BINDING_REJECTED",
       requireOptionalMessage(
         value?.message || value?.msg || value?.data?.message || value?.data?.msg
-      ) || fallback
+      ) || fallback,
+      { businessCode, operation, unbound: false }
     );
   }
+}
+
+function numericBusinessCode(value) {
+  const number = Number(value);
+  return Number.isInteger(number) ? number : null;
+}
+
+function createRemoteBinding(session, request, selection, now) {
+  const classroomBinding = request.bindType === 1;
+  return {
+    deviceNo: session.deviceNo,
+    schoolId: session.user.schoolId,
+    schoolName: session.user.schoolName,
+    bindType: request.bindType,
+    classId: classroomBinding ? String(request.classId) : "",
+    className: classroomBinding
+      ? requireNonEmptyString(selection.className, "className")
+      : "",
+    classroom: request.classroom,
+    bindingSource: "remote",
+    boundAt: new Date(now()).toISOString(),
+  };
+}
+
+export function buildSchoolDeviceNo(mac, schoolId) {
+  const normalizedMac = String(mac || "")
+    .replace(/[^0-9a-f]/gi, "")
+    .toUpperCase();
+  const normalizedSchoolId = requirePositiveInteger(schoolId, "schoolId");
+  if (!/^[0-9A-F]{12}$/.test(normalizedMac) || /^0{12}$/.test(normalizedMac)) {
+    throw bindingError(
+      "DEVICE_IDENTITY_UNAVAILABLE",
+      "未找到可用的物理网卡设备标识"
+    );
+  }
+  return `${normalizedMac}-${normalizedSchoolId}`;
 }
 
 function requireOptionalMessage(value) {

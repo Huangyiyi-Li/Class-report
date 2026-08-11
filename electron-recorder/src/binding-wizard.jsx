@@ -12,11 +12,19 @@ import {
 } from "lucide-react";
 
 import { bindingFlowReducer, initialBindingFlow } from "./binding-flow.js";
+import { bindingErrorView } from "./binding-error-view.js";
 
 const api = window.recorderShell;
 
-export function BindingWizard({ open, bindingServiceMode, onClose, onBound }) {
+export function BindingWizard({
+  open,
+  bindingServiceMode,
+  replacementRequired = false,
+  onClose,
+  onBound,
+}) {
   const [state, dispatch] = useReducer(bindingFlowReducer, initialBindingFlow);
+  const [terminalPending, setTerminalPending] = useState("");
 
   useEffect(() => {
     if (!open) {
@@ -87,6 +95,46 @@ export function BindingWizard({ open, bindingServiceMode, onClose, onBound }) {
     }
   };
 
+  const switchIdentity = async () => {
+    setTerminalPending("identity");
+    try {
+      await api.resetBindingAuthentication();
+      dispatch({ type: "RESTART" });
+    } catch (error) {
+      fail(dispatch, error);
+    } finally {
+      setTerminalPending("");
+    }
+  };
+
+  const replaceBinding = async () => {
+    const target =
+      state.selection.className ||
+      state.selection.classroom ||
+      "当前选择的教室";
+    if (
+      !window.confirm(
+        `确认更换设备绑定？\n\n设备将先解除原有绑定，再绑定到：\n${state.session?.user?.schoolName || "当前学校"} · ${target}\n\n换绑过程中请不要关闭客户端。`
+      )
+    )
+      return;
+    dispatch({ type: "CONFIRMING" });
+    setTerminalPending("replace");
+    try {
+      const binding = await api.replaceBinding(
+        state.session.id,
+        state.selection
+      );
+      dispatch({ type: "CONFIRMED", binding });
+      onBound(binding);
+      window.setTimeout(onClose, 650);
+    } catch (error) {
+      fail(dispatch, error);
+    } finally {
+      setTerminalPending("");
+    }
+  };
+
   if (!open) return null;
   return (
     <div className="modal-backdrop binding-backdrop" role="presentation">
@@ -118,7 +166,12 @@ export function BindingWizard({ open, bindingServiceMode, onClose, onBound }) {
           </button>
         </header>
         <div className="binding-workbench">
-          <IdentityPanel state={state} mode={bindingServiceMode} />
+          <IdentityPanel
+            state={state}
+            mode={bindingServiceMode}
+            onSwitchIdentity={switchIdentity}
+            pending={terminalPending === "identity"}
+          />
           <section
             className="binding-step-panel"
             data-binding-step={state.phase}
@@ -130,8 +183,12 @@ export function BindingWizard({ open, bindingServiceMode, onClose, onBound }) {
               dispatch={dispatch}
               onSelectType={selectBindType}
               onSelectGrade={selectGrade}
-              onConfirm={confirm}
+              onConfirm={replacementRequired ? replaceBinding : confirm}
               onClose={onClose}
+              onSwitchIdentity={switchIdentity}
+              onReplace={replaceBinding}
+              replacementRequired={replacementRequired}
+              terminalPending={terminalPending}
             />
           </section>
         </div>
@@ -140,7 +197,7 @@ export function BindingWizard({ open, bindingServiceMode, onClose, onBound }) {
   );
 }
 
-function IdentityPanel({ state, mode }) {
+function IdentityPanel({ state, mode, onSwitchIdentity, pending }) {
   const user = state.session?.user;
   return (
     <aside className="binding-identity-panel">
@@ -161,6 +218,14 @@ function IdentityPanel({ state, mode }) {
             <dt>登录身份</dt>
             <dd>{user.userName}</dd>
           </div>
+          <button
+            type="button"
+            className="binding-switch-identity"
+            onClick={onSwitchIdentity}
+            disabled={pending}
+          >
+            {pending ? "正在切换…" : "切换账号或学校"}
+          </button>
         </div>
       ) : (
         <p>
@@ -170,7 +235,7 @@ function IdentityPanel({ state, mode }) {
         </p>
       )}
       <p className="binding-safety-note">
-        绑定完成后，录音将按当前学校和教室归属上传；本机设备编号保持不变。
+        绑定完成后，录音将按当前学校和教室归属上传。
       </p>
     </aside>
   );
@@ -198,6 +263,10 @@ function StepContent({
   onSelectGrade,
   onConfirm,
   onClose,
+  onSwitchIdentity,
+  onReplace,
+  replacementRequired,
+  terminalPending,
 }) {
   if (state.phase === "creating") {
     return (
@@ -254,6 +323,7 @@ function StepContent({
         state={state}
         onBack={() => dispatch({ type: "BACK" })}
         onConfirm={onConfirm}
+        replacementRequired={replacementRequired}
       />
     );
   if (state.phase === "confirmed")
@@ -268,8 +338,17 @@ function StepContent({
   return (
     <ErrorStep
       error={state.error}
-      onRestart={() => dispatch({ type: "RESTART" })}
+      context={{
+        deviceNo: state.session?.deviceNo,
+        className: state.selection.className,
+        classroom: state.selection.classroom,
+      }}
+      onRestart={onSwitchIdentity}
+      onSwitchIdentity={onSwitchIdentity}
+      onReselect={() => dispatch({ type: "RETURN_TO_SELECTION" })}
+      onReplace={onReplace}
       onClose={onClose}
+      pending={terminalPending}
     />
   );
 }
@@ -383,7 +462,7 @@ function PublicClassroomStep({ onBack, onContinue }) {
   );
 }
 
-function ReviewStep({ state, onBack, onConfirm }) {
+function ReviewStep({ state, onBack, onConfirm, replacementRequired }) {
   const busy = state.phase === "confirming";
   const classroom =
     state.selection.bindType === 1
@@ -420,7 +499,13 @@ function ReviewStep({ state, onBack, onConfirm }) {
         disabled={busy}
       >
         {busy ? <LoaderCircle className="spin" /> : <CheckCircle2 />}
-        {busy ? "正在绑定…" : "确认并应用绑定"}
+        {busy
+          ? replacementRequired
+            ? "正在换绑…"
+            : "正在绑定…"
+          : replacementRequired
+            ? "确认换绑"
+            : "确认并应用绑定"}
       </button>
     </div>
   );
@@ -444,20 +529,84 @@ function TerminalStep({ icon, title, detail, success }) {
     </div>
   );
 }
-function ErrorStep({ error, onRestart, onClose }) {
+function ErrorStep({
+  error,
+  context,
+  onRestart,
+  onSwitchIdentity,
+  onReselect,
+  onReplace,
+  onClose,
+  pending,
+}) {
+  const view = bindingErrorView(error, context);
+  const primaryAction = {
+    close: onClose,
+    restart: onRestart,
+    switch_identity: onSwitchIdentity,
+    replace: onReplace,
+  }[view.primary];
+  const primaryLabel = {
+    close: "关闭",
+    restart: "重新开始",
+    switch_identity:
+      view.title === "未找到可用账号"
+        ? "切换账号"
+        : view.title === "当前学校不可用"
+          ? "重新选择学校"
+          : "重新登录",
+    replace: view.target ? `换绑到${view.target}` : "确认换绑",
+  }[view.primary];
   return (
     <div className="binding-copy terminal-step error">
       <div>
         <X />
       </div>
-      <h3>绑定没有完成</h3>
-      <p>{friendlyError(error)}</p>
+      <h3>{view.title}</h3>
+      <p>{view.detail}</p>
+      <p>{view.guidance}</p>
+      {view.deviceNo ? (
+        <dl className="binding-error-reference">
+          <div>
+            <dt>设备编号</dt>
+            <dd>{view.deviceNo}</dd>
+          </div>
+          {view.problemCode ? (
+            <div>
+              <dt>问题代码</dt>
+              <dd>{view.problemCode}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
       <div className="terminal-actions">
-        <button className="quiet-action" onClick={onClose}>
-          关闭
-        </button>
-        <button className="binding-confirm-button compact" onClick={onRestart}>
-          重新开始
+        {view.secondary === "reselect" ? (
+          <button
+            className="quiet-action"
+            onClick={onReselect}
+            disabled={Boolean(pending)}
+          >
+            重新选择
+          </button>
+        ) : view.primary !== "close" ? (
+          <button
+            className="quiet-action"
+            onClick={onClose}
+            disabled={Boolean(pending)}
+          >
+            关闭
+          </button>
+        ) : null}
+        <button
+          className="binding-confirm-button compact"
+          onClick={primaryAction}
+          disabled={Boolean(pending)}
+        >
+          {pending === "replace"
+            ? "正在换绑…"
+            : pending
+              ? "正在处理…"
+              : primaryLabel}
         </button>
       </div>
     </div>
@@ -477,13 +626,11 @@ function fail(dispatch, error) {
     error: {
       code: error?.code || "",
       message: error?.message || String(error),
+      businessCode: error?.businessCode ?? null,
+      operation: error?.operation || "",
+      unbound: Boolean(error?.unbound),
     },
   });
-}
-function friendlyError(error) {
-  if (error?.code === "PASSPORT_LOGIN_CANCELLED")
-    return "Passport 登录窗口已关闭，请重新开始。";
-  return error?.message || "请检查网络和录音服务状态后重试。";
 }
 function shortDevice(value) {
   const text = String(value || "正在识别…");

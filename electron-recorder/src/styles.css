@@ -1593,7 +1593,7 @@ h1 {
   border-bottom: 1px solid #e7edea;
 }
 
-.binding-review div:last-child {
+.binding-review div:last-of-type {
   border-bottom: 0;
 }
 .binding-review dt {
@@ -1604,6 +1604,63 @@ h1 {
 .binding-review dd {
   margin: 0;
   color: #17282e;
+  font-weight: 900;
+}
+
+.binding-switch-identity {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-top: 1px solid #e7edea;
+  background: #f7faf8;
+  color: #2f6f46;
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.binding-switch-identity:hover {
+  background: #edf6f0;
+}
+
+.binding-switch-identity:disabled {
+  color: #83918b;
+  cursor: wait;
+}
+
+.binding-error-reference {
+  width: min(100%, 440px);
+  margin: 18px 0 0;
+  border: 1px solid #efc0bb;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fffafa;
+  text-align: left;
+}
+
+.binding-error-reference div {
+  min-height: 44px;
+  padding: 9px 14px;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid #f3d9d6;
+}
+
+.binding-error-reference div:last-child {
+  border-bottom: 0;
+}
+
+.binding-error-reference dt {
+  color: #8e5e59;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.binding-error-reference dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #642a25;
   font-weight: 900;
 }
 
@@ -2005,6 +2062,43 @@ body:not(.float-mode) {
   border-color: #efc0bb;
   color: #c32e24;
   background: #f8ebea;
+}
+
+.home-support-reference {
+  width: min(100%, 560px);
+  margin: 14px 0 0;
+  border: 1px solid #efc0bb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fffafa;
+}
+
+.home-support-reference div {
+  min-height: 40px;
+  padding: 8px 13px;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #f3d9d6;
+}
+
+.home-support-reference div:last-child {
+  border-bottom: 0;
+}
+
+.home-support-reference dt {
+  color: #8e5e59;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.home-support-reference dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #642a25;
+  font-size: 14px;
+  font-weight: 900;
 }
 
 .home-actions {

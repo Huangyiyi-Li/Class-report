@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createBindingService } from "./binding-service.js";
+import {
+  buildSchoolDeviceNo,
+  createBindingService,
+} from "./binding-service.js";
 import { PRODUCTION_API_ROUTES, TEST_API_ROUTES } from "./api-routes.js";
 
 const NOW = Date.parse("2026-07-15T08:00:00.000Z");
@@ -297,9 +300,78 @@ test("remote binding reports the backend business message when code is not succe
     }),
     {
       code: "BINDING_REJECTED",
+      businessCode: 5,
+      operation: "bind",
       message: "设备已绑定其他的班级或者教室",
     }
   );
+});
+
+test("school-scoped device numbers are created after Passport selects the school", async () => {
+  assert.equal(
+    buildSchoolDeviceNo("aa-bb-cc-dd-ee-ff", 9001),
+    "AABBCCDDEEFF-9001"
+  );
+  const service = createBindingService({
+    mode: "remote",
+    createId: () => "passport-session-1",
+    authenticate: async () => ({
+      user: {
+        schoolId: 9001,
+        schoolName: "众享中学",
+        userName: "测试教师",
+        userType: 0,
+      },
+      post: async () => ({ content: "success" }),
+    }),
+  });
+  const session = await service.createSession({
+    deviceNo: "AA:BB:CC:DD:EE:FF",
+    scopeDeviceNo: true,
+  });
+  assert.equal(session.deviceNo, "AABBCCDDEEFF-9001");
+});
+
+test("remote replacement unbinds before binding and reports partial completion", async () => {
+  const requests = [];
+  let bindingResponse = { code: 5, msg: "班级不属于当前学校" };
+  const service = createBindingService({
+    mode: "remote",
+    createId: () => "passport-session-1",
+    authenticate: async () => ({
+      user: {
+        schoolId: 9001,
+        schoolName: "众享中学",
+        userName: "测试教师",
+        userType: 0,
+      },
+      post: async (url, payload) => {
+        requests.push([url, payload]);
+        return url.includes("unbind")
+          ? { content: "success" }
+          : bindingResponse;
+      },
+    }),
+  });
+  await service.createSession({ deviceNo: "AABBCCDDEEFF-9001" });
+  const selection = { bindType: 1, classId: 701, className: "七年级一班" };
+
+  await assert.rejects(
+    service.replaceBinding("passport-session-1", selection),
+    {
+      code: "BINDING_REJECTED",
+      businessCode: 5,
+      operation: "bind",
+      unbound: true,
+    }
+  );
+  assert.equal(requests.length, 2);
+
+  bindingResponse = { content: "success" };
+  const binding = await service.replaceBinding("passport-session-1", selection);
+  assert.equal(binding.classId, "701");
+  assert.equal(requests.length, 3);
+  assert.match(requests[2][0], /bind/);
 });
 
 test("remote binding never treats a business error code as SimpleSuccessVO", async () => {

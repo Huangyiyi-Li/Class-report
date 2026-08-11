@@ -63,7 +63,7 @@ export function createPassportAuthenticator({
     throw passportError("PASSPORT_NOT_CONFIGURED", "Passport 登录窗口尚未配置");
   }
 
-  return () =>
+  const authenticate = () =>
     new Promise((resolve, reject) => {
       const window = createWindow();
       let completed = false;
@@ -103,6 +103,19 @@ export function createPassportAuthenticator({
       });
       window.loadURL(loginUrl);
     });
+  authenticate.reset = () => resetPassportSession(browserSession);
+  return authenticate;
+}
+
+export async function resetPassportSession(browserSession) {
+  if (typeof browserSession?.clearStorageData === "function") {
+    await browserSession.clearStorageData({
+      storages: ["cookies", "localstorage", "sessionstorage"],
+    });
+  }
+  if (typeof browserSession?.clearAuthCache === "function") {
+    await browserSession.clearAuthCache();
+  }
 }
 
 async function loadCurrentUser(browserSession, url) {
