@@ -1,5 +1,16 @@
 const { contextBridge, ipcRenderer } = require("electron");
-const { unwrapResult } = require("./ipc-result.cjs");
+
+// Sandboxed Electron preloads cannot require local modules. Keep this small
+// decoder in the preload while the matching encoder remains in ipc-result.cjs.
+const IPC_RESULT_MARKER = "classroom-recorder-ipc-result";
+
+const unwrapResult = (result) => {
+  if (result?.marker !== IPC_RESULT_MARKER) return result;
+  if (result.ok) return result.value;
+  const error = new Error(result.error?.message || "操作没有完成");
+  Object.assign(error, result.error || {});
+  throw error;
+};
 
 const invokeStructured = (channel, ...args) =>
   ipcRenderer.invoke(channel, ...args).then(unwrapResult);

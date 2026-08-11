@@ -32,6 +32,16 @@ test("packages every relative module imported by the Electron main process", () 
   verifyModule(pkg.main);
 });
 
+test("sandboxed preload does not require local CommonJS modules", () => {
+  const preload = readFileSync(path.join(root, "src/preload.cjs"), "utf8");
+  assert.doesNotMatch(
+    preload,
+    /require\(["']\.\//,
+    "Electron sandboxed preload can only require its supported built-ins"
+  );
+  assert.match(preload, /classroom-recorder-ipc-result/);
+});
+
 test("declares packaged worker and Windows FFmpeg resources", () => {
   assert.ok(
     pkg.build.extraResources.some(

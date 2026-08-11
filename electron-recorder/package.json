@@ -1,6 +1,6 @@
 {
   "name": "classroom-recorder-electron",
-  "version": "0.2.0-codex.16",
+  "version": "0.2.0-codex.17",
   "private": true,
   "description": "课堂录音采集助手 Windows 客户端",
   "author": "XXT",
