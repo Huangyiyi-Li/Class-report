@@ -70,6 +70,11 @@ test("assisted installer defaults to a fixed non-system drive and blocks system-
   assert.match(installer, /\$R9\\\$\{APP_FILENAME\}/);
   assert.match(installer, /!macro customPageAfterChangeDir/);
   assert.match(installer, /录音客户端不能安装在 Windows 系统盘/);
+  assert.match(
+    installer,
+    /!ifndef BUILD_UNINSTALLER[\s\S]*!macro customInit[\s\S]*!endif/,
+    "installer-only macros must not compile while electron-builder creates its uninstaller"
+  );
 });
 
 test("default test runs repository gate and declares supported Node versions", () => {

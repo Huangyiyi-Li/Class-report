@@ -1,6 +1,8 @@
 !include "LogicLib.nsh"
 !include "nsDialogs.nsh"
 
+!ifndef BUILD_UNINSTALLER
+
 !macro TryFixedInstallDrive LETTER
   ${If} "$R9" == ""
     System::Call 'kernel32::GetDriveTypeW(w "${LETTER}:\\") i .r0'
@@ -76,3 +78,5 @@ FunctionEnd
 !macro customPageAfterChangeDir
   Page custom NonSystemDrivePageCreate NonSystemDrivePageLeave
 !macroend
+
+!endif
