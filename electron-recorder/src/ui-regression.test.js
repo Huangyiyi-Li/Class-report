@@ -8,6 +8,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const wizard = readFileSync(path.join(root, "binding-wizard.jsx"), "utf8");
 const renderer = readFileSync(path.join(root, "renderer.jsx"), "utf8");
 const styles = readFileSync(path.join(root, "styles.css"), "utf8");
+const main = readFileSync(path.join(root, "main.js"), "utf8");
 
 test("public classroom name uses a dedicated accessible field and specific action", () => {
   assert.match(wizard, /className="binding-field"/);
@@ -26,6 +27,13 @@ test("binding wizard uses one focused task column without the decorative device 
   assert.doesNotMatch(wizard, /className="qr-frame"/);
   assert.doesNotMatch(styles, /PAIR \/ 01/);
   assert.doesNotMatch(wizard, /创建哪种教室/);
+});
+
+test("packaged smoke checks authenticated binding context after the binding step is ready", () => {
+  assert.match(
+    main,
+    /const bindingTypeStep = await waitFor\('\[data-binding-step="bindingType"\]'\);[\s\S]*const contextBar = wizard\?\.querySelector\('\.binding-context-bar'\);/
+  );
 });
 
 test("settings use a single readable flow and preserve compact window rules", () => {

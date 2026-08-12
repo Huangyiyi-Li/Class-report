@@ -653,10 +653,10 @@ async function runSmokeTest() {
           const openButton = await waitFor('[data-testid="open-binding"]');
           openButton?.click();
           const wizard = await waitFor('[data-testid="binding-wizard"]');
+          const bindingTypeStep = await waitFor('[data-binding-step="bindingType"]');
           const contextBar = wizard?.querySelector('.binding-context-bar');
           const progress = wizard?.querySelector('.binding-step-track');
           const mockBadge = Array.from(wizard?.querySelectorAll('*') || []).some((node) => node.textContent?.trim() === '模拟数据');
-          const bindingTypeStep = await waitFor('[data-binding-step="bindingType"]');
           const geometry = Array.from(wizard?.querySelectorAll('.binding-modal, .binding-workbench, .binding-context-bar, .binding-step-panel') || [])
             .map((node) => ({ className: node.className, ...node.getBoundingClientRect().toJSON() }));
           const overflowing = geometry.filter((rect) => rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1);
