@@ -3,9 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   AlertTriangle,
   ChevronUp,
-  Cloud,
   FolderOpen,
-  HardDrive,
   Mic,
   Pause,
   Play,
@@ -17,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { createRuntimeState } from "./runtime-state.js";
-import { getHealthMeta, getRecordingMeta, getUploadMeta } from "./state.js";
+import { getRecordingMeta } from "./state.js";
 import { buildWorkerSettingsPatch, saveSettings } from "./settings-save.js";
 import { beginFullRebinding, canRebind } from "./binding-flow.js";
 import { BindingWizard } from "./binding-wizard.jsx";
@@ -152,6 +150,20 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
           </span>
           <strong>课堂录音采集助手</strong>
         </div>
+        <div
+          className="desktop-location"
+          title={binding ? formatBinding(binding) : "尚未绑定教室"}
+        >
+          {binding ? (
+            <>
+              <span>{binding.schoolName || "学校未命名"}</span>
+              <i>·</i>
+              <strong>{binding.classroom}</strong>
+            </>
+          ) : (
+            <strong>尚未绑定教室</strong>
+          )}
+        </div>
         <div className="window-tools">
           <button
             className="header-action"
@@ -170,16 +182,6 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
         </div>
       </header>
 
-      {binding ? (
-        <section className="location-strip">
-          <span>当前教室</span>
-          <strong>
-            {binding.schoolName || "学校未命名"} · {binding.classroom}
-          </strong>
-          <em>{binding.bindType === 2 ? "公共教室" : "班级教室"}</em>
-        </section>
-      ) : null}
-
       {!shell ? (
         <section className="inline-notice danger">
           <AlertTriangle size={18} />
@@ -190,9 +192,14 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
       <section className={`home-state tone-${home.tone}`}>
         <div className="state-heading">
           <span className="state-symbol">{home.icon}</span>
-          <div>
+          <div className="state-copy">
             <h1>{home.title}</h1>
-            <p>{home.description}</p>
+            {runtime.recording === "recording" ? (
+              <strong className="recording-elapsed">
+                {formatElapsed(snapshot.recordingStartedAt, clockNow)}
+              </strong>
+            ) : null}
+            {home.description ? <p>{home.description}</p> : null}
           </div>
         </div>
 
@@ -315,20 +322,6 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
             </button>
           ) : null}
         </div>
-        {runtime.recording === "recording" ? (
-          <div className="recording-metrics" aria-label="本次录音进度">
-            <span>
-              录音时长
-              <strong>
-                {formatElapsed(snapshot.recordingStartedAt, clockNow)}
-              </strong>
-            </span>
-            <span>
-              已形成
-              <strong>{Number(snapshot.recordingSegments || 0)}</strong> 段
-            </span>
-          </div>
-        ) : null}
         {actionError ? (
           <div className="inline-notice danger" role="alert">
             <AlertTriangle size={18} />
@@ -337,13 +330,13 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
         ) : null}
       </section>
 
-      <footer className={`upload-footer ${uploadAttention ? "attention" : ""}`}>
-        <div>
-          <UploadCloud size={17} />
-          <span>{uploadSummary}</span>
-          {snapshot.bindingServiceMode === "mock" ? <em>模拟数据</em> : null}
-        </div>
-        {uploadAttention ? (
+      {uploadAttention ? (
+        <footer className="upload-footer attention">
+          <div>
+            <UploadCloud size={18} />
+            <span>{uploadSummary}</span>
+            {snapshot.bindingServiceMode === "mock" ? <em>模拟数据</em> : null}
+          </div>
           <button
             className="footer-retry"
             disabled={Boolean(actionPending || snapshot.manualFlushActive)}
@@ -355,8 +348,8 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
               ? "正在重试…"
               : "立即重试"}
           </button>
-        ) : null}
-      </footer>
+        </footer>
+      ) : null}
       {settingsOpen ? (
         <SettingsModal
           snapshot={snapshot}
@@ -391,7 +384,7 @@ function getHomeState(snapshot, runtime) {
       tone: "idle",
       icon: <Mic size={29} />,
       title: "尚未绑定教室",
-      description: "登录并选择教室后，录音服务会立即启用。",
+      description: "登录并选择学校和教室后，才能开始录音。",
       primary: "bind",
     };
   }
@@ -402,9 +395,9 @@ function getHomeState(snapshot, runtime) {
     return {
       tone: "danger",
       icon: <Mic size={29} />,
-      title: "暂不可录音",
-      description: "保存的麦克风当前不可用。",
-      notice: "录音已停止。请在设置中重新选择麦克风后再开始录音。",
+      title: "无法录音",
+      description: "当前选择的麦克风不可用。",
+      notice: "请打开设置，选择其他麦克风后重新检测。",
       noticeTone: "danger",
       primary: "settings",
     };
@@ -413,8 +406,7 @@ function getHomeState(snapshot, runtime) {
     return {
       tone: "recording",
       icon: <span className="live-dot" />,
-      title: "录音中",
-      description: "采集服务正在持续写入本地文件。",
+      title: "正在录音",
       primary: "pause",
       showStop: true,
     };
@@ -423,9 +415,8 @@ function getHomeState(snapshot, runtime) {
     return {
       tone: "paused",
       icon: <Pause size={29} />,
-      title: "已暂停",
-      description: "采集已暂停，已写入的文件仍会继续补传。",
-      notice: "当前没有新的音频写入，请记得在下课前继续录音。",
+      title: "录音已暂停",
+      description: "暂停期间不会录制声音。",
       primary: "start",
       showStop: true,
     };
@@ -435,7 +426,7 @@ function getHomeState(snapshot, runtime) {
       tone: "preparing",
       icon: <RefreshCcw size={29} />,
       title: "正在准备录音",
-      description: "采集服务正在启动，请稍候，不要重复操作。",
+      description: "正在检查麦克风和录音保存位置，请稍候。",
     };
   }
   if (
@@ -446,14 +437,14 @@ function getHomeState(snapshot, runtime) {
       tone: "preparing",
       icon: <RefreshCcw size={29} />,
       title: "正在准备录音",
-      description: "录音服务正在启动，请稍候。",
+      description: "正在检查录音条件，请稍候。",
     };
   }
   if (["blocked", "error"].includes(runtime.health)) {
     return {
       tone: "danger",
       icon: <AlertTriangle size={29} />,
-      title: "暂时无法确认录音状态",
+      title: "当前无法录音",
       description: snapshot.latestError || "录音服务暂时不可用。",
       notice: "客户端正在尝试恢复连接，界面会在服务恢复后自动更新。",
       primary: "settings",
@@ -462,8 +453,8 @@ function getHomeState(snapshot, runtime) {
   return {
     tone: "idle",
     icon: <Mic size={29} />,
-    title: "未开始录音",
-    description: "录音由本机采集服务负责，音频会先安全写入本地。",
+    title: "录音尚未开始",
+    description: "需要录制时，请点击“开始录音”。",
     primary: "start",
   };
 }
@@ -602,12 +593,12 @@ function SettingsModal({
         className="settings-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="维护设置"
+        aria-label="设置"
       >
         <header className="modal-header">
           <div>
-            <p className="eyebrow">维护设置</p>
-            <h2>运行设置与诊断</h2>
+            <h2>设置</h2>
+            <p>调整这台电脑的录音和运行方式</p>
           </div>
           <button
             className="icon-button"
@@ -618,12 +609,35 @@ function SettingsModal({
           </button>
         </header>
         <div className="settings-scroll">
-          <div className="settings-grid">
-            <section className="settings-section">
-              <h3>
-                <Settings size={21} />
-                录音设置
-              </h3>
+          <section className="settings-section current-device-section">
+            <h3>当前设备</h3>
+            <div className="device-identity-summary">
+              <span className="device-identity-icon">
+                <Mic size={21} />
+              </span>
+              <div>
+                <strong>
+                  {(snapshot.binding || runtime.binding)?.schoolName ||
+                    "尚未绑定学校"}
+                </strong>
+                <p>
+                  {(snapshot.binding || runtime.binding)?.classroom ||
+                    "完成绑定后才能开始录音"}
+                </p>
+              </div>
+              <span
+                className={`device-state tone-${getRecordingMeta(runtime.recording).tone}`}
+              >
+                {formatRecordingStatus(runtime.recording)}
+              </span>
+            </div>
+          </section>
+          <div className="settings-flow">
+            <section className="settings-section recording-settings-section">
+              <div className="settings-section-heading">
+                <h3>录音</h3>
+                <p>影响日常录音的设置</p>
+              </div>
               <Toggle
                 title="开机自启动"
                 description="电脑启动后自动运行客户端"
@@ -687,26 +701,23 @@ function SettingsModal({
                 title="开机自启状态"
                 value={formatAutoLaunchStatus(snapshot.autoLaunchStatus)}
               />
-              <SettingRow
-                title="设备归属"
-                value={formatBinding(snapshot.binding || runtime.binding)}
-              />
-              {snapshot.binding || runtime.binding ? (
-                <div className="device-management">
-                  <div>
-                    <strong>设备管理</strong>
-                    <p>更换学校、班级或教室时，需要解除当前绑定并重新登录。</p>
-                  </div>
-                  <button
-                    className="danger-action compact"
-                    onClick={onFullRebind}
-                    disabled={!rebindAllowed || rebindPending}
-                    title={rebindAllowed ? "" : "请先停止录音"}
-                  >
-                    {rebindPending ? "正在解除绑定…" : "解绑并重新绑定"}
-                  </button>
+              <div className="settings-control-row">
+                <div>
+                  <strong>录音悬浮窗</strong>
+                  <p>显示当前录音状态，点击可打开主窗口</p>
                 </div>
-              ) : null}
+                <button
+                  className="quiet-action compact"
+                  onClick={() => shell?.showFloat?.()}
+                >
+                  显示录音悬浮窗
+                </button>
+              </div>
+            </section>
+            <section className="settings-section software-settings-section">
+              <div className="settings-section-heading">
+                <h3>软件</h3>
+              </div>
               <SettingRow
                 title="当前版本"
                 value={`v${snapshot.appVersion || "--"}`}
@@ -717,153 +728,162 @@ function SettingsModal({
                 onError={setSaveError}
               />
             </section>
-            <section className="settings-section">
-              <h3>
-                <HardDrive size={21} />
-                运行诊断
-              </h3>
-              <SettingRow
-                title="设备认证"
-                value={formatDiagnosticStatus(
-                  snapshot.uploadDiagnostics?.deviceAuth
-                )}
-              />
-              <SettingRow
-                title="上传凭证"
-                value={formatDiagnosticStatus(
-                  snapshot.uploadDiagnostics?.ossCredentials
-                )}
-              />
-              <SettingRow
-                title="OSS 目标"
-                value={formatOssTarget(snapshot.uploadDiagnostics)}
-              />
-              <SettingRow
-                title="等待上传"
-                value={`${countQueueStatuses(snapshot.queueDiagnostics, [
-                  "pending",
-                  "uploading",
-                  "failed",
-                ])} 段`}
-              />
-              <SettingRow
-                title="已上传，等待登记"
-                value={`${countQueueStatuses(snapshot.queueDiagnostics, [
-                  "uploaded",
-                  "registering",
-                  "metadata_failed",
-                ])} 段`}
-              />
-              {Number(snapshot.localMissing || 0) > 0 ? (
+            <details className="advanced-settings-section">
+              <summary>
+                <span>
+                  <strong>高级设置</strong>
+                  <small>供部署和技术排查使用</small>
+                </span>
+              </summary>
+              <section className="advanced-diagnostics">
+                <div className="settings-section-heading">
+                  <h3>诊断信息</h3>
+                  <p>仅在排查异常时查看</p>
+                </div>
                 <SettingRow
-                  title="本地文件已缺失"
-                  value={`${snapshot.localMissing} 段（不再重试）`}
+                  title="设备认证"
+                  value={formatDiagnosticStatus(
+                    snapshot.uploadDiagnostics?.deviceAuth
+                  )}
                 />
-              ) : null}
-              <SettingRow
-                title="已完成队列"
-                value={`${snapshot.completed ?? "--"} 段`}
-              />
-              <SettingRow
-                title="磁盘剩余"
-                value={formatBytes(snapshot.freeDiskBytes)}
-              />
-              <SettingRow
-                title="最近错误"
-                value={
-                  snapshot.latestUploadError ||
-                  snapshot.uploadDetail?.error ||
-                  snapshot.uploadDiagnostics?.lastError ||
-                  snapshot.latestError ||
-                  "无"
-                }
-              />
-              <SettingRow
-                title="下次自动重试"
-                value={formatRetryAt(snapshot.uploadDetail?.retryAt)}
-              />
-              <button
-                className="secondary-action compact"
-                onClick={() => shell?.openDataDir?.()}
-              >
-                <FolderOpen size={18} />
-                打开本地文件夹
-              </button>
-              <button
-                className="quiet-action compact"
-                onClick={() => shell?.exportDiagnostics?.()}
-              >
-                导出诊断信息
-              </button>
-            </section>
-          </div>
-          <details className="diagnostics-panel">
-            <summary>最近录音分段处理记录</summary>
-            <p>录音：{runtime.recording}</p>
-            <p>上传：{runtime.upload}</p>
-            <p>健康：{runtime.health}</p>
-            <div className="queue-diagnostic-list">
-              {(snapshot.queueDiagnostics?.recent || []).length ? (
-                snapshot.queueDiagnostics.recent.map((item) => (
-                  <div
-                    className="queue-diagnostic-item"
-                    key={`${item.segmentIndex}-${item.fileName}`}
-                  >
-                    <strong>{item.fileName}</strong>
-                    <span>{formatQueueStatus(item.status)}</span>
-                    <small>
-                      {item.lastError ||
-                        (item.fileExists ? "本地文件可用" : "本地文件不存在")}
-                    </small>
-                  </div>
-                ))
-              ) : (
-                <p>暂无分段处理记录</p>
-              )}
-            </div>
-          </details>
-          <section className="api-routes-section">
-            <div className="api-routes-heading">
-              <div>
-                <h3>接口路由</h3>
-                <p>
-                  当前环境：
-                  {safeApiEnvironment(form.apiRoutes) === "test"
-                    ? "测试环境"
-                    : safeApiEnvironment(form.apiRoutes) === "production"
-                      ? "正式环境"
-                      : "自定义"}
-                </p>
-              </div>
-              <div className="route-presets">
-                <button
-                  className="home-secondary"
-                  onClick={() => update("apiRoutes", TEST_API_ROUTES)}
-                >
-                  使用测试环境
-                </button>
-                <button
-                  className="home-secondary"
-                  onClick={() => update("apiRoutes", PRODUCTION_API_ROUTES)}
-                >
-                  使用正式环境
-                </button>
-              </div>
-            </div>
-            <div className="api-route-list">
-              {API_ROUTE_DEFINITIONS.map((route) => (
-                <label key={route.key}>
-                  <span>{route.label}</span>
-                  <input
-                    value={form.apiRoutes[route.key] || ""}
-                    onChange={(event) =>
-                      updateRoute(route.key, event.target.value)
-                    }
+                <SettingRow
+                  title="上传凭证"
+                  value={formatDiagnosticStatus(
+                    snapshot.uploadDiagnostics?.ossCredentials
+                  )}
+                />
+                <SettingRow
+                  title="OSS 目标"
+                  value={formatOssTarget(snapshot.uploadDiagnostics)}
+                />
+                <SettingRow
+                  title="等待上传"
+                  value={`${countQueueStatuses(snapshot.queueDiagnostics, [
+                    "pending",
+                    "uploading",
+                    "failed",
+                  ])} 段`}
+                />
+                <SettingRow
+                  title="已上传，等待登记"
+                  value={`${countQueueStatuses(snapshot.queueDiagnostics, [
+                    "uploaded",
+                    "registering",
+                    "metadata_failed",
+                  ])} 段`}
+                />
+                {Number(snapshot.localMissing || 0) > 0 ? (
+                  <SettingRow
+                    title="本地文件已缺失"
+                    value={`${snapshot.localMissing} 段（不再重试）`}
                   />
-                </label>
-              ))}
-            </div>
-          </section>
+                ) : null}
+                <SettingRow
+                  title="已完成队列"
+                  value={`${snapshot.completed ?? "--"} 段`}
+                />
+                <SettingRow
+                  title="磁盘剩余"
+                  value={formatBytes(snapshot.freeDiskBytes)}
+                />
+                <SettingRow
+                  title="最近错误"
+                  value={
+                    snapshot.latestUploadError ||
+                    snapshot.uploadDetail?.error ||
+                    snapshot.uploadDiagnostics?.lastError ||
+                    snapshot.latestError ||
+                    "无"
+                  }
+                />
+                <SettingRow
+                  title="下次自动重试"
+                  value={formatRetryAt(snapshot.uploadDetail?.retryAt)}
+                />
+                <button
+                  className="secondary-action compact"
+                  onClick={() => shell?.openDataDir?.()}
+                >
+                  <FolderOpen size={18} />
+                  打开本地文件夹
+                </button>
+                <button
+                  className="quiet-action compact"
+                  onClick={() => shell?.exportDiagnostics?.()}
+                >
+                  导出诊断信息
+                </button>
+              </section>
+              <section className="api-routes-section">
+                <div className="api-routes-heading">
+                  <div>
+                    <h3>接口路由</h3>
+                    <p>
+                      当前环境：
+                      {safeApiEnvironment(form.apiRoutes) === "test"
+                        ? "测试环境"
+                        : safeApiEnvironment(form.apiRoutes) === "production"
+                          ? "正式环境"
+                          : "自定义"}
+                    </p>
+                  </div>
+                  <div className="route-presets">
+                    <button
+                      className="home-secondary"
+                      onClick={() => update("apiRoutes", TEST_API_ROUTES)}
+                    >
+                      使用测试环境
+                    </button>
+                    <button
+                      className="home-secondary"
+                      onClick={() => update("apiRoutes", PRODUCTION_API_ROUTES)}
+                    >
+                      使用正式环境
+                    </button>
+                  </div>
+                </div>
+                <div className="api-route-list">
+                  {API_ROUTE_DEFINITIONS.map((route) => (
+                    <label key={route.key}>
+                      <span>{route.label}</span>
+                      <input
+                        value={form.apiRoutes[route.key] || ""}
+                        onChange={(event) =>
+                          updateRoute(route.key, event.target.value)
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              </section>
+            </details>
+          </div>
+          {snapshot.binding || runtime.binding ? (
+            <section className="settings-section device-management-section">
+              <div className="settings-section-heading">
+                <h3>设备管理</h3>
+                <p>更换学校、班级或教室</p>
+              </div>
+              <div className="device-management">
+                <div>
+                  <strong>解除当前设备绑定</strong>
+                  <p>
+                    {rebindAllowed
+                      ? "解除后，需要重新登录并选择学校和教室。"
+                      : "当前录音尚未结束。请先停止录音，再解除设备绑定。"}
+                  </p>
+                </div>
+                <button
+                  className="danger-action compact"
+                  onClick={onFullRebind}
+                  disabled={!rebindAllowed || rebindPending}
+                  title={rebindAllowed ? "" : "请先停止录音，再解除设备绑定"}
+                >
+                  {rebindPending ? "正在解除绑定…" : "解绑并重新绑定"}
+                </button>
+              </div>
+            </section>
+          ) : null}
         </div>
         <footer className="modal-footer">
           {saveError && (
@@ -871,10 +891,10 @@ function SettingsModal({
               {saveError}
             </p>
           )}
-          <button className="quiet-action" onClick={() => shell?.showFloat?.()}>
-            显示悬浮窗
+          <button className="quiet-action" onClick={onClose}>
+            取消
           </button>
-          <button className="secondary-action compact" onClick={save}>
+          <button className="home-primary settings-save-action" onClick={save}>
             保存设置
           </button>
         </footer>
@@ -979,23 +999,6 @@ function UpdateSetting({ update, recording, onError }) {
   );
 }
 
-function StatusPill({ icon, label, tone }) {
-  return (
-    <div className={`status-pill ${tone}`}>
-      {icon}
-      <span>{label}</span>
-    </div>
-  );
-}
-function InfoTile({ icon, title, value, tone }) {
-  return (
-    <div className={`info-tile ${tone}`}>
-      {React.cloneElement(icon, { size: 25 })}
-      <span>{title}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
 function formatBinding(binding) {
   if (!binding) return "设备未绑定";
   return (
@@ -1015,6 +1018,19 @@ function formatAutoLaunchStatus(value) {
   return value.actual === null
     ? value.error || "未验证"
     : `未验证（实际${value.actual ? "已开启" : "未开启"}）`;
+}
+
+function formatRecordingStatus(value) {
+  const labels = {
+    recording: "正在录音",
+    paused: "录音已暂停",
+    starting: "正在准备",
+    idle: "录音尚未开始",
+    microphone_unavailable: "无法录音",
+    recording_error: "无法录音",
+    error: "无法录音",
+  };
+  return labels[value] || "状态未知";
 }
 
 function formatElapsed(startedAt, now = Date.now()) {
@@ -1082,20 +1098,6 @@ function formatRetryAt(value) {
   const time = Number(value);
   if (!Number.isFinite(time) || time <= 0) return "无等待中的重试";
   return new Date(time).toLocaleString("zh-CN", { hour12: false });
-}
-
-function formatQueueStatus(status) {
-  const labels = {
-    pending: "等待上传",
-    uploading: "正在上传",
-    failed: "上传失败，等待重试",
-    uploaded: "已上传，等待登记",
-    registering: "正在登记",
-    metadata_failed: "登记失败，等待重试",
-    completed: "处理完成",
-    local_missing: "本地文件不存在",
-  };
-  return labels[status] || status || "状态未知";
 }
 
 function safeApiEnvironment(routes) {

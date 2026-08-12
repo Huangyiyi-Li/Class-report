@@ -17,14 +17,11 @@ test("public classroom name uses a dedicated accessible field and specific actio
   assert.match(styles, /\.binding-field input\s*\{/);
 });
 
-test("settings diagnostics preserve readable columns and stack on compact windows", () => {
+test("settings use a single readable flow and preserve compact window rules", () => {
+  assert.match(styles, /\.settings-flow\s*\{[^}]*display:\s*block/s);
   assert.match(
     styles,
-    /\.setting-row\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/s
-  );
-  assert.match(
-    styles,
-    /@media \(max-width:\s*760px\)[\s\S]*?\.settings-grid\s*\{\s*grid-template-columns:\s*1fr/s
+    /@media \(max-width:\s*1024px\),\s*\(max-height:\s*680px\)/s
   );
 });
 
@@ -71,10 +68,10 @@ test("settings distinguish missing local files from retryable uploads", () => {
   assert.match(renderer, /snapshot\.localMissing/);
 });
 
-test("recording home shows elapsed time and completed local segments", () => {
-  assert.match(renderer, /录音时长/);
+test("recording home shows elapsed time without exposing segment counters", () => {
+  assert.match(renderer, /recording-elapsed/);
   assert.match(renderer, /recordingStartedAt/);
-  assert.match(renderer, /recordingSegments/);
+  assert.doesNotMatch(renderer, /recordingSegments/);
 });
 
 test("upload diagnostics explain auth credentials cloud upload and registration", () => {
@@ -86,4 +83,22 @@ test("upload diagnostics explain auth credentials cloud upload and registration"
   assert.match(renderer, /uploadDiagnostics/);
   assert.match(renderer, /retryAt/);
   assert.match(renderer, /latestUploadError/);
+});
+
+test("approved home and settings hierarchy keeps actions while hiding technical noise", () => {
+  assert.match(renderer, /className="desktop-location"/);
+  assert.match(renderer, /title: "正在录音"/);
+  assert.match(renderer, /暂停录音/);
+  assert.match(renderer, /停止录音/);
+  assert.match(renderer, /立即重试/);
+  assert.match(renderer, />当前设备</);
+  assert.match(renderer, />录音</);
+  assert.match(renderer, />软件</);
+  assert.match(renderer, />高级设置</);
+  assert.match(renderer, />设备管理</);
+  assert.match(renderer, /显示录音悬浮窗/);
+  assert.doesNotMatch(renderer, /运行设置与诊断/);
+  assert.doesNotMatch(renderer, /采集服务正在持续写入本地文件/);
+  assert.doesNotMatch(renderer, /音频会先安全写入本地/);
+  assert.doesNotMatch(renderer, /最近录音分段处理记录/);
 });
