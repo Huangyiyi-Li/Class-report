@@ -475,7 +475,7 @@ function requireSuccessfulMutation(value, fallback, operation) {
   const success = value?.content === "success";
   if (!success) {
     const businessCode = numericBusinessCode(
-      value?.code ?? value?.status ?? value?.data?.code
+      value?.code ?? value?.data?.code ?? value?.status
     );
     throw bindingError(
       "BINDING_REJECTED",

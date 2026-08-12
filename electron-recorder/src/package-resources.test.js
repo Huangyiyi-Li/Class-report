@@ -76,7 +76,13 @@ test("assisted installer defaults to a fixed non-system drive and blocks system-
     "installer-only macros must not compile while electron-builder creates its uninstaller"
   );
   assert.doesNotMatch(installer, /\$\{isUpdated\}/);
-  assert.match(installer, /IfFileExists "\$INSTDIR\\resources\\app\.asar"/);
+  assert.doesNotMatch(
+    installer,
+    /IfFileExists "\$INSTDIR\\resources\\app\.asar"/,
+    "an existing installation on C: must not bypass non-system drive selection"
+  );
+  assert.match(installer, /StrCpy \$R1 \$WINDIR 2/);
+  assert.match(installer, /StrCpy \$R2 \$INSTDIR 2/);
 });
 
 test("default test runs repository gate and declares supported Node versions", () => {

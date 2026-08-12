@@ -37,6 +37,22 @@ test("binding code 7 offers reselect and replacement for the chosen target", () 
   assert.equal(view.secondary, "reselect");
 });
 
+test("binding conflict message still offers replacement when a gateway drops the business code", () => {
+  const view = bindingErrorView(
+    {
+      code: "BINDING_REJECTED",
+      operation: "bind",
+      businessCode: null,
+      message: "设备已绑定其他的班级或者教室",
+    },
+    { className: "二年级 3 班" }
+  );
+
+  assert.equal(view.title, "设备已绑定其他班级或教室");
+  assert.equal(view.primary, "replace");
+  assert.equal(view.secondary, "reselect");
+});
+
 test("binding codes 8 and 9 return to the incomplete selection", () => {
   for (const [businessCode, expectedTitle] of [
     [8, "尚未选择班级"],

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   bootstrapFirstAvailableRecordingRoot,
+  discoverRecordingDataRoots,
   parseFixedDriveOutput,
   recordingDataRootCandidates,
 } from "./windows-storage.js";
@@ -60,6 +61,24 @@ test("PowerShell fixed-drive output accepts one drive or a drive list", () => {
       '[{"DeviceID":"D:","FreeSpace":"200000","Size":"500000"}]'
     )[0].freeSpace,
     200000
+  );
+});
+
+test("Windows drive discovery separates setup from the PowerShell pipeline", async () => {
+  let command = "";
+  await discoverRecordingDataRoots({
+    platform: "win32",
+    systemDrive: "C:",
+    run: async (value) => {
+      command = value;
+      return '[{"DeviceID":"D:","FreeSpace":10737418240,"Size":21474836480}]';
+    },
+  });
+
+  assert.match(
+    command,
+    /^\$ErrorActionPreference = 'Stop'; Get-CimInstance/,
+    "the preference assignment must not consume the disk query pipeline"
   );
 });
 

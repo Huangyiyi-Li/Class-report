@@ -7,6 +7,7 @@ export function bindingErrorView(error = {}, context = {}) {
 }
 
 function bindErrorView(code, context, error) {
+  const message = String(error?.message || "");
   if (error.unbound) {
     return {
       title: "原绑定已解除，新绑定未完成",
@@ -62,7 +63,12 @@ function bindErrorView(code, context, error) {
       problemCode: `BIND-0${code}`,
     };
   }
-  if (code === 7) {
+  if (
+    code === 7 ||
+    /\u8bbe\u5907\u5df2\u7ed1\u5b9a\u5176\u4ed6.*\u73ed\u7ea7.*\u6559\u5ba4/.test(
+      message
+    )
+  ) {
     const target = context.className || context.classroom || "刚才选择的教室";
     return {
       title: "设备已绑定其他班级或教室",

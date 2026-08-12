@@ -307,6 +307,42 @@ test("remote binding reports the backend business message when code is not succe
   );
 });
 
+test("remote binding prefers the nested business code over an HTTP-like status", async () => {
+  const service = createBindingService({
+    mode: "remote",
+    createId: () => "passport-session-1",
+    authenticate: async () => ({
+      user: {
+        schoolId: 9001,
+        schoolName: "众享中学",
+        userName: "测试教师",
+        userType: 0,
+      },
+      post: async () => ({
+        status: 500,
+        data: {
+          code: 7,
+          message: "设备已绑定其他的班级或者教室",
+        },
+      }),
+    }),
+  });
+  await service.createSession({ deviceNo: "AABBCCDDEEFF" });
+
+  await assert.rejects(
+    service.confirmBinding("passport-session-1", {
+      bindType: 1,
+      classId: 701,
+      className: "七年级一班",
+    }),
+    {
+      code: "BINDING_REJECTED",
+      businessCode: 7,
+      operation: "bind",
+    }
+  );
+});
+
 test("school-scoped device numbers are created after Passport selects the school", async () => {
   assert.equal(
     buildSchoolDeviceNo("aa-bb-cc-dd-ee-ff", 9001),

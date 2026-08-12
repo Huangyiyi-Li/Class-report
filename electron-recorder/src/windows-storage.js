@@ -4,11 +4,11 @@ import path from "node:path";
 const DATA_DIRECTORY_NAME = "ClassroomRecorderData";
 const MINIMUM_FREE_BYTES = 5 * 1024 ** 3;
 const FIXED_DRIVES_COMMAND = [
-  "$ErrorActionPreference = 'Stop'",
-  "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3'",
-  "Select-Object DeviceID, FreeSpace, Size",
+  "$ErrorActionPreference = 'Stop'; ",
+  "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ",
+  "Select-Object DeviceID, FreeSpace, Size | ",
   "ConvertTo-Json -Compress",
-].join(" | ");
+].join("");
 
 export function parseFixedDriveOutput(output) {
   const text = String(output || "")
