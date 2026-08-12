@@ -61,6 +61,11 @@ test("declares packaged worker and Windows FFmpeg resources", () => {
 
 test("assisted installer defaults to a fixed non-system drive and blocks system-drive installation", () => {
   assert.equal(pkg.build.nsis.include, "build/installer.nsh");
+  assert.equal(
+    pkg.build.nsis.allowToChangeInstallationDirectory,
+    false,
+    "the stock directory page runs before our non-system-drive validation and must be replaced by the guarded page"
+  );
   const installer = readFileSync(
     path.join(root, pkg.build.nsis.include),
     "utf8"
@@ -83,6 +88,10 @@ test("assisted installer defaults to a fixed non-system drive and blocks system-
   );
   assert.match(installer, /StrCpy \$R1 \$WINDIR 2/);
   assert.match(installer, /StrCpy \$R2 \$INSTDIR 2/);
+  assert.match(installer, /Function NonSystemDrivePageBrowse/);
+  assert.match(installer, /SelectFolderDialog/);
+  assert.match(installer, /\$\{NSD_CreateText\}/);
+  assert.match(installer, /\$\{NSD_CreateButton\}/);
 });
 
 test("default test runs repository gate and declares supported Node versions", () => {

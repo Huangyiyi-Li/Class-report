@@ -17,6 +17,17 @@ test("public classroom name uses a dedicated accessible field and specific actio
   assert.match(styles, /\.binding-field input\s*\{/);
 });
 
+test("binding wizard uses one focused task column without the decorative device workbench", () => {
+  assert.match(wizard, /className="binding-context-bar"/);
+  assert.match(wizard, /登录[\s\S]*选择类型[\s\S]*选择教室[\s\S]*确认绑定/);
+  assert.match(styles, /\.binding-modal\s*\{[^}]*width:\s*720px/s);
+  assert.match(styles, /\.binding-workbench\s*\{[^}]*display:\s*block/s);
+  assert.doesNotMatch(wizard, /className="binding-identity-panel"/);
+  assert.doesNotMatch(wizard, /className="qr-frame"/);
+  assert.doesNotMatch(styles, /PAIR \/ 01/);
+  assert.doesNotMatch(wizard, /创建哪种教室/);
+});
+
 test("settings use a single readable flow and preserve compact window rules", () => {
   assert.match(styles, /\.settings-flow\s*\{[^}]*display:\s*block/s);
   assert.match(

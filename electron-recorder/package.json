@@ -121,7 +121,7 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
+      "allowToChangeInstallationDirectory": false,
       "warningsAsErrors": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,

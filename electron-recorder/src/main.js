@@ -653,10 +653,11 @@ async function runSmokeTest() {
           const openButton = await waitFor('[data-testid="open-binding"]');
           openButton?.click();
           const wizard = await waitFor('[data-testid="binding-wizard"]');
-          const identityIcon = wizard?.querySelector('.qr-frame svg');
+          const contextBar = wizard?.querySelector('.binding-context-bar');
+          const progress = wizard?.querySelector('.binding-step-track');
           const mockBadge = Array.from(wizard?.querySelectorAll('*') || []).some((node) => node.textContent?.trim() === '模拟数据');
           const bindingTypeStep = await waitFor('[data-binding-step="bindingType"]');
-          const geometry = Array.from(wizard?.querySelectorAll('.binding-modal, .binding-workbench, .binding-identity-panel, .binding-step-panel') || [])
+          const geometry = Array.from(wizard?.querySelectorAll('.binding-modal, .binding-workbench, .binding-context-bar, .binding-step-panel') || [])
             .map((node) => ({ className: node.className, ...node.getBoundingClientRect().toJSON() }));
           const overflowing = geometry.filter((rect) => rect.left < -1 || rect.right > innerWidth + 1 || rect.top < -1 || rect.bottom > innerHeight + 1);
           wizard?.querySelector('[aria-label="关闭绑定向导"]')?.click();
@@ -664,7 +665,8 @@ async function runSmokeTest() {
             skipped: false,
             hasOpenButton: Boolean(openButton),
             hasWizard: Boolean(wizard),
-            hasIdentityIcon: Boolean(identityIcon),
+            hasContextBar: Boolean(contextBar),
+            hasProgress: Boolean(progress),
             hasMockBadge: mockBadge,
             reachedBindingType: Boolean(bindingTypeStep),
             errors: window.__electronSmokeErrors || [],
@@ -722,7 +724,8 @@ async function runSmokeTest() {
       (bindingResult.skipped ||
         (bindingResult.hasOpenButton &&
           bindingResult.hasWizard &&
-          bindingResult.hasIdentityIcon &&
+          bindingResult.hasContextBar &&
+          bindingResult.hasProgress &&
           bindingResult.hasMockBadge &&
           bindingResult.reachedBindingType &&
           bindingResult.overflowing.length === 0)) &&

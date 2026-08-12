@@ -2,8 +2,8 @@ import React, { useEffect, useReducer, useState } from "react";
 import {
   ArrowLeft,
   Building2,
-  Check,
   CheckCircle2,
+  ChevronRight,
   LoaderCircle,
   Radio,
   School,
@@ -146,15 +146,20 @@ export function BindingWizard({
         data-testid="binding-wizard"
       >
         <header className="binding-modal-header">
-          <div>
-            <div className="binding-kicker">
-              <Radio size={15} />
-              设备绑定{" "}
-              {bindingServiceMode === "mock" ? (
-                <span className="mock-badge">模拟数据</span>
-              ) : null}
+          <div className="binding-title-group">
+            <span className="binding-app-icon" aria-hidden="true">
+              <Radio size={19} />
+            </span>
+            <div>
+              <div className="binding-kicker">
+                设备绑定
+                {bindingServiceMode === "mock" ? (
+                  <span className="mock-badge">模拟数据</span>
+                ) : null}
+              </div>
+              <h2 id="binding-title">绑定学校和教室</h2>
+              <p>确认这台电脑录音所属的位置</p>
             </div>
-            <h2 id="binding-title">绑定录音设备</h2>
           </div>
           <button
             className="icon-button"
@@ -166,9 +171,9 @@ export function BindingWizard({
           </button>
         </header>
         <div className="binding-workbench">
-          <IdentityPanel
+          <StepTrack phase={state.phase} />
+          <BindingContextBar
             state={state}
-            mode={bindingServiceMode}
             onSwitchIdentity={switchIdentity}
             pending={terminalPending === "identity"}
           />
@@ -176,7 +181,6 @@ export function BindingWizard({
             className="binding-step-panel"
             data-binding-step={state.phase}
           >
-            <StepTrack phase={state.phase} />
             <StepContent
               state={state}
               mode={bindingServiceMode}
@@ -197,59 +201,51 @@ export function BindingWizard({
   );
 }
 
-function IdentityPanel({ state, mode, onSwitchIdentity, pending }) {
+function BindingContextBar({ state, onSwitchIdentity, pending }) {
   const user = state.session?.user;
+  if (!user) return null;
   return (
-    <aside className="binding-identity-panel">
-      <div className="qr-frame">
-        <UserRound size={84} strokeWidth={1.3} />
+    <div className="binding-context-bar">
+      <div className="binding-context-school">
+        <School size={18} />
+        <span>
+          <small>当前学校</small>
+          <strong>{user.schoolName}</strong>
+        </span>
       </div>
-      <div className="device-code">
-        <span>本机设备</span>
-        <strong>{shortDevice(state.session?.deviceNo)}</strong>
+      <div className="binding-context-user">
+        <UserRound size={17} />
+        <span>{user.userName}</span>
       </div>
-      {user ? (
-        <div className="binding-review">
-          <div>
-            <dt>当前学校</dt>
-            <dd>{user.schoolName}</dd>
-          </div>
-          <div>
-            <dt>登录身份</dt>
-            <dd>{user.userName}</dd>
-          </div>
-          <button
-            type="button"
-            className="binding-switch-identity"
-            onClick={onSwitchIdentity}
-            disabled={pending}
-          >
-            {pending ? "正在切换…" : "切换账号或学校"}
-          </button>
-        </div>
-      ) : (
-        <p>
-          {mode === "mock"
-            ? "正在载入模拟登录身份…"
-            : "请在弹出的 Passport 窗口完成登录和身份选择。"}
-        </p>
-      )}
-      <p className="binding-safety-note">
-        绑定完成后，录音将按当前学校和教室归属上传。
-      </p>
-    </aside>
+      <button
+        type="button"
+        className="binding-switch-identity"
+        onClick={onSwitchIdentity}
+        disabled={pending}
+      >
+        {pending ? "正在切换…" : "切换账号或学校"}
+      </button>
+    </div>
   );
 }
 
 function StepTrack({ phase }) {
+  if (["error", "confirmed"].includes(phase)) return null;
   const step = stepNumber(phase);
+  const labels = ["登录", "选择类型", "选择教室", "确认绑定"];
   return (
     <div
       className="binding-step-track"
       aria-label={`绑定进度，第 ${step} 步，共 4 步`}
     >
-      {[1, 2, 3, 4].map((index) => (
-        <span key={index} className={index <= step ? "active" : ""} />
+      {labels.map((label, offset) => (
+        <div
+          key={label}
+          className={`${offset + 1 < step ? "complete" : ""} ${offset + 1 === step ? "current" : ""}`}
+        >
+          <span>{offset + 1 < step ? <CheckCircle2 /> : offset + 1}</span>
+          <small>{label}</small>
+        </div>
       ))}
     </div>
   );
@@ -281,9 +277,7 @@ function StepContent({
     );
   }
   if (state.phase === "bindingType")
-    return (
-      <BindingTypeStep user={state.session?.user} onSelect={onSelectType} />
-    );
+    return <BindingTypeStep onSelect={onSelectType} />;
   if (state.phase === "loadingGrades")
     return (
       <LoadingStep title="正在获取年级" detail="从当前学校读取可用年级列表…" />
@@ -353,12 +347,11 @@ function StepContent({
   );
 }
 
-function BindingTypeStep({ user, onSelect }) {
+function BindingTypeStep({ onSelect }) {
   return (
     <div className="binding-copy">
-      <span className="step-label">第 2 步 · {user?.schoolName}</span>
-      <h3>创建哪种教室？</h3>
-      <p>当前身份：{user?.userName}</p>
+      <span className="step-label">选择教室类型</span>
+      <h3>这台电脑安装在哪种教室？</h3>
       <div className="location-type-grid">
         <button onClick={() => onSelect(1)}>
           <Building2 />
@@ -379,7 +372,7 @@ function GradeStep({ grades, onBack, onSelect }) {
   return (
     <div className="binding-copy">
       <BackButton onClick={onBack} />
-      <span className="step-label">第 3 步</span>
+      <span className="step-label">选择教室</span>
       <h3>选择年级</h3>
       <ChoiceList
         items={grades}
@@ -396,7 +389,7 @@ function ClassStep({ classes, onBack, onSelect }) {
   return (
     <div className="binding-copy">
       <BackButton onClick={onBack} />
-      <span className="step-label">第 3 步</span>
+      <span className="step-label">选择教室</span>
       <h3>选择班级</h3>
       <ChoiceList
         items={classes}
@@ -418,7 +411,7 @@ function ChoiceList({ items, itemKey, titleKey, onSelect, empty }) {
           <span>
             <strong>{item[titleKey]}</strong>
           </span>
-          <Check />
+          <ChevronRight />
         </button>
       ))}
       {items.length === 0 ? <p className="empty-choice">{empty}</p> : null}
@@ -432,9 +425,9 @@ function PublicClassroomStep({ onBack, onContinue }) {
   return (
     <div className="binding-copy">
       <BackButton onClick={onBack} />
-      <span className="step-label">第 3 步</span>
+      <span className="step-label">选择教室</span>
       <h3>填写公共教室名称</h3>
-      <p>填写老师日常使用的教室名称，绑定后会作为这台设备的当前位置显示。</p>
+      <p>填写老师日常使用的名称，例如“报告厅”或“多媒体教室”。</p>
       <div className="binding-field">
         <label htmlFor="public-classroom-name">教室名称</label>
         <input
@@ -445,10 +438,10 @@ function PublicClassroomStep({ onBack, onContinue }) {
           autoComplete="off"
           aria-describedby="public-classroom-name-help"
           onChange={(event) => setValue(event.target.value)}
-          placeholder="例如：多媒体教室录音设备"
+          placeholder="例如：多媒体教室"
         />
         <span id="public-classroom-name-help">
-          这里只保存并上传名称，不会创建额外的位置编号。
+          绑定后，首页会显示这个名称。
         </span>
       </div>
       <button
@@ -466,13 +459,13 @@ function ReviewStep({ state, onBack, onConfirm, replacementRequired }) {
   const busy = state.phase === "confirming";
   const classroom =
     state.selection.bindType === 1
-      ? `${state.selection.className}录音设备`
+      ? state.selection.className
       : state.selection.classroom;
   return (
     <div className="binding-copy">
       <BackButton onClick={onBack} disabled={busy} />
-      <span className="step-label">第 4 步</span>
-      <h3>确认设备归属</h3>
+      <span className="step-label">确认绑定</span>
+      <h3>请核对学校和教室</h3>
       <dl className="binding-review">
         <div>
           <dt>学校</dt>
@@ -483,15 +476,9 @@ function ReviewStep({ state, onBack, onConfirm, replacementRequired }) {
           <dd>{state.selection.bindType === 1 ? "班级教室" : "公共教室"}</dd>
         </div>
         <div>
-          <dt>教室名称</dt>
+          <dt>教室</dt>
           <dd>{classroom}</dd>
         </div>
-        {state.selection.className ? (
-          <div>
-            <dt>班级</dt>
-            <dd>{state.selection.className}</dd>
-          </div>
-        ) : null}
       </dl>
       <button
         className="binding-confirm-button"
@@ -505,7 +492,7 @@ function ReviewStep({ state, onBack, onConfirm, replacementRequired }) {
             : "正在绑定…"
           : replacementRequired
             ? "确认换绑"
-            : "确认并应用绑定"}
+            : "确认绑定"}
       </button>
     </div>
   );
@@ -631,10 +618,6 @@ function fail(dispatch, error) {
       unbound: Boolean(error?.unbound),
     },
   });
-}
-function shortDevice(value) {
-  const text = String(value || "正在识别…");
-  return text.length > 8 ? `${text.slice(0, 4)} · ${text.slice(-4)}` : text;
 }
 function stepNumber(phase) {
   if (phase === "creating") return 1;
