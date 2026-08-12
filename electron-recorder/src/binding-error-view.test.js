@@ -37,6 +37,17 @@ test("binding code 7 offers reselect and replacement for the chosen target", () 
   assert.equal(view.secondary, "reselect");
 });
 
+test("binding codes 8 and 9 return to the incomplete selection", () => {
+  for (const [businessCode, expectedTitle] of [
+    [8, "尚未选择班级"],
+    [9, "尚未填写教室名称"],
+  ]) {
+    const view = bindingErrorView({ operation: "bind", businessCode });
+    assert.equal(view.title, expectedTitle);
+    assert.equal(view.primary, "reselect");
+  }
+});
+
 test("partial replacement failure explains that the original binding is gone", () => {
   const view = bindingErrorView({
     operation: "bind",

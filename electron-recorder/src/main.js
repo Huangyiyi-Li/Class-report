@@ -21,6 +21,10 @@ import {
   bootstrapWorkerConfig,
   loadWorkerLocator,
 } from "./worker-bootstrap.js";
+import {
+  bootstrapFirstAvailableRecordingRoot,
+  discoverRecordingDataRoots,
+} from "./windows-storage.js";
 import { applyWorkerSettings } from "./worker-settings.js";
 import { createRuntimeState } from "./runtime-state.js";
 import { configureSingleInstance } from "./single-instance.js";
@@ -82,6 +86,7 @@ let autoLaunchStatus = {
   error: null,
 };
 let workerLocation = null;
+let suggestedRecordingDataRoots = [];
 const bindingServiceMode =
   process.env.BINDING_SERVICE_MODE === "mock" ? "mock" : "remote";
 let bindingService;
@@ -745,9 +750,23 @@ async function runSmokeTest() {
 }
 
 if (hasSingleInstanceLock)
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     const userDataDir = app.getPath("userData");
-    workerLocation = loadWorkerLocator(app.getPath("userData"));
+    workerLocation = loadWorkerLocator(userDataDir);
+    if (
+      !workerLocation &&
+      process.platform === "win32" &&
+      !process.env.ELECTRON_SMOKE_TEST
+    ) {
+      try {
+        suggestedRecordingDataRoots = await discoverRecordingDataRoots();
+        workerLocation = await bootstrapFirstAvailableRecordingRoot({
+          userDataDir,
+          roots: suggestedRecordingDataRoots,
+          bootstrap: bootstrapWorkerConfig,
+        });
+      } catch {}
+    }
     settings = {
       ...loadSettings(workerLocation?.configPath),
       ...(workerLocation
@@ -1007,9 +1026,19 @@ if (hasSingleInstanceLock)
       return true;
     });
     ipcMain.handle("recorder:choose-data-root", async () => {
+      if (
+        !settings.dataRoot &&
+        process.platform === "win32" &&
+        !suggestedRecordingDataRoots.length
+      ) {
+        try {
+          suggestedRecordingDataRoots = await discoverRecordingDataRoots();
+        } catch {}
+      }
       const result = await dialog.showOpenDialog(mainWindow, {
         title: "选择录音保存位置",
-        defaultPath: settings.dataRoot || undefined,
+        defaultPath:
+          settings.dataRoot || suggestedRecordingDataRoots[0] || undefined,
         properties: ["openDirectory", "createDirectory"],
       });
       if (result.canceled || !result.filePaths[0]) return "";

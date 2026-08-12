@@ -59,6 +59,19 @@ test("declares packaged worker and Windows FFmpeg resources", () => {
   );
 });
 
+test("assisted installer defaults to a fixed non-system drive and blocks system-drive installation", () => {
+  assert.equal(pkg.build.nsis.include, "build/installer.nsh");
+  const installer = readFileSync(
+    path.join(root, pkg.build.nsis.include),
+    "utf8"
+  );
+  assert.match(installer, /!macro customInit/);
+  assert.match(installer, /GetDriveTypeW/);
+  assert.match(installer, /\$R9\\\$\{APP_FILENAME\}/);
+  assert.match(installer, /!macro customPageAfterChangeDir/);
+  assert.match(installer, /录音客户端不能安装在 Windows 系统盘/);
+});
+
 test("default test runs repository gate and declares supported Node versions", () => {
   assert.match(pkg.scripts.test, /test:repository/);
   assert.equal(

@@ -145,26 +145,48 @@ async function postJson(browserSession, url, payload) {
     },
     body: JSON.stringify(payload ?? {}),
   });
-  return responseJson(response, "服务端请求失败");
+  return responseJson(response, "服务端请求失败", {
+    preserveBusinessFailure: true,
+  });
 }
 
-async function responseJson(response, fallback) {
+async function responseJson(
+  response,
+  fallback,
+  { preserveBusinessFailure = false } = {}
+) {
+  let payload;
+  try {
+    payload = await response?.json();
+  } catch {}
+  const businessStatus = Number(payload?.status);
+  const message =
+    typeof payload?.message === "string" ? payload.message.trim() : "";
+  const authenticationFailed =
+    response?.status === 401 ||
+    businessStatus === 401 ||
+    message.includes("未登录");
+  if (authenticationFailed) {
+    throw passportError(
+      "PASSPORT_REQUEST_FAILED",
+      "登录状态已失效，请重新登录 Passport"
+    );
+  }
+  const hasBusinessFailure =
+    Number.isInteger(Number(payload?.code)) ||
+    (Number.isFinite(businessStatus) && businessStatus >= 400);
+  if (preserveBusinessFailure && hasBusinessFailure) return payload;
   if (!response?.ok) {
     throw passportError(
       "PASSPORT_REQUEST_FAILED",
-      `${fallback}${response?.status ? `（HTTP ${response.status}）` : ""}`
+      message ||
+        `${fallback}${response?.status ? `（HTTP ${response.status}）` : ""}`
     );
   }
-  const payload = await response.json();
-  const businessStatus = Number(payload?.status);
   if (Number.isFinite(businessStatus) && businessStatus >= 400) {
-    const message =
-      typeof payload?.message === "string" ? payload.message.trim() : "";
     throw passportError(
       "PASSPORT_REQUEST_FAILED",
-      businessStatus === 401 || message.includes("未登录")
-        ? "登录状态已失效，请重新登录 Passport"
-        : message || `${fallback}（服务端状态 ${businessStatus}）`
+      message || `${fallback}（服务端状态 ${businessStatus}）`
     );
   }
   return payload;

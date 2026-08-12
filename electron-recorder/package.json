@@ -55,6 +55,7 @@
       "src/worker-client.js",
       "src/single-instance.js",
       "src/worker-bootstrap.js",
+      "src/windows-storage.js",
       "src/api-routes.js",
       "src/worker-settings.js",
       "src/runtime-state.js",
@@ -126,6 +127,7 @@
       "createStartMenuShortcut": true,
       "shortcutName": "课堂录音采集助手",
       "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
       "artifactName": "classroom-recorder-electron-setup-${version}.${ext}"
     },
     "portable": {

@@ -201,6 +201,76 @@ test("Passport API business errors are reported instead of being parsed as an in
   );
 });
 
+test("Passport mutation preserves a non-authentication business failure for binding handling", async () => {
+  const window = new FakeWindow();
+  const failure = {
+    status: 500,
+    code: 7,
+    message: "设备已绑定其他的班级或者教室",
+  };
+  const authenticate = createPassportAuthenticator({
+    createWindow: () => window,
+    browserSession: {
+      fetch: async (url) =>
+        url === CURRENT_USER_URL
+          ? response({
+              schoolId: 9001,
+              schoolName: "众享中学",
+              userName: "测试教师",
+              userType: 0,
+            })
+          : response(failure),
+    },
+  });
+
+  const login = authenticate();
+  window.webContents.emit("did-navigate", {}, "https://szjx.xxt.cn/");
+  const authenticated = await login;
+
+  assert.deepEqual(
+    await authenticated.post(
+      "https://rest.xxt.cn/ai-lesson-eval/recording-device/bind-device",
+      {}
+    ),
+    failure
+  );
+});
+
+test("Passport mutation preserves a business failure returned with an HTTP error", async () => {
+  const window = new FakeWindow();
+  const failure = {
+    status: 500,
+    code: 6,
+    message: "设备已绑定其他学校",
+  };
+  const authenticate = createPassportAuthenticator({
+    createWindow: () => window,
+    browserSession: {
+      fetch: async (url) =>
+        url === CURRENT_USER_URL
+          ? response({
+              schoolId: 9001,
+              schoolName: "众享中学",
+              userName: "测试教师",
+              userType: 0,
+            })
+          : response(failure, { status: 500 }),
+    },
+  });
+
+  const login = authenticate();
+  window.webContents.emit("did-navigate", {}, "https://szjx.xxt.cn/");
+  const authenticated = await login;
+
+  assert.deepEqual(
+    await authenticated.post(
+      "https://rest.xxt.cn/ai-lesson-eval/recording-device/bind-device",
+      {}
+    ),
+    failure
+  );
+});
+
 test("Passport identity does not require webId", async () => {
   const window = new FakeWindow();
   const authenticate = createPassportAuthenticator({

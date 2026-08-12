@@ -73,6 +73,22 @@ function bindErrorView(code, context, error) {
       target,
     };
   }
+  if (code === 8) {
+    return {
+      title: "尚未选择班级",
+      detail: "本次绑定没有包含有效的班级信息。",
+      guidance: "请返回并重新选择要绑定的班级。",
+      primary: "reselect",
+    };
+  }
+  if (code === 9) {
+    return {
+      title: "尚未填写教室名称",
+      detail: "本次绑定没有包含有效的教室名称。",
+      guidance: "请返回并填写要绑定的教室名称。",
+      primary: "reselect",
+    };
+  }
   return {
     title: "绑定没有完成",
     detail: "客户端暂时无法完成设备绑定。",
