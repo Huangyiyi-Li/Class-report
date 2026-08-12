@@ -16,45 +16,46 @@
 !macroend
 
 !macro customInit
-  ${IfNot} ${isUpdated}
-    StrCpy $R9 ""
-    !insertmacro TryFixedInstallDrive "C"
-    !insertmacro TryFixedInstallDrive "D"
-    !insertmacro TryFixedInstallDrive "E"
-    !insertmacro TryFixedInstallDrive "F"
-    !insertmacro TryFixedInstallDrive "G"
-    !insertmacro TryFixedInstallDrive "H"
-    !insertmacro TryFixedInstallDrive "I"
-    !insertmacro TryFixedInstallDrive "J"
-    !insertmacro TryFixedInstallDrive "K"
-    !insertmacro TryFixedInstallDrive "L"
-    !insertmacro TryFixedInstallDrive "M"
-    !insertmacro TryFixedInstallDrive "N"
-    !insertmacro TryFixedInstallDrive "O"
-    !insertmacro TryFixedInstallDrive "P"
-    !insertmacro TryFixedInstallDrive "Q"
-    !insertmacro TryFixedInstallDrive "R"
-    !insertmacro TryFixedInstallDrive "S"
-    !insertmacro TryFixedInstallDrive "T"
-    !insertmacro TryFixedInstallDrive "U"
-    !insertmacro TryFixedInstallDrive "V"
-    !insertmacro TryFixedInstallDrive "W"
-    !insertmacro TryFixedInstallDrive "X"
-    !insertmacro TryFixedInstallDrive "Y"
-    !insertmacro TryFixedInstallDrive "Z"
-    ${If} "$R9" != ""
-      StrCpy $INSTDIR "$R9\${APP_FILENAME}"
-    ${EndIf}
+  IfFileExists "$INSTDIR\resources\app.asar" recorder_keep_existing recorder_select_drive
+  recorder_select_drive:
+  StrCpy $R9 ""
+  !insertmacro TryFixedInstallDrive "C"
+  !insertmacro TryFixedInstallDrive "D"
+  !insertmacro TryFixedInstallDrive "E"
+  !insertmacro TryFixedInstallDrive "F"
+  !insertmacro TryFixedInstallDrive "G"
+  !insertmacro TryFixedInstallDrive "H"
+  !insertmacro TryFixedInstallDrive "I"
+  !insertmacro TryFixedInstallDrive "J"
+  !insertmacro TryFixedInstallDrive "K"
+  !insertmacro TryFixedInstallDrive "L"
+  !insertmacro TryFixedInstallDrive "M"
+  !insertmacro TryFixedInstallDrive "N"
+  !insertmacro TryFixedInstallDrive "O"
+  !insertmacro TryFixedInstallDrive "P"
+  !insertmacro TryFixedInstallDrive "Q"
+  !insertmacro TryFixedInstallDrive "R"
+  !insertmacro TryFixedInstallDrive "S"
+  !insertmacro TryFixedInstallDrive "T"
+  !insertmacro TryFixedInstallDrive "U"
+  !insertmacro TryFixedInstallDrive "V"
+  !insertmacro TryFixedInstallDrive "W"
+  !insertmacro TryFixedInstallDrive "X"
+  !insertmacro TryFixedInstallDrive "Y"
+  !insertmacro TryFixedInstallDrive "Z"
+  ${If} "$R9" != ""
+    StrCpy $INSTDIR "$R9\${APP_FILENAME}"
   ${EndIf}
+  recorder_keep_existing:
 !macroend
 
 Var NonSystemDrivePage
 Var NonSystemDriveLabel
 
 Function NonSystemDrivePageCreate
-  ${If} ${isUpdated}
-    Abort
-  ${EndIf}
+  IfFileExists "$INSTDIR\resources\app.asar" 0 recorder_validate_drive
+  Abort
+  recorder_validate_drive:
   StrCpy $R0 $WINDIR 2
   StrCpy $R1 $INSTDIR 2
   ${If} "$R0" != "$R1"
