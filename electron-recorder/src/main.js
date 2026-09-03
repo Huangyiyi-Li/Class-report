@@ -28,7 +28,10 @@ import {
 import { applyWorkerSettings } from "./worker-settings.js";
 import { createRuntimeState } from "./runtime-state.js";
 import { configureSingleInstance } from "./single-instance.js";
-import { writeDiagnosticFile } from "./diagnostics.js";
+import {
+  createBindingFailureTracker,
+  writeDiagnosticFile,
+} from "./diagnostics.js";
 import {
   applyAutoLaunch,
   loadSettings,
@@ -99,6 +102,7 @@ let updateState = {
   percent: 0,
   error: "",
 };
+const bindingFailureTracker = createBindingFailureTracker();
 
 function isScreenPoint(point) {
   return Number.isFinite(point?.x) && Number.isFinite(point?.y);
@@ -106,6 +110,24 @@ function isScreenPoint(point) {
 
 function structuredIpc(operation) {
   return (...args) => captureResult(() => operation(...args));
+}
+
+function bindingStructuredIpc(
+  stage,
+  operation,
+  { clearOnSuccess = false } = {}
+) {
+  return (...args) =>
+    captureResult(async () => {
+      try {
+        const value = await operation(...args);
+        if (clearOnSuccess) bindingFailureTracker.clear();
+        return value;
+      } catch (error) {
+        bindingFailureTracker.capture(stage, error);
+        throw error;
+      }
+    });
 }
 
 function calibrateWindowsTime() {
@@ -900,49 +922,63 @@ if (hasSingleInstanceLock)
     ipcMain.handle("app:install-update", () => updateController.install());
     ipcMain.handle(
       "binding:create-session",
-      structuredIpc(() => bindingController.createSession())
+      bindingStructuredIpc("create_session", () =>
+        bindingController.createSession()
+      )
     );
     ipcMain.handle(
       "binding:create-replacement-session",
-      structuredIpc(() => bindingController.createReplacementSession())
+      bindingStructuredIpc("create_replacement_session", () =>
+        bindingController.createReplacementSession()
+      )
     );
     ipcMain.handle(
       "binding:reset-authentication",
-      structuredIpc(() => bindingController.resetAuthentication())
+      bindingStructuredIpc("reset_authentication", () =>
+        bindingController.resetAuthentication()
+      )
     );
     ipcMain.handle(
       "binding:get-session",
-      structuredIpc((_event, sessionId) =>
+      bindingStructuredIpc("get_session", (_event, sessionId) =>
         bindingController.getSession(sessionId)
       )
     );
     ipcMain.handle(
       "binding:list-grades",
-      structuredIpc((_event, sessionId) =>
+      bindingStructuredIpc("list_grades", (_event, sessionId) =>
         bindingController.listGrades(sessionId)
       )
     );
     ipcMain.handle(
       "binding:list-classes",
-      structuredIpc((_event, sessionId, query) =>
+      bindingStructuredIpc("list_classes", (_event, sessionId, query) =>
         bindingController.listClasses(sessionId, query)
       )
     );
     ipcMain.handle(
       "binding:confirm",
-      structuredIpc((_event, sessionId, selection) =>
-        bindingController.confirmBinding(sessionId, selection)
+      bindingStructuredIpc(
+        "confirm",
+        (_event, sessionId, selection) =>
+          bindingController.confirmBinding(sessionId, selection),
+        { clearOnSuccess: true }
       )
     );
     ipcMain.handle(
       "binding:replace",
-      structuredIpc((_event, sessionId, selection) =>
-        bindingController.replaceBinding(sessionId, selection)
+      bindingStructuredIpc(
+        "replace",
+        (_event, sessionId, selection) =>
+          bindingController.replaceBinding(sessionId, selection),
+        { clearOnSuccess: true }
       )
     );
     ipcMain.handle(
       "binding:unbind",
-      structuredIpc(() => bindingController.unbindDevice())
+      bindingStructuredIpc("unbind", () => bindingController.unbindDevice(), {
+        clearOnSuccess: true,
+      })
     );
     ipcMain.handle("recorder:start", () => supervisor?.send("start") ?? false);
     ipcMain.handle("recorder:pause", () => supervisor?.send("pause") ?? false);
@@ -1061,6 +1097,7 @@ if (hasSingleInstanceLock)
           settings,
           autoLaunchStatus,
           workerLocation,
+          latestBindingError: bindingFailureTracker.latest(),
           exportedAt: new Date().toISOString(),
           appVersion: app.getVersion(),
         });

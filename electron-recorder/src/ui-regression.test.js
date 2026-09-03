@@ -75,6 +75,14 @@ test("rebind is exposed only as unbind followed by a fresh binding flow", () => 
   assert.doesNotMatch(wizard, /isRebinding/);
 });
 
+test("binding problem codes render even when a device number is unavailable", () => {
+  const wizard = readFileSync(
+    new URL("./binding-wizard.jsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(wizard, /view\.deviceNo\s*\|\|\s*view\.problemCode/u);
+});
+
 test("recording and upload actions expose progress instead of failing silently", () => {
   assert.match(renderer, /runRecorderAction/);
   assert.match(renderer, /正在启动…/);

@@ -552,12 +552,14 @@ function ErrorStep({
       <h3>{view.title}</h3>
       <p>{view.detail}</p>
       <p>{view.guidance}</p>
-      {view.deviceNo ? (
+      {view.deviceNo || view.problemCode ? (
         <dl className="binding-error-reference">
-          <div>
-            <dt>设备编号</dt>
-            <dd>{view.deviceNo}</dd>
-          </div>
+          {view.deviceNo ? (
+            <div>
+              <dt>设备编号</dt>
+              <dd>{view.deviceNo}</dd>
+            </div>
+          ) : null}
           {view.problemCode ? (
             <div>
               <dt>问题代码</dt>
