@@ -221,7 +221,7 @@ test("unbind authenticates, calls the service, then clears the worker binding", 
   ]);
 });
 
-test("unbind authentication failure leaves the existing worker binding active", async () => {
+test("unbind authentication failure leaves active recording and binding unchanged", async () => {
   const authenticationError = Object.assign(
     new Error("当前身份不是教师侧身份，不能绑定录音设备"),
     { code: "PASSPORT_ROLE_NOT_ALLOWED" }
@@ -234,7 +234,7 @@ test("unbind authentication failure leaves the existing worker binding active", 
     },
     controller: {
       getSnapshot: () => ({
-        recording: "idle",
+        recording: "recording",
         binding: { deviceNo: "AABBCCDDEEFF-9001" },
       }),
     },
@@ -242,6 +242,30 @@ test("unbind authentication failure leaves the existing worker binding active", 
 
   await assert.rejects(controller.unbindDevice(), authenticationError);
   assert.deepEqual(workerCommands, []);
+});
+
+test("unbind stops a binding-blocked error state before preparing the worker", async () => {
+  const { controller, calls, workerCommands } = createFixture({
+    controller: {
+      getSnapshot: () => ({
+        recording: "error",
+        health: "binding_required",
+        binding: { deviceNo: "AABBCCDDEEFF-9001" },
+      }),
+    },
+  });
+
+  await controller.unbindDevice();
+
+  assert.deepEqual(calls, [
+    ["createSession", { deviceNo: "AABBCCDDEEFF-9001", scopeDeviceNo: false }],
+    ["unbindDevice", "session-1"],
+  ]);
+  assert.deepEqual(workerCommands, [
+    ["stop", {}],
+    ["prepare_unbind", {}],
+    ["clear_binding", {}],
+  ]);
 });
 
 test("unbind failure leaves the worker in persisted safe-blocked state", async () => {

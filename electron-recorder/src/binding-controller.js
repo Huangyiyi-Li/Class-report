@@ -93,29 +93,28 @@ export class BindingController {
     if (!snapshot.binding) {
       throw controllerError("BINDING_NOT_FOUND", "设备当前未绑定");
     }
-    this.#requireIdle(snapshot);
-    const session = await this.service.createSession({
-      deviceNo: snapshot.binding.deviceNo,
-      scopeDeviceNo: false,
-    });
-    await this.sendWorkerCommand("prepare_unbind", {});
-    await this.service.unbindDevice(session.id);
-    await this.sendWorkerCommand("clear_binding", {});
-    return { success: true };
-  }
-
-  #requireIdle(snapshot) {
     const recording =
       snapshot.recordingState ||
       snapshot.recording ||
       snapshot.runtime?.recording ||
       "idle";
-    if (recording !== "idle") {
+    if (recording === "starting") {
       throw controllerError(
         "BINDING_REQUIRES_IDLE",
-        "请先停止录音，再变更设备绑定"
+        "录音正在启动，请稍后再变更设备绑定"
       );
     }
+    const session = await this.service.createSession({
+      deviceNo: snapshot.binding.deviceNo,
+      scopeDeviceNo: false,
+    });
+    if (recording !== "idle") {
+      await this.sendWorkerCommand("stop", {});
+    }
+    await this.sendWorkerCommand("prepare_unbind", {});
+    await this.service.unbindDevice(session.id);
+    await this.sendWorkerCommand("clear_binding", {});
+    return { success: true };
   }
 
   #requireBindingChangeAllowed() {

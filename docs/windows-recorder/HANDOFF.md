@@ -1,13 +1,13 @@
 # Windows 录音采集客户端交接
 
 - 更新日期：2026-09-03
-- 当前状态：`v0.2.0-codex.26` 修复解绑重绑认证失败残留状态，等待 Windows 真机复测
+- 当前状态：`v0.2.0-codex.27` 修复旧待解绑状态在录音错误页无法恢复，等待 Windows 真机复测
 - 仓库：`https://github.com/Huangyiyi-Li/Class-report.git`
 - 工作分支：`feat/recorder-v0.2.0-codex.18`
 - Draft PR：`https://github.com/Huangyiyi-Li/Class-report/pull/1`
-- 当前源码版本：`0.2.0-codex.26`
-- 最新候选标签：`v0.2.0-codex.26`
-- 最新状态：正式绑定接口已可用；本候选修复解绑重新绑定在 Passport 登录或身份校验失败后残留 `unbind_pending` 的问题，并补充身份错误提示。必须在 Windows 真机验证 `.25` 原故障状态升级恢复、解绑、重新登录和新绑定。
+- 当前源码版本：`0.2.0-codex.27`
+- 最新候选标签：`v0.2.0-codex.27`
+- 最新状态：正式绑定接口已可用；本候选在 `.26` 认证顺序修复基础上，允许从 `binding_required + recording error` 现场状态安全执行停止、解绑和重新绑定。必须在 Windows 真机验证 `.25` 遗留状态升级恢复、解绑、重新登录、新绑定及绑定后的磁盘状态。
 
 ## 1. 新 Windows 电脑接手步骤
 

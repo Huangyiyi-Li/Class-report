@@ -120,7 +120,7 @@ export function canRebind(snapshot = {}) {
     snapshot.recording ||
     snapshot.runtime?.recording ||
     "idle";
-  return recording === "idle";
+  return recording !== "starting";
 }
 
 export async function beginFullRebinding({

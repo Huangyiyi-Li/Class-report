@@ -107,10 +107,12 @@ test("confirmed binding is retained until the wizard closes", () => {
   );
 });
 
-test("rebind is available only when the recorder is idle", () => {
+test("rebind can stop active or failed capture but waits for startup to settle", () => {
   assert.equal(canRebind({ recording: "idle" }), true);
-  assert.equal(canRebind({ recordingState: "recording" }), false);
-  assert.equal(canRebind({ runtime: { recording: "paused" } }), false);
+  assert.equal(canRebind({ recordingState: "recording" }), true);
+  assert.equal(canRebind({ runtime: { recording: "paused" } }), true);
+  assert.equal(canRebind({ recording: "error" }), true);
+  assert.equal(canRebind({ recording: "starting" }), false);
 });
 
 test("full rebind unbinds first and opens a fresh login binding flow", async () => {
