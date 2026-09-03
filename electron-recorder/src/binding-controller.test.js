@@ -268,7 +268,7 @@ test("unbind stops a binding-blocked error state before preparing the worker", a
   ]);
 });
 
-test("unbind failure leaves the worker in persisted safe-blocked state", async () => {
+test("unbind failure rolls back the local pending state before reporting the error", async () => {
   const serviceError = Object.assign(new Error("server unavailable"), {
     code: "BINDING_REJECTED",
   });
@@ -286,7 +286,10 @@ test("unbind failure leaves the worker in persisted safe-blocked state", async (
     },
   });
   await assert.rejects(controller.unbindDevice(), /server unavailable/);
-  assert.deepEqual(workerCommands, [["prepare_unbind", {}]]);
+  assert.deepEqual(workerCommands, [
+    ["prepare_unbind", {}],
+    ["cancel_unbind", {}],
+  ]);
 });
 
 test("rebind requires idle but initial binding may proceed from binding_required", async () => {

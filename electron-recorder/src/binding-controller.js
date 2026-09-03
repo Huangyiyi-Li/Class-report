@@ -112,7 +112,16 @@ export class BindingController {
       await this.sendWorkerCommand("stop", {});
     }
     await this.sendWorkerCommand("prepare_unbind", {});
-    await this.service.unbindDevice(session.id);
+    try {
+      await this.service.unbindDevice(session.id);
+    } catch (error) {
+      try {
+        await this.sendWorkerCommand("cancel_unbind", {});
+      } catch (rollbackError) {
+        error.rollbackError = rollbackError;
+      }
+      throw error;
+    }
     await this.sendWorkerCommand("clear_binding", {});
     return { success: true };
   }

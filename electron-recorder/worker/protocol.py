@@ -13,6 +13,7 @@ ALLOWED_COMMANDS = {
     "update_settings",
     "apply_binding",
     "prepare_unbind",
+    "cancel_unbind",
     "clear_binding",
     "check_device_auth",
     "list_input_devices",

@@ -396,6 +396,7 @@ class RecorderWorker:
         self._state_lock = threading.Lock()
 
     def startup(self) -> None:
+        self._recover_interrupted_unbind()
         gate = self._evaluate_startup_gate()
         if not gate.allowed:
             return
@@ -494,6 +495,8 @@ class RecorderWorker:
             self._clear_binding()
         elif command.command == "prepare_unbind":
             self._prepare_unbind()
+        elif command.command == "cancel_unbind":
+            self._cancel_unbind()
         self.emit_event("snapshot", self.snapshot())
         return True
 
@@ -789,39 +792,68 @@ class RecorderWorker:
 
             changes = validate_binding_payload(payload)
             candidate = replace(self.config, unbind_pending=False, **changes)
-            gate = self.startup_gate(candidate, self.system_drive)
-            if not gate.allowed:
-                raise ValueError(f"binding activation blocked: {gate.health}")
+            self._activate_binding_config(candidate)
 
-            recordings_dir, queue_store, legacy_queue_path, recovered, recovery_errors = (
-                self._prepare_binding_runtime(candidate)
-            )
-            replacement_upload_service = None if candidate.binding_source == "mock" else self.upload_service
-            if candidate.binding_source != "mock" and self.upload_service_factory is not None:
-                replacement_upload_service = self.upload_service_factory(candidate, queue_store)
-                self._configure_upload_service(replacement_upload_service)
+    def _activate_binding_config(self, candidate: WorkerConfig) -> None:
+        gate = self.startup_gate(candidate, self.system_drive)
+        if not gate.allowed:
+            raise ValueError(f"binding activation blocked: {gate.health}")
 
+        recordings_dir, queue_store, legacy_queue_path, recovered, recovery_errors = (
+            self._prepare_binding_runtime(candidate)
+        )
+        replacement_upload_service = (
+            None if candidate.binding_source == "mock" else self.upload_service
+        )
+        if candidate.binding_source != "mock" and self.upload_service_factory is not None:
+            replacement_upload_service = self.upload_service_factory(candidate, queue_store)
+            self._configure_upload_service(replacement_upload_service)
+
+        candidate.save_atomic(self.config_path)
+        with self._upload_lock:
+            self.config = candidate
+            self.recordings_dir = recordings_dir
+            self.queue_store = queue_store
+            self.legacy_queue_path = legacy_queue_path
+            self.upload_service = replacement_upload_service
+
+        self.state["health"] = "healthy"
+        self.state["recording"] = "idle"
+        self.state["upload"] = (
+            "mock_blocked" if candidate.binding_source == "mock" else "clear"
+        )
+        self.state["latestError"] = ""
+        self.state["recovered"] = len(recovered)
+        for path in recovered:
+            self.emit_event("recovered", {"path": str(path)})
+        for error in recovery_errors:
+            self.emit_event("error", {"message": f"journal recovery failed: {error}"})
+        if replacement_upload_service is None:
+            self._stop_uploading()
+        self.start_uploading()
+        self.maybe_auto_start()
+
+    def _recover_interrupted_unbind(self) -> None:
+        if not self.config.unbind_pending:
+            return
+        candidate = replace(self.config, unbind_pending=False)
+        gate = self.startup_gate(candidate, self.system_drive)
+        if not gate.allowed:
+            return
+        if self.config_path is not None:
             candidate.save_atomic(self.config_path)
-            with self._upload_lock:
-                self.config = candidate
-                self.recordings_dir = recordings_dir
-                self.queue_store = queue_store
-                self.legacy_queue_path = legacy_queue_path
-                self.upload_service = replacement_upload_service
+        self.config = candidate
 
-            self.state["health"] = "healthy"
-            self.state["recording"] = "idle"
-            self.state["upload"] = "mock_blocked" if candidate.binding_source == "mock" else "clear"
-            self.state["latestError"] = ""
-            self.state["recovered"] = len(recovered)
-            for path in recovered:
-                self.emit_event("recovered", {"path": str(path)})
-            for error in recovery_errors:
-                self.emit_event("error", {"message": f"journal recovery failed: {error}"})
-            if replacement_upload_service is None:
-                self._stop_uploading()
-            self.start_uploading()
-            self.maybe_auto_start()
+    def _cancel_unbind(self) -> None:
+        with self._capture_transition_lock:
+            if self.state["recording"] != "idle":
+                raise CommandRejected("请先停止录音，再恢复设备绑定")
+            if not self.config.unbind_pending:
+                return
+            if self.config_path is None:
+                raise ValueError("worker config path is required to cancel an unbind")
+            candidate = replace(self.config, unbind_pending=False)
+            self._activate_binding_config(candidate)
 
     def _prepare_binding_runtime(self, candidate: WorkerConfig):
         root = Path(candidate.data_root)

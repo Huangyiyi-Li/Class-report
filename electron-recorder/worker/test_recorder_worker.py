@@ -41,6 +41,7 @@ def require_binding(config, system_drive):
         and config.school_id is not None
         and config.bind_type in {1, 2}
         and config.classroom
+        and not config.unbind_pending
     )
     return StartupGate(allowed, "healthy" if allowed else "binding_required")
 
@@ -344,6 +345,85 @@ def test_clear_binding_preserves_queue_and_device_identity_but_blocks_recording(
     assert worker.queue_store is queue_store
     assert worker.upload_service is None
     assert WorkerConfig.load(config_path) == worker.config
+    worker.shutdown()
+
+
+def test_cancel_unbind_restores_original_binding_and_recording(tmp_path: Path):
+    config_path = tmp_path / "worker-config.json"
+    config = WorkerConfig(
+        data_root=str(tmp_path),
+        device_no="AABBCCDDEEFF",
+        school_id=1001,
+        school_name="星河实验学校",
+        bind_type=1,
+        classroom="1.1班录音设备",
+        class_id="101",
+        class_name="1.1班",
+        binding_source="remote",
+    )
+    config.save_atomic(config_path)
+    worker = RecorderWorker(
+        config,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=require_binding,
+        session_factory=lambda **_: FakeSession(),
+        upload_service_factory=lambda candidate, store: FakeUploadService(store, candidate),
+        upload_poll_seconds=10,
+    )
+    worker.startup()
+    queue_store = worker.queue_store
+
+    worker.execute_command(command("prepare_unbind"))
+    worker.execute_command(command("cancel_unbind"))
+    worker.execute_command(command("start"))
+
+    assert worker.config.unbind_pending is False
+    assert WorkerConfig.load(config_path).unbind_pending is False
+    assert worker.snapshot()["binding"]["deviceNo"] == "AABBCCDDEEFF"
+    assert worker.queue_store is queue_store
+    assert worker.upload_service is not None
+    assert worker.state["recording"] == "recording"
+    assert worker.state["health"] == "healthy"
+    worker.shutdown()
+
+
+def test_startup_recovers_the_legacy_pending_unbind_from_codex_27(tmp_path: Path):
+    config_path = tmp_path / "worker-config.json"
+    config = WorkerConfig(
+        data_root=str(tmp_path),
+        device_no="AABBCCDDEEFF",
+        school_id=1001,
+        school_name="星河实验学校",
+        bind_type=1,
+        classroom="1.1班录音设备",
+        class_id="101",
+        class_name="1.1班",
+        unbind_pending=True,
+    )
+    config.save_atomic(config_path)
+    worker = RecorderWorker(
+        config,
+        config_path=config_path,
+        emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [],
+        startup_gate=require_binding,
+        session_factory=lambda **_: FakeSession(),
+        upload_service_factory=lambda candidate, store: FakeUploadService(store, candidate),
+        upload_poll_seconds=10,
+    )
+
+    worker.startup()
+    worker.execute_command(command("start"))
+
+    assert worker.config.unbind_pending is False
+    assert WorkerConfig.load(config_path).unbind_pending is False
+    assert worker.snapshot()["binding"]["deviceNo"] == "AABBCCDDEEFF"
+    assert worker.state["health"] == "healthy"
+    assert worker.state["recording"] == "recording"
+    assert worker.queue_store is not None
+    assert worker.upload_service is not None
     worker.shutdown()
 
 
