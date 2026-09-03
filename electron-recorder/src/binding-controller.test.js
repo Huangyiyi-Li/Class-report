@@ -221,6 +221,29 @@ test("unbind authenticates, calls the service, then clears the worker binding", 
   ]);
 });
 
+test("unbind authentication failure leaves the existing worker binding active", async () => {
+  const authenticationError = Object.assign(
+    new Error("当前身份不是教师侧身份，不能绑定录音设备"),
+    { code: "PASSPORT_ROLE_NOT_ALLOWED" }
+  );
+  const { controller, workerCommands } = createFixture({
+    service: {
+      createSession: async () => {
+        throw authenticationError;
+      },
+    },
+    controller: {
+      getSnapshot: () => ({
+        recording: "idle",
+        binding: { deviceNo: "AABBCCDDEEFF-9001" },
+      }),
+    },
+  });
+
+  await assert.rejects(controller.unbindDevice(), authenticationError);
+  assert.deepEqual(workerCommands, []);
+});
+
 test("unbind failure leaves the worker in persisted safe-blocked state", async () => {
   const serviceError = Object.assign(new Error("server unavailable"), {
     code: "BINDING_REJECTED",

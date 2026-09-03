@@ -9,6 +9,17 @@ test("empty initial error state renders a safe generic binding message", () => {
   assert.equal(view.primary, "restart");
 });
 
+test("Passport role rejection explains the identity problem and offers account switching", () => {
+  const view = bindingErrorView({
+    code: "PASSPORT_ROLE_NOT_ALLOWED",
+    message: "当前身份不是教师侧身份，不能绑定录音设备",
+  });
+
+  assert.equal(view.title, "当前登录身份不能绑定设备");
+  assert.equal(view.detail, "当前身份不是教师侧身份，不能绑定录音设备");
+  assert.equal(view.primary, "switch_identity");
+});
+
 test("binding technical errors show a photo-ready device number and problem code", () => {
   assert.deepEqual(
     bindingErrorView(

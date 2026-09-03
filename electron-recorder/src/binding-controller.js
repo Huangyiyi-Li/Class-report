@@ -94,11 +94,11 @@ export class BindingController {
       throw controllerError("BINDING_NOT_FOUND", "设备当前未绑定");
     }
     this.#requireIdle(snapshot);
-    await this.sendWorkerCommand("prepare_unbind", {});
     const session = await this.service.createSession({
       deviceNo: snapshot.binding.deviceNo,
       scopeDeviceNo: false,
     });
+    await this.sendWorkerCommand("prepare_unbind", {});
     await this.service.unbindDevice(session.id);
     await this.sendWorkerCommand("clear_binding", {});
     return { success: true };

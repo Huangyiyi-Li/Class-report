@@ -8,6 +8,14 @@ export function bindingErrorView(error = {}, context = {}) {
 
 function bindErrorView(code, context, error) {
   const message = String(error?.message || "");
+  if (error?.code === "PASSPORT_ROLE_NOT_ALLOWED") {
+    return {
+      title: "当前登录身份不能绑定设备",
+      detail: message || "当前身份不具备设备绑定权限。",
+      guidance: "请切换到设备所属学校的教师身份后重新操作。",
+      primary: "switch_identity",
+    };
+  }
   if (error.unbound) {
     return {
       title: "原绑定已解除，新绑定未完成",
