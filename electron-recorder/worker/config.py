@@ -72,6 +72,7 @@ class WorkerConfig:
     class_name: str = ""
     binding_source: str = ""
     bound_at: str = ""
+    recording_notice_version: int = 0
     unbind_pending: bool = False
     segment_seconds: int = 300
     checkpoint_seconds: int = 10

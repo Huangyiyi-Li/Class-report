@@ -21,6 +21,7 @@ class AudioJournal:
         school_id: int | None = None,
         location_id: str = "",
         segment_index: int | None = None,
+        recording_id: str = "",
     ):
         root.mkdir(parents=True, exist_ok=True)
         self.root = root
@@ -35,6 +36,7 @@ class AudioJournal:
         self.sample_width = sample_width
         self.school_id = school_id
         self.location_id = location_id
+        self.recording_id = recording_id
         self.segment_index = segment_index
         self.file = self.part_path.open("ab", buffering=0)
         self._metadata = {
@@ -46,6 +48,7 @@ class AudioJournal:
             "locationId": location_id,
             "startedAt": started_at.isoformat(),
             "segmentIndex": segment_index,
+            "recordingId": recording_id,
             "durableFrames": 0,
         }
         _write_metadata(self.meta_path, self._metadata)
@@ -195,6 +198,7 @@ def recover_journals(
                 )
                 device_id = meta["deviceId"]
                 segment = {
+                    "recording_id": meta.get("recordingId", ""),
                     "local_path": str(final_path),
                     "segment_index": meta.get("segmentIndex"),
                     "code": device_id,

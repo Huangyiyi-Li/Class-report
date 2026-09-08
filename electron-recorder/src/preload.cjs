@@ -24,6 +24,13 @@ contextBridge.exposeInMainWorld("recorderShell", {
   openSystemTimeSettings: () => ipcRenderer.invoke("system:open-date-time"),
   calibrateSystemTime: () => invokeStructured("system:calibrate-date-time"),
   flushQueue: () => ipcRenderer.invoke("recorder:flush"),
+  startMicrophoneTest: (inputDevice) =>
+    invokeStructured("recorder:test-microphone", inputDevice),
+  getMicrophoneTest: () => invokeStructured("recorder:test-microphone-result"),
+  cancelMicrophoneTest: () =>
+    invokeStructured("recorder:test-microphone-cancel"),
+  acknowledgeRecordingNotice: () =>
+    invokeStructured("recorder:acknowledge-notice"),
   listInputDevices: () => ipcRenderer.invoke("recorder:list-input-devices"),
   updateSettings: (patch) =>
     ipcRenderer.invoke("recorder:update-settings", patch),

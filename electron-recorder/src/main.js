@@ -964,6 +964,30 @@ if (hasSingleInstanceLock)
       "recorder:flush",
       () => supervisor?.send("flush_queue") ?? false
     );
+    const firstUseCommand = async (command, payload = {}) => {
+      if (!supervisor?.socket)
+        throw new Error("录音服务未连接，请先保存录音目录并稍后重试");
+      const response = await supervisor.sendCommand(command, payload);
+      return response.result;
+    };
+    ipcMain.handle(
+      "recorder:test-microphone",
+      structuredIpc((_event, inputDevice) =>
+        firstUseCommand("start_microphone_test", { inputDevice })
+      )
+    );
+    ipcMain.handle(
+      "recorder:test-microphone-result",
+      structuredIpc(() => firstUseCommand("microphone_test_result"))
+    );
+    ipcMain.handle(
+      "recorder:test-microphone-cancel",
+      structuredIpc(() => firstUseCommand("cancel_microphone_test"))
+    );
+    ipcMain.handle(
+      "recorder:acknowledge-notice",
+      structuredIpc(() => firstUseCommand("acknowledge_recording_notice"))
+    );
     ipcMain.handle("recorder:list-input-devices", async () => {
       if (!supervisor?.socket) throw new Error("录音服务未连接，请稍后重试");
       const response = await supervisor.sendCommand("list_input_devices");

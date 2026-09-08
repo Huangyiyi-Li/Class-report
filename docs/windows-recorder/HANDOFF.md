@@ -9,6 +9,10 @@
 - 最新候选标签：`v0.2.0-codex.27`
 - 最新状态：正式绑定接口已可用；本候选在 `.26` 认证顺序修复基础上，允许从 `binding_required + recording error` 现场状态安全执行停止、解绑和重新绑定。必须在 Windows 真机验证 `.25` 遗留状态升级恢复、解绑、重新登录、新绑定及绑定后的磁盘状态。
 
+## 本地功能开发（2026-09-08）
+
+基于 `cf083e9` 的 `feat/recorder-first-use` 增加录音说明、麦克风试录回放与最近录音结果。当前为本地源码实现，未发布候选安装包；实现边界和 Windows 验收清单见 [FIRST_USE_CHECKS.md](FIRST_USE_CHECKS.md)。
+
 ## 1. 新 Windows 电脑接手步骤
 
 安装 Codex Windows 客户端、Git、Node.js 22、Python 3.11 和 GitHub CLI。不要使用 Python 3.14 构建当前 worker；CI 和现有依赖基线是 Python 3.11。

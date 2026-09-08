@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ChevronUp,
   FolderOpen,
+  Info,
   Mic,
   Pause,
   Play,
@@ -28,6 +29,11 @@ import {
   TEST_API_ROUTES,
   detectApiEnvironment,
 } from "./api-routes.js";
+import {
+  RecordingNotice,
+  RecentRecordings,
+  MicrophoneTest,
+} from "./first-use.jsx";
 import "./styles.css";
 
 const shell = window.recorderShell;
@@ -67,6 +73,7 @@ function App() {
 }
 
 function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
+  const [noticeOpen, setNoticeOpen] = useState(null);
   const [bindingOpen, setBindingOpen] = useState(false);
   const [rebindPending, setRebindPending] = useState(false);
   const [actionPending, setActionPending] = useState("");
@@ -167,6 +174,14 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
         <div className="window-tools">
           <button
             className="header-action"
+            aria-label="录音说明"
+            onClick={() => setNoticeOpen(true)}
+          >
+            <Info size={18} />
+            录音说明
+          </button>
+          <button
+            className="header-action"
             onClick={() => shell?.minimizeToTray?.()}
           >
             <ChevronUp size={16} />
@@ -190,6 +205,12 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
       ) : null}
 
       <section className={`home-state tone-${home.tone}`}>
+        <RecordingNotice
+          snapshot={snapshot}
+          open={noticeOpen ?? snapshot.recordingNoticeVersion !== 1}
+          onClose={() => setNoticeOpen(false)}
+          onSettings={() => setSettingsOpen(true)}
+        />
         <div className="state-heading">
           <span className="state-symbol">{home.icon}</span>
           <div className="state-copy">
@@ -328,8 +349,11 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
             <span>{actionError}</span>
           </div>
         ) : null}
+        <RecentRecordings
+          runs={snapshot.recentRecordings}
+          recording={snapshot.recording}
+        />
       </section>
-
       {uploadAttention ? (
         <footer className="upload-footer attention">
           <div>
@@ -673,6 +697,11 @@ function SettingsModal({
                 </select>
                 {deviceLoadError ? <small>{deviceLoadError}</small> : null}
               </label>
+              <MicrophoneTest
+                device={form.inputDevice}
+                recording={snapshot.recording || "idle"}
+                configured={snapshot.recordingNoticeVersion !== undefined}
+              />
               <label>
                 <span>录音保存位置</span>
                 <div className="setting-field-action">

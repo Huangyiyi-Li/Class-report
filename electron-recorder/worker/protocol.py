@@ -4,6 +4,10 @@ import json
 from dataclasses import dataclass
 
 ALLOWED_COMMANDS = {
+    "acknowledge_recording_notice",
+    "start_microphone_test",
+    "microphone_test_result",
+    "cancel_microphone_test",
     "start",
     "pause",
     "stop",

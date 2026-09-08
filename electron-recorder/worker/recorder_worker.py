@@ -6,11 +6,13 @@ import shutil
 import signal
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
+from worker.microphone_test import MicrophoneTest
 from worker.audio_journal import AudioJournal, recover_journals
 from worker.config import (
     StartupGate,
@@ -166,6 +168,7 @@ class CaptureSession:
                         )
                     self.queue_store.enqueue(
                         {
+                            "recording_id": getattr(journal, "recording_id", ""),
                             "local_path": str(final_path),
                             "segment_index": segment_index,
                             "code": journal.device_id,
@@ -236,6 +239,7 @@ class CaptureSession:
             self.journal.sample_width,
             school_id=getattr(self.journal, "school_id", self.config.school_id),
             location_id="",
+            recording_id=getattr(self.journal, "recording_id", ""),
         )
 
     def _record_failure(self, exc: Exception) -> None:
@@ -349,6 +353,8 @@ class RecorderWorker:
         capture_retry_delays: tuple[float, ...] = (1.0, 2.0, 5.0, 10.0),
         session_ready_timeout: float = 3.0,
     ):
+        self.microphone_test = MicrophoneTest(_sounddevice_input_stream)
+        self._recording_id = ""
         self.config = config
         self.emit_event = emit_event or emit
         self.session_factory = session_factory or CaptureSession
@@ -412,6 +418,7 @@ class RecorderWorker:
         for path in recovered:
             self.emit_event("recovered", {"path": str(path)})
         self.queue_store.reconcile_missing_files()
+        self.queue_store.interrupt_open_runs()
         if self.config.binding_source == "mock":
             self.upload_service = None
             self.state["upload"] = "mock_blocked"
@@ -447,6 +454,24 @@ class RecorderWorker:
             self._upload_stop.wait(self.upload_poll_seconds)
 
     def execute_command(self, command) -> bool | dict:
+        if command.command == "acknowledge_recording_notice":
+            if self.config_path is None:
+                raise CommandRejected("请先保存录音目录")
+            candidate = replace(self.config, recording_notice_version=1)
+            candidate.save_atomic(self.config_path)
+            self.config = candidate
+            self.emit_event("snapshot", self.snapshot())
+            return {"version": 1}
+        if command.command == "start_microphone_test":
+            with self._capture_transition_lock:
+                if self.session is not None or self._desired_recording or self.state["recording"] not in {"idle", "error"}:
+                    raise CommandRejected("请先停止录音，再测试麦克风")
+                return self.microphone_test.start(command.payload.get("inputDevice", "default"))
+        if command.command == "microphone_test_result":
+            return self.microphone_test.result()
+        if command.command == "cancel_microphone_test":
+            self.microphone_test.cancel()
+            return {"status": "idle"}
         if command.command == "list_input_devices":
             return {"devices": query_input_devices()}
         if command.command == "shutdown":
@@ -455,6 +480,8 @@ class RecorderWorker:
             return False
         if command.command == "start":
             with self._capture_transition_lock:
+                if self.microphone_test.active:
+                    raise CommandRejected("请先结束麦克风测试，再开始录音")
                 self._begin_recording_session()
                 self._desired_recording = True
                 if not self._guarded_start():
@@ -514,6 +541,9 @@ class RecorderWorker:
                 self._guarded_start()
 
     def _guarded_start(self) -> bool:
+        if self.microphone_test.active:
+            raise CommandRejected("请先结束麦克风测试，再开始录音")
+        self.microphone_test.cancel()
         gate = self._evaluate_startup_gate()
         if not gate.allowed:
             self._command_error(f"recording blocked: {gate.health}")
@@ -521,6 +551,7 @@ class RecorderWorker:
         if self.queue_store is None:
             self._bind_storage(self.config)
         if self.session is None:
+            self.queue_store.begin_run(self._recording_id, datetime.now(timezone.utc).isoformat())
             self._capture_generation += 1
             generation = self._capture_generation
             journal = AudioJournal(
@@ -532,6 +563,7 @@ class RecorderWorker:
                 2,
                 school_id=self.config.school_id,
                 location_id="",
+                recording_id=self._recording_id,
             )
             self.session = self.session_factory(
                 config=self.config,
@@ -547,6 +579,7 @@ class RecorderWorker:
             try:
                 candidate.start()
             except Exception as exc:
+                self.queue_store.mark_run_interrupted(self._recording_id)
                 self.session = None
                 self._cleanup_failed_session(candidate)
                 self.state["recording"] = "microphone_unavailable"
@@ -558,6 +591,7 @@ class RecorderWorker:
             if self.session is not candidate:
                 return False
             if not ready:
+                self.queue_store.mark_run_interrupted(self._recording_id)
                 failed_session = candidate
                 self.session = None
                 failed_session.stop()
@@ -624,9 +658,12 @@ class RecorderWorker:
         if self._recording_session_active:
             return
         self._recording_session_segment_index = 0
+        self._recording_id = uuid.uuid4().hex
         self._recording_session_active = True
 
     def _end_recording_session(self) -> None:
+        if self._recording_session_active and self.queue_store is not None and self._recording_id:
+            self.queue_store.finish_run(self._recording_id, datetime.now(timezone.utc).isoformat())
         self._recording_session_active = False
         self._recording_session_segment_index = 0
 
@@ -635,12 +672,16 @@ class RecorderWorker:
             if not self._recording_session_active:
                 raise RuntimeError("recording session is not active")
             self._recording_session_segment_index += 1
+            if self.queue_store is not None:
+                self.queue_store.expect_segment(self._recording_id, self._recording_session_segment_index)
             return self._recording_session_segment_index
 
     def _capture_error(self, exc: Exception, generation: int | None = None) -> None:
         with self._state_lock:
             if generation is not None and generation != self._capture_generation:
                 return
+            if self.queue_store is not None and self._recording_id:
+                self.queue_store.mark_run_interrupted(self._recording_id)
             self.state["recording"] = "error"
             self.state["health"] = "error"
             self.state["latestError"] = str(exc)
@@ -765,6 +806,9 @@ class RecorderWorker:
             }
         return {
             **self.state,
+            "recordingNoticeVersion": self.config.recording_notice_version,
+            "recentRecordings": self.queue_store.recent_runs() if self.queue_store is not None else [],
+            "microphoneTest": self.microphone_test.snapshot(),
             "pending": pending,
             "completed": counts.get("completed", 0),
             "localMissing": counts.get("local_missing", 0),
@@ -780,6 +824,8 @@ class RecorderWorker:
 
     def _apply_binding(self, payload: dict) -> None:
         with self._capture_transition_lock:
+            if self.microphone_test.active:
+                raise CommandRejected("请先结束麦克风测试，再绑定设备")
             if self.state["recording"] in {"starting", "recording"}:
                 message = "recording must stop before applying a binding"
                 self._command_error(message)
@@ -1118,6 +1164,7 @@ class RecorderWorker:
         self.emit_event("snapshot", self.snapshot())
 
     def shutdown(self) -> None:
+        self.microphone_test.cancel()
         try:
             self._shutdown_capture()
         except Exception as exc:

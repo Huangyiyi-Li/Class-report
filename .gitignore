@@ -42,3 +42,7 @@ electron-recorder/WINDOWS_TEST_README.md
 # Local workflow / agent metadata
 .claude/
 .spec-workflow/
+
+# Local recorder browser validation output
+electron-recorder/.playwright-cli/
+electron-recorder/output/playwright/

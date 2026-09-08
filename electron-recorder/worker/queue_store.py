@@ -56,6 +56,15 @@ class QueueStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_segments_claim
                   ON segments(status, retry_at, id);
+                CREATE TABLE IF NOT EXISTS recording_run_segments (
+                  segment_id INTEGER PRIMARY KEY, recording_id TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_run_segments_recording
+                  ON recording_run_segments(recording_id);
+                CREATE TABLE IF NOT EXISTS recording_runs (
+                  id TEXT PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT,
+                  interrupted INTEGER NOT NULL DEFAULT 0, expected INTEGER NOT NULL DEFAULT 0
+                );
                 CREATE TABLE IF NOT EXISTS segment_counters (
                   device_id TEXT NOT NULL,
                   day TEXT NOT NULL,
@@ -88,6 +97,47 @@ class QueueStore:
                 connection.execute(
                     f"ALTER TABLE segments ADD COLUMN {name} {declaration}"
                 )
+
+    def begin_run(self, recording_id: str, started_at: str) -> None:
+        with self._connect() as connection:
+            connection.execute("INSERT OR IGNORE INTO recording_runs(id, started_at) VALUES (?, ?)",
+                               (recording_id, started_at))
+
+    def expect_segment(self, recording_id: str, index: int) -> None:
+        with self._connect() as connection:
+            connection.execute("UPDATE recording_runs SET expected = MAX(expected, ?) WHERE id = ?",
+                               (index, recording_id))
+
+    def mark_run_interrupted(self, recording_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("UPDATE recording_runs SET interrupted = 1 WHERE id = ?", (recording_id,))
+
+    def finish_run(self, recording_id: str, ended_at: str) -> None:
+        with self._connect() as connection:
+            connection.execute("UPDATE recording_runs SET ended_at = ? WHERE id = ?", (ended_at, recording_id))
+
+    def interrupt_open_runs(self) -> None:
+        # A worker restart cannot establish the exact end of an unfinished recording.
+        with self._connect() as connection:
+            connection.execute("UPDATE recording_runs SET interrupted = 1, ended_at = '' WHERE ended_at IS NULL")
+
+    def recent_runs(self, limit: int = 3) -> list[dict]:
+        with self._connect() as connection:
+            runs = connection.execute("SELECT * FROM recording_runs ORDER BY rowid DESC LIMIT ?",
+                                      (max(1, min(limit, 10)),)).fetchall()
+            result = []
+            for run in runs:
+                segments = connection.execute("SELECT s.status, s.local_path FROM segments s JOIN recording_run_segments r ON r.segment_id = s.id WHERE r.recording_id = ?",
+                                              (run['id'],)).fetchall()
+                counts = {}
+                for segment in segments:
+                    counts[segment['status']] = counts.get(segment['status'], 0) + 1
+                result.append({'id': run['id'], 'startedAt': run['started_at'], 'endedAt': run['ended_at'],
+                               'interrupted': bool(run['interrupted']), 'expected': run['expected'],
+                               'segments': len(segments), 'completed': counts.get('completed', 0),
+                               'saved': sum(Path(row['local_path']).is_file() for row in segments),
+                               'counts': counts})
+        return result
 
     def enqueue(self, segment: dict) -> int:
         values = _segment_values(segment)
@@ -422,6 +472,9 @@ class QueueStore:
         row = connection.execute(
             "SELECT id FROM segments WHERE local_path = ?", (values["local_path"],)
         ).fetchone()
+        if values["recording_id"]:
+            connection.execute("INSERT OR IGNORE INTO recording_run_segments(segment_id, recording_id) VALUES (?, ?)",
+                               (row["id"], values["recording_id"]))
         return int(row["id"])
 
     def _transition(
@@ -472,6 +525,7 @@ def _segment_values(segment: dict) -> dict:
     if isinstance(segment_index, bool) or not isinstance(segment_index, int):
         raise ValueError("segment_index must be an integer")
     return {
+        "recording_id": str(segment.get("recording_id") or ""),
         "local_path": local_path,
         "segment_index": segment_index,
         "code": str(segment.get("code") or segment.get("device_no") or ""),
