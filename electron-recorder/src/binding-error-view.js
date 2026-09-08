@@ -2,8 +2,47 @@ export function bindingErrorView(error = {}, context = {}) {
   const source = error || {};
   const operation = source.operation || "bind";
   const code = Number(source.businessCode);
-  if (operation === "unbind") return unbindErrorView(code, context, source);
-  return bindErrorView(code, context, source);
+  const view =
+    operation === "unbind"
+      ? unbindErrorView(code, context, source)
+      : bindErrorView(code, context, source);
+  const problemCode = bindingProblemCode(source);
+  return problemCode && !view.problemCode ? { ...view, problemCode } : view;
+}
+
+const CLIENT_PROBLEM_CODES = Object.freeze({
+  PASSPORT_LOGIN_CANCELLED: "C01",
+  PASSPORT_REQUEST_FAILED: "C02",
+  PASSPORT_IDENTITY_INVALID: "C03",
+  PASSPORT_ROLE_NOT_ALLOWED: "C04",
+  PASSPORT_SESSION_INVALID: "C05",
+  BINDING_SESSION_NOT_FOUND: "C06",
+  BINDING_SESSION_INVALID_STATE: "C06",
+  BINDING_REQUEST_INVALID: "C07",
+  BINDING_RESPONSE_INVALID: "C08",
+  BINDING_SERVICE_UNAVAILABLE: "C09",
+  BINDING_REJECTED: "C10",
+  DEVICE_IDENTITY_UNAVAILABLE: "C11",
+  BINDING_REQUIRES_IDLE: "C12",
+  WORKER_UNAVAILABLE: "C13",
+});
+
+export function bindingProblemCode(error = {}) {
+  const source = error || {};
+  const prefix = source.operation === "unbind" ? "UNBIND" : "BIND";
+  const rawBusinessCode = source.businessCode;
+  const businessCode = Number(rawBusinessCode);
+  if (
+    rawBusinessCode !== null &&
+    rawBusinessCode !== "" &&
+    Number.isInteger(businessCode) &&
+    businessCode >= 0
+  ) {
+    return `${prefix}-${String(businessCode).padStart(2, "0")}`;
+  }
+  const internalCode = String(source.code || "");
+  if (!internalCode && !source.message) return "";
+  return `${prefix}-${CLIENT_PROBLEM_CODES[internalCode] || "C99"}`;
 }
 
 function bindErrorView(code, context, error) {
@@ -105,8 +144,8 @@ function bindErrorView(code, context, error) {
   }
   return {
     title: "绑定没有完成",
-    detail: "客户端暂时无法完成设备绑定。",
-    guidance: "请重新操作；仍无法完成时，请联系技术人员。",
+    detail: String(error?.message || "客户端暂时无法完成设备绑定。"),
+    guidance: "请记录问题代码后重新操作；仍无法完成时，请导出诊断信息。",
     primary: "restart",
   };
 }
@@ -145,8 +184,8 @@ function unbindErrorView(code, context, error) {
   }
   return {
     title: "解绑没有完成",
-    detail: "客户端暂时无法完成设备解绑。",
-    guidance: "设备绑定信息未清除，请稍后重新操作。",
+    detail: String(error?.message || "客户端暂时无法完成设备解绑。"),
+    guidance: "设备绑定信息未清除，请记录问题代码后重新操作。",
     primary: "close",
   };
 }

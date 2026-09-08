@@ -19,6 +19,7 @@ def test_reject_unknown_command():
         "update_settings",
         "apply_binding",
         "prepare_unbind",
+        "cancel_unbind",
         "clear_binding",
         "check_device_auth",
     ],

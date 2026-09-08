@@ -18,6 +18,32 @@ test("Passport role rejection explains the identity problem and offers account s
   assert.equal(view.title, "当前登录身份不能绑定设备");
   assert.equal(view.detail, "当前身份不是教师侧身份，不能绑定录音设备");
   assert.equal(view.primary, "switch_identity");
+  assert.equal(view.problemCode, "BIND-C04");
+});
+
+test("generic binding failures preserve the source reason and expose a client problem code", () => {
+  const view = bindingErrorView({
+    code: "BINDING_REJECTED",
+    operation: "bind",
+    businessCode: null,
+    message: "网关没有返回可识别的业务码",
+  });
+
+  assert.equal(view.title, "绑定没有完成");
+  assert.equal(view.detail, "网关没有返回可识别的业务码");
+  assert.equal(view.problemCode, "BIND-C10");
+});
+
+test("all backend binding business codes become visible problem codes", () => {
+  const view = bindingErrorView({
+    code: "BINDING_REJECTED",
+    operation: "bind",
+    businessCode: 12,
+    message: "服务端拒绝绑定",
+  });
+
+  assert.equal(view.problemCode, "BIND-12");
+  assert.equal(view.detail, "服务端拒绝绑定");
 });
 
 test("binding technical errors show a photo-ready device number and problem code", () => {
