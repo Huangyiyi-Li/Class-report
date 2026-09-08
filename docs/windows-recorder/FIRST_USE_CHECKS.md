@@ -2,7 +2,8 @@
 
 - 基线：`cf083e9ac044c4161d9eab9c5e1661bf5a155f1b`（0.2.0-codex.27）。
 - 开发分支：`feat/recorder-first-use`。
-- 状态：本地源码实现，未发布安装包，未做 Windows 真机麦克风验收。
+- 候选版本：`v0.2.0-codex.30`，合入 `.28/.29` 的解绑恢复与问题码修复。
+- 状态：准备通过 GitHub Actions 构建和发布内部测试版；Windows 真机麦克风验收待完成。
 
 ## 使用变化
 

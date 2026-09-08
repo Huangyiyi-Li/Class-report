@@ -1,17 +1,17 @@
 # Windows 录音采集客户端交接
 
-- 更新日期：2026-09-03
+- 更新日期：2026-09-08
 - 当前状态：`v0.2.0-codex.29` 为所有绑定失败提供稳定问题代码、真实原因和可导出的诊断摘要，等待 Windows 真机复测
 - 仓库：`https://github.com/Huangyiyi-Li/Class-report.git`
 - 工作分支：`feat/recorder-v0.2.0-codex.18`
 - Draft PR：`https://github.com/Huangyiyi-Li/Class-report/pull/1`
-- 当前源码版本：`0.2.0-codex.29`
+- 当前源码版本：`0.2.0-codex.30`
 - 最新候选标签：`v0.2.0-codex.29`
 - 最新状态：保留 `.28` 的待解绑自动恢复与失败回滚；后端任意绑定业务码统一显示 `BIND-xx`，客户端登录、网络、响应解析等异常显示 `BIND-Cxx`。通用错误保留真实原因，问题代码不再依赖设备编号；诊断导出增加最近一次绑定失败的时间、阶段、内部代码、业务码和脱敏文案。必须在 Windows 真机重试换绑，并依据新问题代码确认真实失败原因。
 
 ## 本地功能开发（2026-09-08）
 
-基于 `cf083e9` 的 `feat/recorder-first-use` 增加录音说明、麦克风试录回放与最近录音结果。当前为本地源码实现，未发布候选安装包；实现边界和 Windows 验收清单见 [FIRST_USE_CHECKS.md](FIRST_USE_CHECKS.md)。
+基于 `cf083e9` 的 `feat/recorder-first-use` 增加录音说明、麦克风试录回放与最近录音结果。准备发布 `v0.2.0-codex.30` 内部测试候选，保留 `.28/.29` 修复；实现边界和 Windows 验收清单见 [FIRST_USE_CHECKS.md](FIRST_USE_CHECKS.md)。
 
 ## 1. 新 Windows 电脑接手步骤
 
