@@ -11,7 +11,7 @@
 
 ## 本地功能开发（2026-09-08）
 
-基于 `cf083e9` 的 `feat/recorder-first-use` 增加录音说明、麦克风试录回放与最近录音结果。准备发布 `v0.2.0-codex.30` 内部测试候选，保留 `.28/.29` 修复；实现边界和 Windows 验收清单见 [FIRST_USE_CHECKS.md](FIRST_USE_CHECKS.md)。
+基于 `cf083e9` 的 `feat/recorder-first-use` 增加录音说明、麦克风试录回放与最近录音结果。已发布 `v0.2.0-codex.30` 内部测试候选，保留 `.28/.29` 修复，Windows CI 通过、真机麦克风验收待完成；实现边界和 Windows 验收清单见 [FIRST_USE_CHECKS.md](FIRST_USE_CHECKS.md)。
 
 ## 1. 新 Windows 电脑接手步骤
 

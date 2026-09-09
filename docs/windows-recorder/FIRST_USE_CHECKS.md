@@ -3,7 +3,11 @@
 - 基线：`cf083e9ac044c4161d9eab9c5e1661bf5a155f1b`（0.2.0-codex.27）。
 - 开发分支：`feat/recorder-first-use`。
 - 候选版本：`v0.2.0-codex.30`，合入 `.28/.29` 的解绑恢复与问题码修复。
-- 状态：准备通过 GitHub Actions 构建和发布内部测试版；Windows 真机麦克风验收待完成。
+- 状态：已发布 GitHub 内部测试版，Windows CI、资源检查、界面烟测及正常启动门禁通过；Windows 真机麦克风验收待完成。
+- Release：https://github.com/Huangyiyi-Li/Class-report/releases/tag/v0.2.0-codex.30
+- 构建：https://github.com/Huangyiyi-Li/Class-report/actions/runs/34209905494
+- 发布提交：`60b46132ca2d9cf52a690b29caf40e1819bdefc5`。
+- GitHub 提供的 Setup SHA-256：`5ac5af8e2ba4497672708ec63aa122b9db9ab16f692ae95b173329f158eeb1ff`（未完成本地完整下载复算）。
 
 ## 使用变化
 
