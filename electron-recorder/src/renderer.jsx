@@ -173,8 +173,9 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
         </div>
         <div className="window-tools">
           <button
-            className="header-action"
+            className="header-action notice-toggle"
             aria-label="录音说明"
+            title="录音说明"
             onClick={() => setNoticeOpen(true)}
           >
             <Info size={18} />
@@ -182,10 +183,12 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
           </button>
           <button
             className="header-action"
+            aria-label="最小化常驻"
+            title="最小化常驻"
             onClick={() => shell?.minimizeToTray?.()}
           >
             <ChevronUp size={16} />
-            最小化常驻
+            <span className="header-action-label">最小化常驻</span>
           </button>
           <button
             className="header-icon"

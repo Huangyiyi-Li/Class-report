@@ -3117,3 +3117,101 @@ body:not(.float-mode) {
   width: 100%;
   margin-top: 12px;
 }
+
+/* Keep the notice entry readable at every supported window size. */
+.header-action.notice-toggle {
+  width: auto;
+  min-width: 112px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  gap: 8px;
+  color: #384d54;
+  white-space: nowrap;
+  overflow: visible;
+}
+.home-state .recording-notice {
+  padding: 20px 24px;
+}
+.home-state .notice-purpose {
+  font-weight: 400;
+  color: #52666c;
+}
+.recording-notice .notice-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  padding: 0;
+  margin: 20px 0;
+  list-style: none;
+  counter-reset: notice-step;
+}
+.notice-steps li {
+  counter-increment: notice-step;
+}
+.notice-steps strong {
+  display: block;
+  color: #172e33;
+  font-size: 15px;
+}
+.notice-steps strong::before {
+  content: counter(notice-step) ". ";
+  color: #26805f;
+}
+.notice-steps span {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #52666c;
+}
+.notice-stop {
+  padding: 12px 16px;
+  border-left: 3px solid #ad753b;
+  background: #fff8ed;
+  border-radius: 4px;
+}
+.notice-stop strong {
+  font-size: 15px;
+  color: #674519;
+}
+.home-state .notice-stop p {
+  font-size: 13px;
+  margin: 5px 0 0;
+  font-weight: 400;
+  color: #674519;
+}
+.notice-more {
+  margin-top: 14px;
+  font-size: 13px;
+  color: #52666c;
+}
+.notice-more summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+.home-state .notice-more p {
+  font-size: 13px;
+  font-weight: 400;
+}
+.notice-primary {
+  border: 0;
+  border-radius: 7px;
+  background: #15975f;
+  color: #fff;
+  padding: 10px 22px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.notice-primary:hover {
+  background: #107a4d;
+}
+.recording-notice .first-use-actions {
+  justify-content: flex-end;
+  align-items: center;
+}
+
+@media (max-width: 1024px), (max-height: 680px) {
+  .header-action-label {
+    display: none;
+  }
+}

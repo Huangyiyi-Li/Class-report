@@ -15,31 +15,42 @@ export function RecordingNotice({ snapshot, open, onClose, onSettings }) {
   };
   return (
     <section className="recording-notice" aria-label="录音说明">
-      <h2>开始使用课堂录音采集助手</h2>
-      <p>
-        本客户端采集课堂音频，供课堂评价平台选择有效时段、生成教学诊断报告。
-      </p>
-      <p>
-        音频先保存在这台电脑的录音目录，再上传至平台。断网时继续本地保存，恢复网络后补传。录音归属与设备绑定有关，查看权限以平台和学校的实际配置为准。
-      </p>
-      <p>
-        <strong>启停方式：</strong>
-        开启“自动录音”后，程序启动并通过检查就会录音，不按课表自动停止。最小化或退出界面不会停止后台录音；请使用“暂停录音”或“停止录音”。
-      </p>
-      <ol>
-        <li>在设置中选择录音保存位置，再登录并绑定学校和教室。</li>
-        <li>停止正式录音后，在设置中试录并回放，确认麦克风声音清楚。</li>
-        <li>按需开始录音，结束后核对下方“最近录音”的保存和上传结果。</li>
+      <h2>第一次使用？先看这三步</h2>
+      <p className="notice-purpose">录下课堂声音，用于生成教学诊断报告。</p>
+      <ol className="notice-steps">
+        <li>
+          <strong>确认教室</strong>
+          <span>登录后，选择这台电脑所在的教室。</span>
+        </li>
+        <li>
+          <strong>试试麦克风</strong>
+          <span>试录 8 秒，听听声音是否清楚。</span>
+        </li>
+        <li>
+          <strong>结束后看结果</strong>
+          <span>点击“停止录音”，再看下方“最近录音”。</span>
+        </li>
       </ol>
-      {["recording", "starting"].includes(snapshot.recording) && (
-        <p className="notice-live">
-          当前正在录音或准备录音。阅读说明不会暂停采集。
+      <div className="notice-stop">
+        <strong>关窗口，不会停止录音</strong>
+        <p>
+          结束采集请点“停止录音”。开启自动录音后，软件启动并检查通过就会开始录音。
         </p>
+      </div>
+      {["recording", "starting"].includes(snapshot.recording) && (
+        <p className="notice-live">当前正在录音或准备录音。</p>
       )}
+      <details className="notice-more">
+        <summary>录音存在哪里？谁能查看？</summary>
+        <p>
+          录音先保存在这台电脑上，联网后自动上传到课堂评价平台。断网也能录音，恢复网络后继续上传。
+        </p>
+        <p>查看范围由学校和平台设置决定。如有疑问，请联系学校管理员。</p>
+      </details>
       {error && <p role="alert">{error}</p>}
       <div className="first-use-actions">
-        <button className="quiet-action" onClick={onSettings}>
-          打开设置与麦克风测试
+        <button className="notice-primary" onClick={onSettings}>
+          去设置
         </button>
         <button className="quiet-action" onClick={acknowledge}>
           知道了
