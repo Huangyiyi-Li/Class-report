@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { recordingResult } from "./recording-result.js";
 
-export function RecordingNotice({ snapshot, open, onClose, onSettings }) {
+export function RecordingNotice({ snapshot, open, onClose }) {
   const [error, setError] = useState("");
   if (!open) return null;
   const acknowledge = async () => {
@@ -15,31 +15,19 @@ export function RecordingNotice({ snapshot, open, onClose, onSettings }) {
   };
   return (
     <section className="recording-notice" aria-label="录音说明">
-      <h2>第一次使用？先看这三步</h2>
-      <p className="notice-purpose">录下课堂声音，用于生成教学诊断报告。</p>
-      <ol className="notice-steps">
-        <li>
-          <strong>确认教室</strong>
-          <span>登录后，选择这台电脑所在的教室。</span>
-        </li>
-        <li>
-          <strong>试试麦克风</strong>
-          <span>试录 8 秒，听听声音是否清楚。</span>
-        </li>
-        <li>
-          <strong>结束后看结果</strong>
-          <span>点击“停止录音”，再看下方“最近录音”。</span>
-        </li>
-      </ol>
-      <div className="notice-stop">
-        <strong>关窗口，不会停止录音</strong>
-        <p>
-          结束采集请点“停止录音”。开启自动录音后，软件启动并检查通过就会开始录音。
-        </p>
+      <div className="notice-heading">
+        <h2>录音说明</h2>
+        <button className="quiet-action" onClick={acknowledge}>收起说明</button>
       </div>
-      {["recording", "starting"].includes(snapshot.recording) && (
-        <p className="notice-live">当前正在录音或准备录音。</p>
+      <p className="notice-purpose">录下课堂声音，上传后用于生成教学诊断报告。</p>
+      {snapshot.recording !== "recording" && (
+        <p className="notice-behavior">关闭窗口不会停止录音。结束时请点“停止录音”。</p>
       )}
+      <p className="notice-behavior">
+        {snapshot.settings?.autoRecordEnabled
+          ? "自动录音已开启：软件启动并检查通过后，会开始录音。"
+          : "自动录音未开启：需要录制时，请点“开始录音”。"}
+      </p>
       <details className="notice-more">
         <summary>录音存在哪里？谁能查看？</summary>
         <p>
@@ -48,14 +36,6 @@ export function RecordingNotice({ snapshot, open, onClose, onSettings }) {
         <p>查看范围由学校和平台设置决定。如有疑问，请联系学校管理员。</p>
       </details>
       {error && <p role="alert">{error}</p>}
-      <div className="first-use-actions">
-        <button className="notice-primary" onClick={onSettings}>
-          去设置
-        </button>
-        <button className="quiet-action" onClick={acknowledge}>
-          知道了
-        </button>
-      </div>
     </section>
   );
 }

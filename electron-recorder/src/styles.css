@@ -3053,12 +3053,6 @@ body:not(.float-mode) {
   margin: 6px 0;
   color: #3d5056;
 }
-.recording-notice ol {
-  margin: 12px 0;
-  padding-left: 22px;
-  font-size: 14px;
-  line-height: 1.8;
-}
 .first-use-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3090,8 +3084,7 @@ body:not(.float-mode) {
   color: #637579;
 }
 .home-state .result-warning,
-.result-warning,
-.home-state .notice-live {
+.result-warning {
   color: #a5412e;
 }
 .microphone-test {
@@ -3136,50 +3129,6 @@ body:not(.float-mode) {
   font-weight: 400;
   color: #52666c;
 }
-.recording-notice .notice-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
-  padding: 0;
-  margin: 20px 0;
-  list-style: none;
-  counter-reset: notice-step;
-}
-.notice-steps li {
-  counter-increment: notice-step;
-}
-.notice-steps strong {
-  display: block;
-  color: #172e33;
-  font-size: 15px;
-}
-.notice-steps strong::before {
-  content: counter(notice-step) ". ";
-  color: #26805f;
-}
-.notice-steps span {
-  display: block;
-  margin-top: 6px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #52666c;
-}
-.notice-stop {
-  padding: 12px 16px;
-  border-left: 3px solid #ad753b;
-  background: #fff8ed;
-  border-radius: 4px;
-}
-.notice-stop strong {
-  font-size: 15px;
-  color: #674519;
-}
-.home-state .notice-stop p {
-  font-size: 13px;
-  margin: 5px 0 0;
-  font-weight: 400;
-  color: #674519;
-}
 .notice-more {
   margin-top: 14px;
   font-size: 13px;
@@ -3193,25 +3142,53 @@ body:not(.float-mode) {
   font-size: 13px;
   font-weight: 400;
 }
-.notice-primary {
-  border: 0;
-  border-radius: 7px;
-  background: #15975f;
-  color: #fff;
-  padding: 10px 22px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.notice-primary:hover {
-  background: #107a4d;
-}
-.recording-notice .first-use-actions {
-  justify-content: flex-end;
-  align-items: center;
-}
-
 @media (max-width: 1024px), (max-height: 680px) {
   .header-action-label {
     display: none;
   }
 }
+
+/* Keep the current recording task visible while supporting information scrolls. */
+.home-state {
+  padding: 24px 30px 0;
+  overflow: hidden;
+  gap: 20px;
+}
+.recording-controls {
+  width: min(100%, 760px);
+  flex: 0 0 auto;
+  text-align: left;
+}
+.home-state .state-heading {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 18px;
+  text-align: left;
+}
+.home-state .state-symbol { width: 54px; height: 54px; margin: 0; flex-shrink: 0; }
+.home-state .state-copy h1 { font-size: 28px; margin: 0; }
+.home-state .state-copy p { margin: 8px 0 0; font-size: 14px; }
+.home-state .recording-elapsed { font-size: 30px; margin-top: 4px; }
+.home-state .home-actions { min-height: 0; margin: 18px 0 0; justify-content: flex-start; }
+.home-state .home-primary, .home-state .home-secondary { min-height: 44px; height: 44px; }
+.recording-behavior { font-size: 14px; margin: 12px 0 0; color: #52635f; }
+.home-information {
+  width: min(100%, 760px); min-height: 0; flex: 1 1 auto;
+  overflow-y: auto; padding-bottom: 24px; text-align: left;
+}
+.home-information .recording-notice { width: 100%; padding: 14px 18px; margin: 0; border-radius: 12px; }
+.notice-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.notice-heading .quiet-action { padding: 4px 0; min-height: 0; font-size: 13px; white-space: nowrap; }
+.home-information .recording-notice h2 { font-size: 15px; margin: 0; }
+.home-information .notice-purpose { margin: 8px 0; font-size: 14px; }
+.notice-behavior { font-size: 13px; line-height: 1.6; color: #52635f; margin: 4px 0; }
+.home-information .notice-more { margin-top: 10px; font-size: 13px; }
+.home-information .recent-recordings { width: 100%; margin-top: 18px; padding-top: 14px; }
+.home-information .recent-recordings:first-child { margin-top: 0; }
+[data-settings-target]:focus { outline: 2px solid #438c79; outline-offset: 5px; border-radius: 4px; }
+
+.home-state .home-actions { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.home-information .notice-heading .quiet-action { height: auto; min-width: 0; line-height: 20px; }
+.home-information .notice-behavior { font-weight: 400; font-size: 13px; }

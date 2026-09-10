@@ -74,6 +74,12 @@ function App() {
 
 function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
   const [noticeOpen, setNoticeOpen] = useState(null);
+  const [settingsTarget, setSettingsTarget] = useState(null);
+  const informationRef = useRef(null);
+  const openSettings = (target = null) => {
+    setSettingsTarget(target);
+    setSettingsOpen(true);
+  };
   const [bindingOpen, setBindingOpen] = useState(false);
   const [rebindPending, setRebindPending] = useState(false);
   const [actionPending, setActionPending] = useState("");
@@ -176,7 +182,10 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
             className="header-action notice-toggle"
             aria-label="录音说明"
             title="录音说明"
-            onClick={() => setNoticeOpen(true)}
+            onClick={() => {
+              setNoticeOpen(true);
+              informationRef.current?.scrollTo({ top: 0 });
+            }}
           >
             <Info size={18} />
             录音说明
@@ -193,7 +202,7 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
           <button
             className="header-icon"
             aria-label="维护设置"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => openSettings()}
           >
             <Settings size={19} />
           </button>
@@ -208,154 +217,165 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
       ) : null}
 
       <section className={`home-state tone-${home.tone}`}>
-        <RecordingNotice
-          snapshot={snapshot}
-          open={noticeOpen ?? snapshot.recordingNoticeVersion !== 1}
-          onClose={() => setNoticeOpen(false)}
-          onSettings={() => setSettingsOpen(true)}
-        />
-        <div className="state-heading">
-          <span className="state-symbol">{home.icon}</span>
-          <div className="state-copy">
-            <h1>{home.title}</h1>
-            {runtime.recording === "recording" ? (
-              <strong className="recording-elapsed">
-                {formatElapsed(snapshot.recordingStartedAt, clockNow)}
-              </strong>
+        <div className="recording-controls">
+          <div className="state-heading">
+            <span className="state-symbol">{home.icon}</span>
+            <div className="state-copy">
+              <h1>{home.title}</h1>
+              {runtime.recording === "recording" ? (
+                <strong className="recording-elapsed">
+                  {formatElapsed(snapshot.recordingStartedAt, clockNow)}
+                </strong>
+              ) : null}
+              {home.description ? <p>{home.description}</p> : null}
+            </div>
+          </div>
+
+          {home.notice ? (
+            <div className={`inline-notice ${home.noticeTone || ""}`}>
+              <AlertTriangle size={18} />
+              <span>{home.notice}</span>
+            </div>
+          ) : null}
+
+          {home.deviceNo ? (
+            <dl className="home-support-reference">
+              <div>
+                <dt>设备编号</dt>
+                <dd>{home.deviceNo}</dd>
+              </div>
+              <div>
+                <dt>问题代码</dt>
+                <dd>{home.problemCode}</dd>
+              </div>
+            </dl>
+          ) : null}
+
+          <div className="home-actions">
+            {home.primary === "bind" ? (
+              <button
+                className="home-primary"
+                onClick={() => setBindingOpen(true)}
+                data-testid="open-binding"
+              >
+                {home.primaryLabel || "绑定教室"}
+              </button>
             ) : null}
-            {home.description ? <p>{home.description}</p> : null}
-          </div>
-        </div>
-
-        {home.notice ? (
-          <div className={`inline-notice ${home.noticeTone || ""}`}>
-            <AlertTriangle size={18} />
-            <span>{home.notice}</span>
-          </div>
-        ) : null}
-
-        {home.deviceNo ? (
-          <dl className="home-support-reference">
-            <div>
-              <dt>设备编号</dt>
-              <dd>{home.deviceNo}</dd>
-            </div>
-            <div>
-              <dt>问题代码</dt>
-              <dd>{home.problemCode}</dd>
-            </div>
-          </dl>
-        ) : null}
-
-        <div className="home-actions">
-          {home.primary === "bind" ? (
-            <button
-              className="home-primary"
-              onClick={() => setBindingOpen(true)}
-              data-testid="open-binding"
-            >
-              {home.primaryLabel || "登录并绑定设备"}
-            </button>
-          ) : null}
-          {home.primary === "pause" ? (
-            <button
-              className="home-primary"
-              disabled={Boolean(actionPending)}
-              onClick={() =>
-                runRecorderAction("pause", () => shell?.pauseRecording?.())
-              }
-            >
-              <Pause size={20} />
-              {actionPending === "pause" ? "正在暂停…" : "暂停录音"}
-            </button>
-          ) : null}
-          {home.primary === "start" ? (
-            <button
-              className="home-primary"
-              disabled={Boolean(actionPending)}
-              onClick={() =>
-                runRecorderAction("start", () => shell?.startRecording?.())
-              }
-            >
-              <Play size={20} />
-              {actionPending === "start"
-                ? "正在启动…"
-                : runtime.recording === "paused"
-                  ? "继续录音"
-                  : "开始录音"}
-            </button>
-          ) : null}
-          {home.primary === "settings" ? (
-            <button
-              className="home-primary"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings size={19} />
-              打开设置
-            </button>
-          ) : null}
-          {home.primary === "calibrate_clock" ? (
-            <>
+            {home.primary === "pause" ? (
               <button
                 className="home-primary"
                 disabled={Boolean(actionPending)}
                 onClick={() =>
-                  runRecorderAction("calibrate-clock", async () => {
-                    await shell?.calibrateSystemTime?.();
-                    await shell?.recheckRecording?.();
-                  })
+                  runRecorderAction("pause", () => shell?.pauseRecording?.())
                 }
               >
-                {actionPending === "calibrate-clock"
-                  ? "正在校准…"
-                  : "自动校准时间"}
+                <Pause size={20} />
+                {actionPending === "pause" ? "正在暂停…" : "暂停录音"}
               </button>
+            ) : null}
+            {home.primary === "start" ? (
+              <button
+                className="home-primary"
+                disabled={Boolean(actionPending)}
+                onClick={() =>
+                  runRecorderAction("start", () => shell?.startRecording?.())
+                }
+              >
+                <Play size={20} />
+                {actionPending === "start"
+                  ? "正在启动…"
+                  : runtime.recording === "paused"
+                    ? "继续录音"
+                    : "开始录音"}
+              </button>
+            ) : null}
+            {home.primary === "settings" ? (
+              <button
+                className="home-primary"
+                onClick={() => openSettings(home.settingsTarget)}
+              >
+                <Settings size={19} />
+                {home.primaryLabel || "打开设置"}
+              </button>
+            ) : null}
+            {home.primary === "calibrate_clock" ? (
+              <>
+                <button
+                  className="home-primary"
+                  disabled={Boolean(actionPending)}
+                  onClick={() =>
+                    runRecorderAction("calibrate-clock", async () => {
+                      await shell?.calibrateSystemTime?.();
+                      await shell?.recheckRecording?.();
+                    })
+                  }
+                >
+                  {actionPending === "calibrate-clock"
+                    ? "正在校准…"
+                    : "自动校准时间"}
+                </button>
+                <button
+                  className="home-secondary"
+                  disabled={Boolean(actionPending)}
+                  onClick={() => shell?.openSystemTimeSettings?.()}
+                >
+                  打开时间设置
+                </button>
+              </>
+            ) : null}
+            {home.primary === "recheck_auth" ? (
+              <button
+                className="home-primary"
+                disabled={Boolean(actionPending)}
+                onClick={() =>
+                  runRecorderAction("recheck-auth", () =>
+                    shell?.recheckRecording?.()
+                  )
+                }
+              >
+                <RefreshCcw size={18} />
+                {actionPending === "recheck-auth" ? "正在检测…" : "重新检测"}
+              </button>
+            ) : null}
+            {home.showStop ? (
               <button
                 className="home-secondary"
                 disabled={Boolean(actionPending)}
-                onClick={() => shell?.openSystemTimeSettings?.()}
+                onClick={() =>
+                  runRecorderAction("stop", () => shell?.stopRecording?.())
+                }
               >
-                打开时间设置
+                <Power size={19} />
+                停止录音
               </button>
-            </>
-          ) : null}
-          {home.primary === "recheck_auth" ? (
-            <button
-              className="home-primary"
-              disabled={Boolean(actionPending)}
-              onClick={() =>
-                runRecorderAction("recheck-auth", () =>
-                  shell?.recheckRecording?.()
-                )
-              }
-            >
-              <RefreshCcw size={18} />
-              {actionPending === "recheck-auth" ? "正在检测…" : "重新检测"}
+            ) : null}
+          {home.primary === "start" && runtime.recording === "idle" ? (
+            <button className="home-secondary" onClick={() => openSettings("microphone")}>
+              测试麦克风
             </button>
           ) : null}
-          {home.showStop ? (
-            <button
-              className="home-secondary"
-              disabled={Boolean(actionPending)}
-              onClick={() =>
-                runRecorderAction("stop", () => shell?.stopRecording?.())
-              }
-            >
-              <Power size={19} />
-              停止录音
-            </button>
+          </div>
+          {actionError ? (
+            <div className="inline-notice danger" role="alert">
+              <AlertTriangle size={18} />
+              <span>{actionError}</span>
+            </div>
+          ) : null}
+          {runtime.recording === "recording" ? (
+            <p className="recording-behavior">关闭窗口仍会录音，结束请点“停止录音”。</p>
           ) : null}
         </div>
-        {actionError ? (
-          <div className="inline-notice danger" role="alert">
-            <AlertTriangle size={18} />
-            <span>{actionError}</span>
-          </div>
-        ) : null}
-        <RecentRecordings
-          runs={snapshot.recentRecordings}
-          recording={snapshot.recording}
-        />
+        <div className="home-information" ref={informationRef}>
+          <RecordingNotice
+            snapshot={snapshot}
+            open={Boolean(snapshot.settings) && (noticeOpen ?? snapshot.recordingNoticeVersion !== 1)}
+            onClose={() => setNoticeOpen(false)}
+          />
+          <RecentRecordings
+            runs={snapshot.recentRecordings}
+            recording={snapshot.recording}
+          />
+        </div>
       </section>
       {uploadAttention ? (
         <footer className="upload-footer attention">
@@ -379,9 +399,13 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
       ) : null}
       {settingsOpen ? (
         <SettingsModal
+          target={settingsTarget}
           snapshot={snapshot}
           runtime={runtime}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsTarget(null);
+          }}
           onFullRebind={fullRebind}
           rebindPending={rebindPending}
         />
@@ -406,6 +430,16 @@ function getHomeState(snapshot, runtime) {
       icon: <AlertTriangle size={29} />,
       noticeTone: "danger",
     };
+  if (snapshot.settings && !snapshot.dataRootLocked &&
+      !snapshot.settings.dataRoot && !snapshot.dataRoot &&
+      !["recording", "paused", "starting"].includes(runtime.recording)) {
+    return {
+      tone: "idle", icon: <FolderOpen size={29} />,
+      title: "先选择录音保存位置",
+      description: "选择一个非系统盘文件夹，用来保存录音。",
+      primary: "settings", primaryLabel: "设置保存位置", settingsTarget: "storage",
+    };
+  }
   if (!snapshot.binding && runtime.health === "binding_required") {
     return {
       tone: "idle",
@@ -424,7 +458,9 @@ function getHomeState(snapshot, runtime) {
       icon: <Mic size={29} />,
       title: "无法录音",
       description: "当前选择的麦克风不可用。",
-      notice: "请打开设置，选择其他麦克风后重新检测。",
+      notice: "请选择可用的麦克风，再试录确认声音。",
+      primaryLabel: "检查麦克风",
+      settingsTarget: "microphone",
       noticeTone: "danger",
       primary: "settings",
     };
@@ -548,12 +584,20 @@ function FloatingBall({ recording }) {
 }
 
 function SettingsModal({
+  target,
   snapshot,
   runtime,
   onClose,
   onFullRebind,
   rebindPending,
 }) {
+  const microphoneRef = useRef(null);
+  const storageRef = useRef(null);
+  useEffect(() => {
+    const node = target === "microphone" ? microphoneRef.current : target === "storage" ? storageRef.current : null;
+    node?.scrollIntoView({ block: "center" });
+    node?.focus({ preventScroll: true });
+  }, [target]);
   const initial = snapshot.settings || {};
   const [form, setForm] = useState({
     autoLaunch: initial.autoLaunch === true,
@@ -700,12 +744,14 @@ function SettingsModal({
                 </select>
                 {deviceLoadError ? <small>{deviceLoadError}</small> : null}
               </label>
+              <div ref={microphoneRef} tabIndex={-1} data-settings-target="microphone">
               <MicrophoneTest
                 device={form.inputDevice}
                 recording={snapshot.recording || "idle"}
                 configured={snapshot.recordingNoticeVersion !== undefined}
               />
-              <label>
+              </div>
+              <label ref={storageRef} tabIndex={-1} data-settings-target="storage">
                 <span>录音保存位置</span>
                 <div className="setting-field-action">
                   <input
