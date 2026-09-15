@@ -1,5 +1,23 @@
 # Windows 客户端事故记录
 
+## WIN-REC-015：首页域名跳转后 Passport 完成事件被忽略
+
+- 状态：本地修复，未发布；Windows 真实 Passport 首次登录待验收。
+- 现场现象：`.31` 首次登录选校后停留网站首页，手动关闭后诊断 C01；同进程立即重试成功。
+- 已验证缺陷：2026-09-15 公开地址 `https://szjx.xxt.cn/` 返回 301 到 `https://szjx.xinzx.cn/`。Electron 35.7.5 真实导航依次为旧域名 did-start-navigation、新域名 did-redirect-navigation、新域名 did-navigate。旧实现仅接受 xxt 两个域名，两个完成候选事件均被忽略，身份请求为零，窗口等待直到关窗。
+- 修复：在现有精确 HTTPS 主机匹配中加入 `szjx.xinzx.cn`，仍须实际身份接口返回有效学校与用户后才完成认证。不修改登录地址、身份接口、Cookie 会话或身份校验。
+- 验证：新增单元回归修复前身份请求 0 次，修复后 1 次且自动关窗；真实 Electron 的模拟 301/身份脚本验证关窗。错误码跨 contextBridge 的独立修复见 WIN-REC-014。
+- 证据边界：公开首页跳转和客户端漏识别已确认；未取得用户首次及重试的完整认证导航记录，不能据此宣称已证明重试成功的具体分支。需在 Windows 新进程完成真实账号登录选校验收。
+
+## WIN-REC-014：Passport 取消诊断为 C01，页面却显示 C99
+
+- 状态：本地修复，尚未发布；真实 Windows 安装包待复测。
+- 现场版本：`v0.2.0-codex.31`。用户先关闭 Passport 窗口，随后看到 `BIND-C99`；同次导出诊断为 `create_session / BIND-C01 / PASSPORT_LOGIN_CANCELLED / 登录窗口已关闭`，用户提供的 UTC 时间为 `09-15T07:34.59.007Z`。
+- 根因：主进程 captureResult 已返回完整普通对象，preload 又重建 Error 并抛出。Error 跨 contextBridge 时丢失 code、businessCode、operation、unbound 自定义字段，页面只能生成 C99；主进程诊断记录发生在此前，因此保留 C01。
+- 修复：preload 以普通错误数据对象拒绝 Promise，保留现有调用方 catch 行为与错误字段，不改变上下文隔离配置。
+- 验证：Electron 35.7.5 的真实 sandboxed contextBridge 回归脚本在修复前复现 C99/C01 不一致；修复后登录取消、绑定业务码、解绑业务码及 unbound 字段通过。
+- 独立问题：第一次登录选校后停留首页，关闭并重试即可成功。后续已确认并修复公开首页域名跳转漏识别，见 WIN-REC-015；错误码修复本身不改变登录完成条件。
+
 ## WIN-REC-013：通用绑定失败吞掉真实原因且不显示问题代码
 
 - 状态：已定位并修复，等待 `v0.2.0-codex.29` Windows 真机复测

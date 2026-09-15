@@ -43,7 +43,9 @@ export function isPassportConsoleUrl(value) {
     const url = new URL(value);
     return (
       url.protocol === "https:" &&
-      (url.hostname === "szjx.xxt.cn" || url.hostname === "szjx-console.xxt.cn")
+      (url.hostname === "szjx.xxt.cn" ||
+        url.hostname === "szjx.xinzx.cn" ||
+        url.hostname === "szjx-console.xxt.cn")
     );
   } catch {
     return false;

@@ -18,6 +18,14 @@ npm run electron:smoke
 
 ## Windows 打包与资源检查
 
+### Passport 错误跨隔离边界回归
+
+运行 `npm run test:binding-bridge`（需要已安装 Electron 和桌面环境）。脚本使用真实的 sandboxed preload 与 contextBridge，核对页面收到的登录取消、绑定业务错误、解绑业务错误及部分解绑状态，与主进程诊断一致。仅运行 Node 单元测试无法覆盖 Electron 丢弃 Error 自定义字段的行为。脚本不登录真实账号、不启动录音 worker。
+
+Windows 安装包还需核对：关闭 Passport 后页面与诊断均为 `BIND-C01`。
+
+运行 `npm run test:passport-redirect` 验证真实 Electron 中旧首页 301 至 `szjx.xinzx.cn` 后能读取身份并自动关窗。该测试使用拦截的首页和模拟身份，不访问真实账号。2026-09-15 已通过公开首页的真实导航确认该域名跳转。Windows 真机仍需从新进程登录、选校，确认第一次就能自动关窗并进入绑定选择；保留同进程重试检查，不能以模拟身份测试代替真实 Passport 验收。
+
 以下命令必须在受支持的 Windows x64 机器执行。`FFMPEG_EXE` 必须指向经团队校验来源、版本和许可证的 Windows `ffmpeg.exe`；该二进制作为打包输入复制到生成目录，不提交仓库。
 
 ```powershell

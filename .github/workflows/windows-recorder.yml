@@ -116,6 +116,13 @@ jobs:
       - name: Run Node.js checks
         run: npm test
 
+      - name: Run Passport Electron regressions
+        run: |
+          npm run test:binding-bridge
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:passport-redirect
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Install Windows FFmpeg
         run: |
           choco install ffmpeg -y --no-progress

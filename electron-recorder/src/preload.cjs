@@ -7,9 +7,12 @@ const IPC_RESULT_MARKER = "classroom-recorder-ipc-result";
 const unwrapResult = (result) => {
   if (result?.marker !== IPC_RESULT_MARKER) return result;
   if (result.ok) return result.value;
-  const error = new Error(result.error?.message || "操作没有完成");
-  Object.assign(error, result.error || {});
-  throw error;
+  // contextBridge drops custom fields from Error instances. Reject with a
+  // plain data object so the renderer retains codes and partial-unbind state.
+  throw {
+    ...result.error,
+    message: result.error?.message || "操作没有完成",
+  };
 };
 
 const invokeStructured = (channel, ...args) =>

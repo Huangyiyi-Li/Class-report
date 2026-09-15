@@ -335,3 +335,56 @@ test("closing the Passport window before console login rejects the session", asy
 
   await assert.rejects(login, { code: "PASSPORT_LOGIN_CANCELLED" });
 });
+
+test("Passport completes on the current xinzx homepage after the old homepage redirects", async () => {
+  const window = new FakeWindow();
+  let reads = 0;
+  const authenticate = createPassportAuthenticator({
+    createWindow: () => window,
+    browserSession: {
+      fetch: async () => {
+        reads += 1;
+        return response({
+          schoolId: 9001,
+          schoolName: "测试学校",
+          userName: "测试教师",
+          userType: 0,
+        });
+      },
+    },
+  });
+  const login = authenticate();
+  const outcome = login.catch((error) => error);
+  // Electron does not emit did-navigate for the old origin on an HTTP 301.
+  window.webContents.emit(
+    "did-redirect-navigation",
+    {},
+    "https://szjx.xinzx.cn/",
+    false,
+    true
+  );
+  window.webContents.emit("did-navigate", {}, "https://szjx.xinzx.cn/");
+  await new Promise((resolve) => setImmediate(resolve));
+  const closedAutomatically = window.destroyed;
+  if (!window.destroyed) window.close();
+  const result = await outcome;
+  assert.equal(
+    reads,
+    1,
+    "new homepage must trigger exactly one identity request"
+  );
+  assert.equal(closedAutomatically, true);
+  assert.equal(result.user.schoolId, 9001);
+});
+
+test("new homepage matching remains restricted to the exact HTTPS origin", () => {
+  assert.equal(isPassportConsoleUrl("https://szjx.xinzx.cn/"), true);
+  for (const url of [
+    "http://szjx.xinzx.cn/",
+    "https://szjx.xinzx.cn.evil.test/",
+    "https://evil.test/?next=https://szjx.xinzx.cn/",
+    "https://passport.xinzx.cn/",
+  ]) {
+    assert.equal(isPassportConsoleUrl(url), false);
+  }
+});
