@@ -1485,3 +1485,34 @@ def test_failed_data_root_switch_preserves_old_configuration_and_resources(tmp_p
     assert worker.queue_store is old_store
     assert worker.recordings_dir == old_recordings
     assert worker.legacy_queue_path == old_legacy
+
+@pytest.mark.parametrize("missing", ["school_id", "user_type", "class_id", "classroom", "school_name", "all"])
+def test_incomplete_auth_preserves_binding_on_disk_and_restart(tmp_path, missing):
+    from windows_client.xxt_upload import DeviceAuth
+    path = tmp_path / "worker-config.json"
+    config = WorkerConfig(
+        data_root=str(tmp_path), device_no="AABBCCDDEEFF-1001",
+        school_id=1001, school_name="已绑定学校", bind_type=1, user_type=1,
+        class_id="101", class_name="已绑定班级", classroom="已绑定教室",
+        binding_source="remote", bound_at="2026-09-16T00:00:00Z",
+    )
+    config.save_atomic(path)
+    original = path.read_bytes()
+    worker = RecorderWorker(config, config_path=path, emit_event=lambda *_: None,
+        recover=lambda *_args, **_kwargs: [], startup_gate=require_binding,
+        session_factory=lambda **_: FakeSession())
+    values = dict(access_token="fixture", school_id=2002, school_name="返回学校",
+        user_type=1, class_id="202", classroom="返回教室")
+    if missing == "all":
+        auth = DeviceAuth(access_token="fixture")
+    else:
+        values[missing] = None if missing in {"school_id", "user_type"} else ""
+        auth = DeviceAuth(**values)
+    worker._device_auth_succeeded(auth)
+    worker._device_auth_succeeded(auth)  # repeated upload retry
+    assert path.read_bytes() == original
+    assert worker.snapshot()["binding"]["classroom"] == "已绑定教室"
+    assert worker.snapshot()["bindingRefresh"]["status"] == "skipped"
+    restored = WorkerConfig.load(path)
+    assert require_binding(restored, "C:").allowed
+    assert restored.school_id == 1001

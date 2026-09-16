@@ -1,5 +1,15 @@
 # Windows 客户端事故记录
 
+## WIN-REC-016：认证成功但返回归属不完整时覆盖本地绑定
+
+- 状态：本地修复，未发布，等待真实设备验证。
+- 现场诊断：`.32`，`health=healthy`、`authIssue=null`、`uploadDiagnostics.stage=device_auth/status=succeeded`，但 `binding=null`。OSS 凭证历史失败由用户确认已由开发处理，不作为本次根因。
+- 已复现缺陷：`_device_auth_succeeded` 将认证返回的所有归属字段直接持久化；缺失的 schoolId、groupId、groupName 可变成 None/空串，导致快照不再生成 binding，重启后仍丢失。现场文件没有原始认证响应，无法确认具体缺失字段或已被何次响应覆盖。
+- 修复：返回学校、类型、班级教室信息完整才整体刷新；不完整时保留原绑定，不拼接新旧学校身份。快照新增 `bindingRefresh`，记录 skipped/incomplete_identity 及缺失字段名，不记录令牌。保留完整归属刷新与明确认证失败的现有处理。
+- 回归：分别缺少学校 ID、学校名、类型、班级 ID、教室名，以及仅含令牌时，连续认证不会改写绑定文件；重新加载后绑定门禁仍通过。完整认证返回仍可刷新归属。
+- 恢复边界：已写空的学校/教室不能仅由设备号推断恢复；现场需重新完成一次绑定。未发布修复前重试仍可能重现。
+- 文档冲突：旧 DESKTOP_LOGIN_AND_DEVICE_BINDING.md 的令牌唯一用途与较新的 HANDOFF.md 的完整归属刷新约定不一致。本修复仅阻止不完整响应破坏绑定，不更改上传 schoolId 契约或假定新返回字段。
+
 ## WIN-REC-015：首页域名跳转后 Passport 完成事件被忽略
 
 - 状态：本地修复，未发布；Windows 真实 Passport 首次登录待验收。

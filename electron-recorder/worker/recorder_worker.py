@@ -1107,18 +1107,36 @@ class RecorderWorker:
     def _device_auth_succeeded(self, auth) -> None:
         if self.config_path is None:
             return
-        candidate = replace(
-            self.config,
-            school_id=auth.school_id,
-            school_name=auth.school_name,
-            user_type=auth.user_type,
-            bind_type=auth.user_type,
-            class_id=auth.class_id,
-            class_name=auth.classroom if auth.user_type == 1 else "",
-            classroom=auth.classroom,
-        )
-        candidate.save_atomic(self.config_path)
-        self.config = candidate
+        # Authentication can succeed with only a token. Never replace a valid
+        # persisted binding with an incomplete identity (or mix two identities).
+        fields = {
+            "schoolId": isinstance(auth.school_id, int) and auth.school_id > 0,
+            "schoolName": bool(str(auth.school_name or "").strip()),
+            "bindType": auth.user_type in {1, 2},
+            "classId": auth.user_type == 2 or bool(str(auth.class_id or "").strip()),
+            "classroom": bool(str(auth.classroom or "").strip()),
+        }
+        missing = [name for name, valid in fields.items() if not valid]
+        if missing:
+            self.state["bindingRefresh"] = {
+                "status": "skipped",
+                "reason": "incomplete_identity",
+                "missingFields": missing,
+            }
+        else:
+            candidate = replace(
+                self.config,
+                school_id=auth.school_id,
+                school_name=auth.school_name,
+                user_type=auth.user_type,
+                bind_type=auth.user_type,
+                class_id=auth.class_id,
+                class_name=auth.classroom if auth.user_type == 1 else "",
+                classroom=auth.classroom,
+            )
+            candidate.save_atomic(self.config_path)
+            self.config = candidate
+            self.state["bindingRefresh"] = {"status": "updated"}
         self.state["authIssue"] = None
         if self.state["health"] in {"device_auth_failed", "clock_invalid", "signature_invalid"}:
             self.state["health"] = "healthy"
