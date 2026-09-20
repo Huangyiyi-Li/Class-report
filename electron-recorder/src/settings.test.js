@@ -13,6 +13,14 @@ import {
 } from "./settings.js";
 import { PRODUCTION_API_ROUTES } from "./api-routes.js";
 
+test("ordinary settings saves preserve routes and route changes require maintenance mode", () => {
+  const options = { maintenanceMode: false, currentApiRoutes: PRODUCTION_API_ROUTES };
+  assert.doesNotThrow(() => validateSettingsPatch({ apiRoutes: PRODUCTION_API_ROUTES, inputDevice: "default" }, options));
+  const changed = { ...PRODUCTION_API_ROUTES, ossToken: "https://example.com/credentials" };
+  assert.throws(() => validateSettingsPatch({ apiRoutes: changed }, options), /维护模式/);
+  assert.doesNotThrow(() => validateSettingsPatch({ apiRoutes: changed }, { ...options, maintenanceMode: true }));
+});
+
 test("settings default to auto-launch disabled", () => {
   assert.equal(loadSettings(null).autoLaunch, false);
   assert.deepEqual(loadSettings(null).apiRoutes, PRODUCTION_API_ROUTES);

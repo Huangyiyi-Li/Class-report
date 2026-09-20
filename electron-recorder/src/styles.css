@@ -1034,6 +1034,12 @@ h1 {
   color: var(--red);
 }
 
+.recording-result-note {
+  color: var(--text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .diagnostics-panel {
   border-radius: 20px;
   background: #f3f7f9;

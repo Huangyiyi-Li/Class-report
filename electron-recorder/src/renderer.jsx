@@ -73,7 +73,7 @@ function App() {
 }
 
 function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
-  const [noticeOpen, setNoticeOpen] = useState(null);
+  const [noticeOpen, setNoticeOpen] = useState(false);
   const [settingsTarget, setSettingsTarget] = useState(null);
   const informationRef = useRef(null);
   const openSettings = (target = null) => {
@@ -368,7 +368,7 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
         <div className="home-information" ref={informationRef}>
           <RecordingNotice
             snapshot={snapshot}
-            open={Boolean(snapshot.settings) && (noticeOpen ?? snapshot.recordingNoticeVersion !== 1)}
+            open={noticeOpen}
             onClose={() => setNoticeOpen(false)}
           />
           <RecentRecordings
@@ -805,8 +805,21 @@ function SettingsModal({
                 recording={runtime.recording}
                 onError={setSaveError}
               />
+              <div className="settings-control-row">
+                <div>
+                  <strong>诊断日志</strong>
+                  <p>运行时每分钟自动保存，最多保留近 7 天，供技术人员排查问题。</p>
+                </div>
+                <button type="button" className="quiet-action compact" onClick={async () => {
+                  try { await shell?.openDiagnosticsDir?.(); }
+                  catch (error) { setSaveError(error?.message || "无法打开日志文件夹"); }
+                }}>打开日志文件夹</button>
+              </div>
+              {snapshot.diagnosticArchive?.status === "failed" && (
+                <p className="recording-result-note">诊断日志暂未保存。可打开录音保存位置，检查磁盘是否可用。</p>
+              )}
             </section>
-            <details className="advanced-settings-section">
+            {snapshot.maintenanceMode && <details className="advanced-settings-section">
               <summary>
                 <span>
                   <strong>高级设置</strong>
@@ -934,7 +947,7 @@ function SettingsModal({
                   ))}
                 </div>
               </section>
-            </details>
+            </details>}
           </div>
           {snapshot.binding || runtime.binding ? (
             <section className="settings-section device-management-section">

@@ -900,8 +900,13 @@ def test_main_lifetime_is_not_tied_to_stdin_eof(monkeypatch, tmp_path):
             return None
 
     class ReturningEvent:
-        def wait(self):
+        def is_set(self):
+            return False
+
+        def wait(self, timeout=None):
+            assert timeout == 60
             calls.append("wait")
+            return True
 
         def set(self):
             pass
@@ -927,6 +932,7 @@ def test_competing_worker_main_loser_never_constructs_or_starts_worker(tmp_path,
 
     class Worker:
         queue_store = None
+        state = {}
         def __init__(self, *_args, **_kwargs): constructed.append(self)
         def startup(self): started.append(self)
         def snapshot(self): return {"recording": "idle"}
@@ -953,6 +959,7 @@ def test_competing_auto_start_loser_never_enters_capture_startup(tmp_path, monke
 
     class Worker:
         queue_store = None
+        state = {}
         def __init__(self, *_args, **_kwargs): pass
         def startup(self): captures.append("capture")
         def snapshot(self): return {"recording": "recording"}

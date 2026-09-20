@@ -13,6 +13,7 @@ import {
 } from "electron";
 import electronUpdater from "electron-updater";
 import path from "node:path";
+import { mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { fileURLToPath } from "node:url";
@@ -20,6 +21,7 @@ import { WorkerClient } from "./worker-client.js";
 import {
   bootstrapWorkerConfig,
   loadWorkerLocator,
+  validateBootstrapDataRoot,
 } from "./worker-bootstrap.js";
 import {
   bootstrapFirstAvailableRecordingRoot,
@@ -57,6 +59,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
+const maintenanceMode = process.env.RECORDER_MAINTENANCE_MODE === "1";
 const { autoUpdater } = electronUpdater;
 const { captureResult } = ipcResult;
 
@@ -561,6 +564,7 @@ function publishSnapshot(snapshot) {
     autoLaunchStatus,
     dataRootLocked: Boolean(workerLocation),
     bindingServiceMode,
+    maintenanceMode,
     appVersion: app.getVersion(),
     update: updateState,
   });
@@ -915,6 +919,7 @@ if (hasSingleInstanceLock)
       autoLaunchStatus,
       dataRootLocked: Boolean(workerLocation),
       bindingServiceMode,
+      maintenanceMode,
       appVersion: app.getVersion(),
       update: updateState,
     }));
@@ -1032,7 +1037,10 @@ if (hasSingleInstanceLock)
         : [];
     });
     ipcMain.handle("recorder:update-settings", async (_event, patch) => {
-      const validatedPatch = validateSettingsPatch(patch);
+      const validatedPatch = validateSettingsPatch(patch, {
+        maintenanceMode,
+        currentApiRoutes: settings.apiRoutes,
+      });
       const result = await applyWorkerSettings({
         settings,
         patch: validatedPatch,
@@ -1086,6 +1094,16 @@ if (hasSingleInstanceLock)
     ipcMain.handle("recorder:open-data-dir", () => {
       const dataDir = workerSnapshot.dataRoot || settings.dataRoot;
       if (dataDir) electronShell.openPath(dataDir);
+      return true;
+    });
+    ipcMain.handle("recorder:open-diagnostics-dir", async () => {
+      const root = workerSnapshot.dataRoot || settings.dataRoot;
+      if (!root) throw new Error("请先选择录音保存位置");
+      validateBootstrapDataRoot(root);
+      const directory = path.join(root, "logs", "diagnostics");
+      mkdirSync(directory, { recursive: true });
+      const error = await electronShell.openPath(directory);
+      if (error) throw new Error("无法打开日志文件夹，请检查录音保存位置是否可用");
       return true;
     });
     ipcMain.handle("recorder:choose-data-root", async () => {

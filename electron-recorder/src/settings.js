@@ -76,6 +76,12 @@ export function validateSettingsPatch(patch, options = {}) {
   }
   if (Object.hasOwn(patch, "apiRoutes")) {
     validated.apiRoutes = migrateOfficialApiRoutes(patch.apiRoutes);
+    if (options.maintenanceMode === false) {
+      const current = migrateOfficialApiRoutes(options.currentApiRoutes);
+      if (Object.keys(validated.apiRoutes).some((key) => validated.apiRoutes[key] !== current[key])) {
+        throw new Error("接口地址仅可在维护模式下修改");
+      }
+    }
   }
   return validated;
 }

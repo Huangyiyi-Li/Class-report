@@ -2,22 +2,12 @@ import React, { useEffect, useRef, useState } from "react";
 import { recordingResult } from "./recording-result.js";
 
 export function RecordingNotice({ snapshot, open, onClose }) {
-  const [error, setError] = useState("");
   if (!open) return null;
-  const acknowledge = async () => {
-    try {
-      if (snapshot.recordingNoticeVersion !== undefined)
-        await window.recorderShell.acknowledgeRecordingNotice();
-      onClose();
-    } catch {
-      setError("说明阅读状态未保存，可稍后重试。");
-    }
-  };
   return (
     <section className="recording-notice" aria-label="录音说明">
       <div className="notice-heading">
         <h2>录音说明</h2>
-        <button className="quiet-action" onClick={acknowledge}>收起说明</button>
+        <button className="quiet-action" onClick={onClose}>收起说明</button>
       </div>
       <p className="notice-purpose">录下课堂声音，上传后用于生成教学诊断报告。</p>
       {snapshot.recording !== "recording" && (
@@ -35,7 +25,6 @@ export function RecordingNotice({ snapshot, open, onClose }) {
         </p>
         <p>查看范围由学校和平台设置决定。如有疑问，请联系学校管理员。</p>
       </details>
-      {error && <p role="alert">{error}</p>}
     </section>
   );
 }
@@ -51,12 +40,12 @@ export function RecentRecordings({ runs = [], recording }) {
           second: "2-digit",
           hour12: false,
         })
-      : "结束时间未确认";
+      : "结束时间未知";
   return (
     <section className="recent-recordings" aria-label="最近录音">
       <h2>最近录音</h2>
       {!runs.length ? (
-        <p>暂无可核对的记录。此处展示启用本功能后的录音。</p>
+        <p>开始录音后，这里会显示保存和上传结果。</p>
       ) : (
         runs.map((run) => {
           const result = recordingResult(run);
@@ -76,14 +65,17 @@ export function RecentRecordings({ runs = [], recording }) {
               <p>{result.local}</p>
               <p>{result.upload}</p>
               {result.warning && (
-                <p className="result-warning">{result.warning}</p>
+                <details className="recording-result-note">
+                  <summary>录音详情</summary>
+                  <p>{result.warning}</p>
+                </details>
               )}
             </article>
           );
         })
       )}
       <small>
-        按一次开始至停止汇总，暂停后继续仍属同一次录音。上传完成不代表报告已生成。
+        每次开始至停止为一条记录。录音按片段保存；上传完成后，报告还需等待平台生成。
       </small>
     </section>
   );

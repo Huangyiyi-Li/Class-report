@@ -55,3 +55,11 @@ test("an active segment awaiting finalization is not an interruption", () => {
   assert.equal(result.warning, "");
   assert.equal(result.complete, false);
 });
+
+test("an interrupted run reports uncertainty without asking for an unavailable action", () => {
+  const result = recordingResult({ endedAt: "", segments: 2, saved: 2, completed: 2, interrupted: true });
+  assert.equal(result.complete, false);
+  assert.match(result.warning, /完整性未确认/);
+  assert.doesNotMatch(result.warning, /请核对|有效时段|暂不影响|正在处理/);
+  assert.equal(result.upload, "已保存的录音已上传");
+});

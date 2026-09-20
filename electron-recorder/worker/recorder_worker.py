@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from worker.microphone_test import MicrophoneTest
+from worker.diagnostic_archive import DiagnosticArchive
 from worker.audio_journal import AudioJournal, recover_journals
 from worker.config import (
     StartupGate,
@@ -1346,7 +1347,16 @@ def run_worker(config_path: Path, stopped: threading.Event, worker_factory=None)
         try:
             worker.startup()
             with ControlServer(worker, runtime_dir, instance_lock=instance_lock):
-                stopped.wait()
+                archive = DiagnosticArchive(config.data_root)
+                while not stopped.is_set():
+                    if hasattr(worker, "snapshot"):
+                        try:
+                            archive.write(worker.snapshot())
+                        except Exception as error:
+                            archive.status = {"status": "failed", "errorType": type(error).__name__}
+                        worker.state["diagnosticArchive"] = archive.status
+                    if stopped.wait(60):
+                        break
             return 0
         finally:
             worker.shutdown()

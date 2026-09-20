@@ -58,6 +58,7 @@ contextBridge.exposeInMainWorld("recorderShell", {
   checkForUpdates: () => ipcRenderer.invoke("app:check-for-updates"),
   installUpdate: () => ipcRenderer.invoke("app:install-update"),
   openDataDir: () => ipcRenderer.invoke("recorder:open-data-dir"),
+  openDiagnosticsDir: () => ipcRenderer.invoke("recorder:open-diagnostics-dir"),
   chooseDataRoot: () => ipcRenderer.invoke("recorder:choose-data-root"),
   exportDiagnostics: () => ipcRenderer.invoke("recorder:export-diagnostics"),
   minimizeToTray: () => ipcRenderer.invoke("window:minimize-to-tray"),

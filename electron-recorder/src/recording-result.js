@@ -8,28 +8,28 @@ export function recordingResult(run) {
   let local = total
     ? `已保存 ${total} 段`
     : stopped
-      ? "未形成可确认的录音文件"
-      : "尚未形成可确认的录音片段";
+      ? "本次没有已保存的录音"
+      : "正在录制，首段录音尚未保存完成";
   if (total && run.saved < total)
     local =
       completed === total
         ? "云端已接收，本地部分文件已清理或缺失"
-        : "部分本地文件缺失，请检查录音保存位置";
-  if (incomplete) local += "；部分片段尚未完成保存";
+        : "部分本地录音文件缺失";
+  if (incomplete) local += "；有片段未完成保存";
   let upload = total
-    ? `已上传并登记 ${completed}/${total} 段`
-    : "暂无可上传片段";
-  if (complete) upload = "本次录音已上传并登记完成";
-  else if (run.counts?.local_missing) upload += "；存在缺失文件，无法完成补传";
+    ? `平台已接收 ${completed}/${total} 段`
+    : "暂无待上传录音";
+  if (total > 0 && completed === total) upload = "已保存的录音已上传";
+  else if (run.counts?.local_missing) upload += "；缺失文件无法上传";
   else if (run.counts?.failed || run.counts?.metadata_failed)
-    upload += "；部分失败，等待重试";
-  else if (total > completed) upload += "；其余等待上传或登记";
+    upload += "；未完成的录音会自动重试上传";
+  else if (total > completed) upload += "；其余等待上传完成";
   return {
     complete,
     local,
     upload,
     warning: interrupted
-      ? "本次录音发生中断或保存不完整，请核对有效时段。"
+      ? incomplete ? "本次有录音未完成保存。" : "本次录音的完整性未确认。"
       : "",
   };
 }
