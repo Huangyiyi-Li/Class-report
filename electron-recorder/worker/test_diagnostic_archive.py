@@ -6,8 +6,10 @@ from worker.diagnostic_archive import DiagnosticArchive
 
 def test_archive_redacts_rotates_and_prunes_only_its_own_logs(tmp_path):
     now = datetime(2026, 9, 20, tzinfo=timezone.utc)
-    archive = DiagnosticArchive(tmp_path, max_bytes=250, now=lambda: now)
-    archive.write({"token": "secret-value", "message": 'accessKeySecret="hidden"', "health": "healthy"})
+    # Exercise filesystem behavior with pytest's temp directory on any host.
+    # Windows system-drive rejection is verified separately below.
+    archive = DiagnosticArchive(tmp_path, max_bytes=250, now=lambda: now, platform="test")
+    assert archive.write({"token": "secret-value", "message": 'accessKeySecret="hidden"', "health": "healthy"})
     folder = tmp_path / "logs" / "diagnostics"
     first = folder / "worker-2026-09-20.jsonl"
     payload = json.loads(first.read_text())
@@ -26,7 +28,7 @@ def test_archive_redacts_rotates_and_prunes_only_its_own_logs(tmp_path):
 def test_archive_failure_does_not_break_recording(tmp_path):
     root = tmp_path / "file"
     root.write_text("not a directory")
-    archive = DiagnosticArchive(root)
+    archive = DiagnosticArchive(root, platform="test")
     assert archive.write({"health": "healthy"}) is False
     assert archive.status["status"] == "failed"
 
