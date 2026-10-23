@@ -676,7 +676,11 @@ function waitForWindowLoad(win) {
 }
 
 async function runSmokeTest() {
-  if (!process.env.ELECTRON_SMOKE_TEST) return;
+  if (
+    !process.env.ELECTRON_SMOKE_TEST ||
+    process.env.RECORDER_FLOATING_NATIVE_TEST
+  )
+    return;
 
   try {
     await Promise.all([

@@ -19,6 +19,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --test src/*.test.js && npm run test:repository",
     "test:repository": "node scripts/test-clean-checkout.mjs",
+    "test:floating-native": "electron scripts/test-floating-native-input.mjs",
     "test:binding-bridge": "electron scripts/test-binding-context-bridge.mjs",
     "test:passport-redirect": "electron scripts/test-passport-redirect.mjs",
     "build:worker": "python scripts/build-worker.py",

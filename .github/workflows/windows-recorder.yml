@@ -123,6 +123,11 @@ jobs:
           npm run test:passport-redirect
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Run Windows native floating pointer regression
+        run: |
+          npm run build
+          npm run test:floating-native
+
       - name: Install Windows FFmpeg
         run: |
           choco install ffmpeg -y --no-progress
