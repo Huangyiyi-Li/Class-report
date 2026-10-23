@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld("recorderShell", {
   exportDiagnostics: () => ipcRenderer.invoke("recorder:export-diagnostics"),
   minimizeToTray: () => ipcRenderer.invoke("window:minimize-to-tray"),
   showMain: () => ipcRenderer.invoke("window:show-main"),
+  hideFloat: () => ipcRenderer.invoke("window:hide-float"),
   showFloat: () => ipcRenderer.invoke("window:show-float"),
   openSettings: () => ipcRenderer.invoke("settings:open"),
   startFloatingDrag: (point) =>

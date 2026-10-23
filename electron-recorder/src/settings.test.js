@@ -14,11 +14,30 @@ import {
 import { PRODUCTION_API_ROUTES } from "./api-routes.js";
 
 test("ordinary settings saves preserve routes and route changes require maintenance mode", () => {
-  const options = { maintenanceMode: false, currentApiRoutes: PRODUCTION_API_ROUTES };
-  assert.doesNotThrow(() => validateSettingsPatch({ apiRoutes: PRODUCTION_API_ROUTES, inputDevice: "default" }, options));
-  const changed = { ...PRODUCTION_API_ROUTES, ossToken: "https://example.com/credentials" };
-  assert.throws(() => validateSettingsPatch({ apiRoutes: changed }, options), /维护模式/);
-  assert.doesNotThrow(() => validateSettingsPatch({ apiRoutes: changed }, { ...options, maintenanceMode: true }));
+  const options = {
+    maintenanceMode: false,
+    currentApiRoutes: PRODUCTION_API_ROUTES,
+  };
+  assert.doesNotThrow(() =>
+    validateSettingsPatch(
+      { apiRoutes: PRODUCTION_API_ROUTES, inputDevice: "default" },
+      options
+    )
+  );
+  const changed = {
+    ...PRODUCTION_API_ROUTES,
+    ossToken: "https://example.com/credentials",
+  };
+  assert.throws(
+    () => validateSettingsPatch({ apiRoutes: changed }, options),
+    /维护模式/
+  );
+  assert.doesNotThrow(() =>
+    validateSettingsPatch(
+      { apiRoutes: changed },
+      { ...options, maintenanceMode: true }
+    )
+  );
 });
 
 test("settings default to auto-launch disabled", () => {
@@ -31,6 +50,8 @@ test("API routes persist with settings and are accepted by the worker patch boun
   const configPath = path.join(root, "worker-config.json");
   saveSettings(configPath, {
     autoLaunch: false,
+    floatingWindowVisible: false,
+    floatingHideNoticeSeen: false,
     autoRecordEnabled: true,
     inputDevice: "default",
     apiRoutes: PRODUCTION_API_ROUTES,
@@ -88,6 +109,8 @@ test("preferences stay default before bootstrap and persist beside worker config
   fs.writeFileSync(configPath, "{}", "utf8");
   assert.deepEqual(loadSettings(null), {
     autoLaunch: false,
+    floatingWindowVisible: false,
+    floatingHideNoticeSeen: false,
     autoRecordEnabled: true,
     inputDevice: "default",
     apiRoutes: PRODUCTION_API_ROUTES,
@@ -114,6 +137,8 @@ test("settings persist across a fresh load without worker or binding fields", ()
   });
   assert.deepEqual(loadSettings(configPath), {
     autoLaunch: true,
+    floatingWindowVisible: false,
+    floatingHideNoticeSeen: false,
     autoRecordEnabled: true,
     inputDevice: "mic-2",
     apiRoutes: PRODUCTION_API_ROUTES,
@@ -133,6 +158,8 @@ test("invalid or corrupt persisted settings fall back safely", () => {
   );
   assert.deepEqual(loadSettings(path.join(root, "worker-config.json")), {
     autoLaunch: false,
+    floatingWindowVisible: false,
+    floatingHideNoticeSeen: false,
     autoRecordEnabled: true,
     inputDevice: "default",
     apiRoutes: PRODUCTION_API_ROUTES,
@@ -291,4 +318,42 @@ test("non-Windows auto-launch is explicitly unverifiable without calling Electro
     status: "unverified",
     error: "仅支持在 Windows 上验证开机自启状态",
   });
+});
+
+test("floating visibility defaults off, migrates old preferences, and survives restart", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "recorder-float-"));
+  try {
+    const config = path.join(root, "worker.json");
+    assert.equal(loadSettings(null).floatingWindowVisible, false);
+    const old = {
+      autoLaunch: true,
+      autoRecordEnabled: false,
+      inputDevice: "mic",
+    };
+    fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify(old));
+    assert.equal(loadSettings(config).floatingWindowVisible, false);
+    assert.equal(loadSettings(config).autoLaunch, true);
+    saveSettings(config, {
+      ...old,
+      floatingWindowVisible: true,
+      floatingHideNoticeSeen: true,
+    });
+    assert.equal(loadSettings(config).floatingWindowVisible, true);
+    assert.equal(loadSettings(config).floatingHideNoticeSeen, true);
+    saveSettings(config, {
+      ...loadSettings(config),
+      floatingWindowVisible: false,
+    });
+    assert.equal(loadSettings(config).floatingWindowVisible, false);
+    assert.throws(
+      () => saveSettings(config, { ...old, floatingWindowVisible: "yes" }),
+      /boolean/
+    );
+    assert.throws(
+      () => validateSettingsPatch({ floatingWindowVisible: true }),
+      /forbidden/
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

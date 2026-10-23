@@ -1,6 +1,6 @@
 {
   "name": "classroom-recorder-electron",
-  "version": "0.2.0-codex.35",
+  "version": "0.2.0-codex.36",
   "private": true,
   "description": "课堂录音采集助手 Windows 客户端",
   "author": "XXT",
@@ -70,6 +70,7 @@
       "src/binding-error-view.js",
       "src/passport-login.js",
       "src/floating-drag.js",
+      "src/recording-feedback.js",
       "src/diagnostics.js",
       "src/ipc-result.cjs",
       "src/preload.cjs",

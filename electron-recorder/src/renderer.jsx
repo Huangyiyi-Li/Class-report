@@ -12,7 +12,6 @@ import {
   RefreshCcw,
   Settings,
   UploadCloud,
-  WifiOff,
   X,
 } from "lucide-react";
 import { createRuntimeState } from "./runtime-state.js";
@@ -349,11 +348,14 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
                 停止录音
               </button>
             ) : null}
-          {home.primary === "start" && runtime.recording === "idle" ? (
-            <button className="home-secondary" onClick={() => openSettings("microphone")}>
-              测试麦克风
-            </button>
-          ) : null}
+            {home.primary === "start" && runtime.recording === "idle" ? (
+              <button
+                className="home-secondary"
+                onClick={() => openSettings("microphone")}
+              >
+                测试麦克风
+              </button>
+            ) : null}
           </div>
           {actionError ? (
             <div className="inline-notice danger" role="alert">
@@ -362,7 +364,9 @@ function MainWindow({ snapshot, runtime, settingsOpen, setSettingsOpen }) {
             </div>
           ) : null}
           {runtime.recording === "recording" ? (
-            <p className="recording-behavior">关闭窗口仍会录音，结束请点“停止录音”。</p>
+            <p className="recording-behavior">
+              关闭窗口仍会录音，结束请点“停止录音”。
+            </p>
           ) : null}
         </div>
         <div className="home-information" ref={informationRef}>
@@ -430,14 +434,21 @@ function getHomeState(snapshot, runtime) {
       icon: <AlertTriangle size={29} />,
       noticeTone: "danger",
     };
-  if (snapshot.settings && !snapshot.dataRootLocked &&
-      !snapshot.settings.dataRoot && !snapshot.dataRoot &&
-      !["recording", "paused", "starting"].includes(runtime.recording)) {
+  if (
+    snapshot.settings &&
+    !snapshot.dataRootLocked &&
+    !snapshot.settings.dataRoot &&
+    !snapshot.dataRoot &&
+    !["recording", "paused", "starting"].includes(runtime.recording)
+  ) {
     return {
-      tone: "idle", icon: <FolderOpen size={29} />,
+      tone: "idle",
+      icon: <FolderOpen size={29} />,
       title: "先选择录音保存位置",
       description: "选择一个非系统盘文件夹，用来保存录音。",
-      primary: "settings", primaryLabel: "设置保存位置", settingsTarget: "storage",
+      primary: "settings",
+      primaryLabel: "设置保存位置",
+      settingsTarget: "storage",
     };
   }
   if (!snapshot.binding && runtime.health === "binding_required") {
@@ -565,20 +576,18 @@ function FloatingBall({ recording }) {
         }}
         onLostPointerCapture={() => drag.current.cancel()}
       >
-        <span className="bubble-ripple" />
-        <span className="bubble-icon">
-          {recording === "recording" ? (
-            <Mic size={18} />
-          ) : recording === "paused" ? (
-            <Pause size={18} />
-          ) : recording.includes("error") ? (
-            <WifiOff size={18} />
-          ) : (
-            <Power size={18} />
-          )}
-        </span>
+        <span className="bubble-status-dot" />
         <strong>{meta.bubbleText}</strong>
       </div>
+      <button
+        type="button"
+        className="floating-close"
+        aria-label="隐藏录音悬浮窗"
+        title="隐藏悬浮窗，不改变录音状态"
+        onClick={() => shell?.hideFloat?.()}
+      >
+        <X size={12} />
+      </button>
     </main>
   );
 }
@@ -594,7 +603,12 @@ function SettingsModal({
   const microphoneRef = useRef(null);
   const storageRef = useRef(null);
   useEffect(() => {
-    const node = target === "microphone" ? microphoneRef.current : target === "storage" ? storageRef.current : null;
+    const node =
+      target === "microphone"
+        ? microphoneRef.current
+        : target === "storage"
+          ? storageRef.current
+          : null;
     node?.scrollIntoView({ block: "center" });
     node?.focus({ preventScroll: true });
   }, [target]);
@@ -744,14 +758,22 @@ function SettingsModal({
                 </select>
                 {deviceLoadError ? <small>{deviceLoadError}</small> : null}
               </label>
-              <div ref={microphoneRef} tabIndex={-1} data-settings-target="microphone">
-              <MicrophoneTest
-                device={form.inputDevice}
-                recording={snapshot.recording || "idle"}
-                configured={snapshot.recordingNoticeVersion !== undefined}
-              />
+              <div
+                ref={microphoneRef}
+                tabIndex={-1}
+                data-settings-target="microphone"
+              >
+                <MicrophoneTest
+                  device={form.inputDevice}
+                  recording={snapshot.recording || "idle"}
+                  configured={snapshot.recordingNoticeVersion !== undefined}
+                />
               </div>
-              <label ref={storageRef} tabIndex={-1} data-settings-target="storage">
+              <label
+                ref={storageRef}
+                tabIndex={-1}
+                data-settings-target="storage"
+              >
                 <span>录音保存位置</span>
                 <div className="setting-field-action">
                   <input
@@ -782,13 +804,19 @@ function SettingsModal({
               <div className="settings-control-row">
                 <div>
                   <strong>录音悬浮窗</strong>
-                  <p>显示当前录音状态，点击可打开主窗口</p>
+                  <p>点击状态可打开主窗口，点 × 可隐藏，不改变录音状态</p>
                 </div>
                 <button
                   className="quiet-action compact"
-                  onClick={() => shell?.showFloat?.()}
+                  onClick={() =>
+                    snapshot.settings?.floatingWindowVisible
+                      ? shell?.hideFloat?.()
+                      : shell?.showFloat?.()
+                  }
                 >
-                  显示录音悬浮窗
+                  {snapshot.settings?.floatingWindowVisible
+                    ? "隐藏录音悬浮窗"
+                    : "显示录音悬浮窗"}
                 </button>
               </div>
             </section>
@@ -808,146 +836,163 @@ function SettingsModal({
               <div className="settings-control-row">
                 <div>
                   <strong>诊断日志</strong>
-                  <p>运行时每分钟自动保存，最多保留近 7 天，供技术人员排查问题。</p>
+                  <p>
+                    运行时每分钟自动保存，最多保留近 7 天，供技术人员排查问题。
+                  </p>
                 </div>
-                <button type="button" className="quiet-action compact" onClick={async () => {
-                  try { await shell?.openDiagnosticsDir?.(); }
-                  catch (error) { setSaveError(error?.message || "无法打开日志文件夹"); }
-                }}>打开日志文件夹</button>
+                <button
+                  type="button"
+                  className="quiet-action compact"
+                  onClick={async () => {
+                    try {
+                      await shell?.openDiagnosticsDir?.();
+                    } catch (error) {
+                      setSaveError(error?.message || "无法打开日志文件夹");
+                    }
+                  }}
+                >
+                  打开日志文件夹
+                </button>
               </div>
               {snapshot.diagnosticArchive?.status === "failed" && (
-                <p className="recording-result-note">诊断日志暂未保存。可打开录音保存位置，检查磁盘是否可用。</p>
+                <p className="recording-result-note">
+                  诊断日志暂未保存。可打开录音保存位置，检查磁盘是否可用。
+                </p>
               )}
             </section>
-            {snapshot.maintenanceMode && <details className="advanced-settings-section">
-              <summary>
-                <span>
-                  <strong>高级设置</strong>
-                  <small>供部署和技术排查使用</small>
-                </span>
-              </summary>
-              <section className="advanced-diagnostics">
-                <div className="settings-section-heading">
-                  <h3>诊断信息</h3>
-                  <p>仅在排查异常时查看</p>
-                </div>
-                <SettingRow
-                  title="设备认证"
-                  value={formatDiagnosticStatus(
-                    snapshot.uploadDiagnostics?.deviceAuth
-                  )}
-                />
-                <SettingRow
-                  title="上传凭证"
-                  value={formatDiagnosticStatus(
-                    snapshot.uploadDiagnostics?.ossCredentials
-                  )}
-                />
-                <SettingRow
-                  title="OSS 目标"
-                  value={formatOssTarget(snapshot.uploadDiagnostics)}
-                />
-                <SettingRow
-                  title="等待上传"
-                  value={`${countQueueStatuses(snapshot.queueDiagnostics, [
-                    "pending",
-                    "uploading",
-                    "failed",
-                  ])} 段`}
-                />
-                <SettingRow
-                  title="已上传，等待登记"
-                  value={`${countQueueStatuses(snapshot.queueDiagnostics, [
-                    "uploaded",
-                    "registering",
-                    "metadata_failed",
-                  ])} 段`}
-                />
-                {Number(snapshot.localMissing || 0) > 0 ? (
+            {snapshot.maintenanceMode && (
+              <details className="advanced-settings-section">
+                <summary>
+                  <span>
+                    <strong>高级设置</strong>
+                    <small>供部署和技术排查使用</small>
+                  </span>
+                </summary>
+                <section className="advanced-diagnostics">
+                  <div className="settings-section-heading">
+                    <h3>诊断信息</h3>
+                    <p>仅在排查异常时查看</p>
+                  </div>
                   <SettingRow
-                    title="本地文件已缺失"
-                    value={`${snapshot.localMissing} 段（不再重试）`}
+                    title="设备认证"
+                    value={formatDiagnosticStatus(
+                      snapshot.uploadDiagnostics?.deviceAuth
+                    )}
                   />
-                ) : null}
-                <SettingRow
-                  title="已完成队列"
-                  value={`${snapshot.completed ?? "--"} 段`}
-                />
-                <SettingRow
-                  title="磁盘剩余"
-                  value={formatBytes(snapshot.freeDiskBytes)}
-                />
-                <SettingRow
-                  title="最近错误"
-                  value={
-                    snapshot.latestUploadError ||
-                    snapshot.uploadDetail?.error ||
-                    snapshot.uploadDiagnostics?.lastError ||
-                    snapshot.latestError ||
-                    "无"
-                  }
-                />
-                <SettingRow
-                  title="下次自动重试"
-                  value={formatRetryAt(snapshot.uploadDetail?.retryAt)}
-                />
-                <button
-                  className="secondary-action compact"
-                  onClick={() => shell?.openDataDir?.()}
-                >
-                  <FolderOpen size={18} />
-                  打开本地文件夹
-                </button>
-                <button
-                  className="quiet-action compact"
-                  onClick={() => shell?.exportDiagnostics?.()}
-                >
-                  导出诊断信息
-                </button>
-              </section>
-              <section className="api-routes-section">
-                <div className="api-routes-heading">
-                  <div>
-                    <h3>接口路由</h3>
-                    <p>
-                      当前环境：
-                      {safeApiEnvironment(form.apiRoutes) === "test"
-                        ? "测试环境"
-                        : safeApiEnvironment(form.apiRoutes) === "production"
-                          ? "正式环境"
-                          : "自定义"}
-                    </p>
-                  </div>
-                  <div className="route-presets">
-                    <button
-                      className="home-secondary"
-                      onClick={() => update("apiRoutes", TEST_API_ROUTES)}
-                    >
-                      使用测试环境
-                    </button>
-                    <button
-                      className="home-secondary"
-                      onClick={() => update("apiRoutes", PRODUCTION_API_ROUTES)}
-                    >
-                      使用正式环境
-                    </button>
-                  </div>
-                </div>
-                <div className="api-route-list">
-                  {API_ROUTE_DEFINITIONS.map((route) => (
-                    <label key={route.key}>
-                      <span>{route.label}</span>
-                      <input
-                        value={form.apiRoutes[route.key] || ""}
-                        onChange={(event) =>
-                          updateRoute(route.key, event.target.value)
+                  <SettingRow
+                    title="上传凭证"
+                    value={formatDiagnosticStatus(
+                      snapshot.uploadDiagnostics?.ossCredentials
+                    )}
+                  />
+                  <SettingRow
+                    title="OSS 目标"
+                    value={formatOssTarget(snapshot.uploadDiagnostics)}
+                  />
+                  <SettingRow
+                    title="等待上传"
+                    value={`${countQueueStatuses(snapshot.queueDiagnostics, [
+                      "pending",
+                      "uploading",
+                      "failed",
+                    ])} 段`}
+                  />
+                  <SettingRow
+                    title="已上传，等待登记"
+                    value={`${countQueueStatuses(snapshot.queueDiagnostics, [
+                      "uploaded",
+                      "registering",
+                      "metadata_failed",
+                    ])} 段`}
+                  />
+                  {Number(snapshot.localMissing || 0) > 0 ? (
+                    <SettingRow
+                      title="本地文件已缺失"
+                      value={`${snapshot.localMissing} 段（不再重试）`}
+                    />
+                  ) : null}
+                  <SettingRow
+                    title="已完成队列"
+                    value={`${snapshot.completed ?? "--"} 段`}
+                  />
+                  <SettingRow
+                    title="磁盘剩余"
+                    value={formatBytes(snapshot.freeDiskBytes)}
+                  />
+                  <SettingRow
+                    title="最近错误"
+                    value={
+                      snapshot.latestUploadError ||
+                      snapshot.uploadDetail?.error ||
+                      snapshot.uploadDiagnostics?.lastError ||
+                      snapshot.latestError ||
+                      "无"
+                    }
+                  />
+                  <SettingRow
+                    title="下次自动重试"
+                    value={formatRetryAt(snapshot.uploadDetail?.retryAt)}
+                  />
+                  <button
+                    className="secondary-action compact"
+                    onClick={() => shell?.openDataDir?.()}
+                  >
+                    <FolderOpen size={18} />
+                    打开本地文件夹
+                  </button>
+                  <button
+                    className="quiet-action compact"
+                    onClick={() => shell?.exportDiagnostics?.()}
+                  >
+                    导出诊断信息
+                  </button>
+                </section>
+                <section className="api-routes-section">
+                  <div className="api-routes-heading">
+                    <div>
+                      <h3>接口路由</h3>
+                      <p>
+                        当前环境：
+                        {safeApiEnvironment(form.apiRoutes) === "test"
+                          ? "测试环境"
+                          : safeApiEnvironment(form.apiRoutes) === "production"
+                            ? "正式环境"
+                            : "自定义"}
+                      </p>
+                    </div>
+                    <div className="route-presets">
+                      <button
+                        className="home-secondary"
+                        onClick={() => update("apiRoutes", TEST_API_ROUTES)}
+                      >
+                        使用测试环境
+                      </button>
+                      <button
+                        className="home-secondary"
+                        onClick={() =>
+                          update("apiRoutes", PRODUCTION_API_ROUTES)
                         }
-                      />
-                    </label>
-                  ))}
-                </div>
-              </section>
-            </details>}
+                      >
+                        使用正式环境
+                      </button>
+                    </div>
+                  </div>
+                  <div className="api-route-list">
+                    {API_ROUTE_DEFINITIONS.map((route) => (
+                      <label key={route.key}>
+                        <span>{route.label}</span>
+                        <input
+                          value={form.apiRoutes[route.key] || ""}
+                          onChange={(event) =>
+                            updateRoute(route.key, event.target.value)
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              </details>
+            )}
           </div>
           {snapshot.binding || runtime.binding ? (
             <section className="settings-section device-management-section">

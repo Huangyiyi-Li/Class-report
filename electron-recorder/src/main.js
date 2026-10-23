@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  Notification,
   nativeImage,
   powerSaveBlocker,
   screen,
@@ -50,7 +51,11 @@ import {
   getPassportWindowLayout,
 } from "./passport-login.js";
 import { resolveDeviceNo } from "./backend.js";
-import { clampFloatingPosition } from "./floating-drag.js";
+import { createRecordingFeedback } from "./recording-feedback.js";
+import {
+  clampFloatingPosition,
+  createFloatingCapsuleShape,
+} from "./floating-drag.js";
 import ipcResult from "./ipc-result.cjs";
 import {
   canInstallWorkerUpdate,
@@ -58,11 +63,15 @@ import {
 } from "./update-manager.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+if (process.platform === "win32")
+  app.setAppUserModelId("cn.xxt.classroom-recorder");
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 const maintenanceMode = process.env.RECORDER_MAINTENANCE_MODE === "1";
 const { autoUpdater } = electronUpdater;
 const { captureResult } = ipcResult;
 
+const recordingFeedback = createRecordingFeedback();
+const activeNotifications = new Set();
 let mainWindow;
 let floatingBallWindow;
 let tray;
@@ -80,6 +89,8 @@ let workerSnapshot = {
 };
 let settings = {
   autoLaunch: false,
+  floatingWindowVisible: false,
+  floatingHideNoticeSeen: false,
   autoRecordEnabled: true,
   inputDevice: "default",
   dataRoot: "",
@@ -231,9 +242,12 @@ const STATE_LABELS = {
   uploading: "上传中",
   network_error: "网络异常，等待补传",
   mic_error: "麦克风异常",
+  recording_error: "无法录音，请检查设备",
+  error: "录音异常",
 };
 
-const FLOATING_BALL_SIZE = 62;
+const FLOATING_BALL_WIDTH = 88;
+const FLOATING_BALL_HEIGHT = 24;
 
 function getPreloadPath() {
   return path.join(__dirname, "preload.cjs");
@@ -255,6 +269,7 @@ function getTrayIcon() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
+    show: !workerLocation || Boolean(process.env.ELECTRON_SMOKE_TEST),
     width: 1024,
     height: 640,
     minWidth: 880,
@@ -282,7 +297,6 @@ function createMainWindow() {
     if (!app.isQuitting) {
       event.preventDefault();
       mainWindow.hide();
-      showFloatingBallWindow();
     }
   });
 }
@@ -290,18 +304,20 @@ function createMainWindow() {
 function createFloatingBallWindow() {
   floatingBallReady = false;
   floatingBallWindow = new BrowserWindow({
-    width: FLOATING_BALL_SIZE,
-    height: FLOATING_BALL_SIZE,
+    width: FLOATING_BALL_WIDTH,
+    height: FLOATING_BALL_HEIGHT,
     title: "",
     frame: false,
-    transparent: true,
+    transparent: process.platform !== "win32",
+    roundedCorners: false,
+    useContentSize: true,
     focusable: false,
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
     thickFrame: false,
-    backgroundColor: "#00000000",
+    backgroundColor: process.platform === "win32" ? "#263331" : "#00000000",
     show: false,
     webPreferences: {
       preload: getPreloadPath(),
@@ -316,8 +332,6 @@ function createFloatingBallWindow() {
     floatingBallWindow?.setTitle("");
   });
 
-  applyFloatingBallShape();
-
   if (rendererUrl) {
     floatingBallWindow.loadURL(`${rendererUrl}/#floating-ball`);
   } else {
@@ -327,18 +341,19 @@ function createFloatingBallWindow() {
     );
   }
 
-  floatingBallWindow.webContents.once("did-finish-load", () => {
+  floatingBallWindow.once("ready-to-show", () => {
     floatingBallWindow?.setTitle("");
     floatingBallWindow?.setFocusable(false);
-    floatingBallWindow?.setBackgroundColor("#00000000");
-    applyFloatingBallShape();
+    floatingBallWindow?.setBackgroundColor(
+      process.platform === "win32" ? "#263331" : "#00000000"
+    );
     floatingBallWindow?.webContents
       .executeJavaScript("document.title = ''")
       .catch(() => {});
     floatingBallReady = true;
     if (pendingFloatingShow) {
       pendingFloatingShow = false;
-      floatingBallWindow?.showInactive();
+      showFloatingBallWindow({ remember: false });
     }
   });
 
@@ -349,49 +364,47 @@ function createFloatingBallWindow() {
   });
 }
 
-function showFloatingBallWindow() {
+function showFloatingBallWindow({ remember = true } = {}) {
+  if (remember) setFloatingVisibility(true);
   if (!floatingBallWindow) createFloatingBallWindow();
   const focusedBounds = BrowserWindow.getFocusedWindow()?.getBounds();
   if (!floatingBallWindow.isVisible()) {
     if (focusedBounds) {
       floatingBallWindow.setPosition(
-        focusedBounds.x + focusedBounds.width - FLOATING_BALL_SIZE - 22,
+        focusedBounds.x + focusedBounds.width - FLOATING_BALL_WIDTH - 22,
         focusedBounds.y + 128
       );
     } else {
       const { workArea } = screen.getPrimaryDisplay();
       floatingBallWindow.setPosition(
-        workArea.x + workArea.width - FLOATING_BALL_SIZE - 22,
+        workArea.x + workArea.width - FLOATING_BALL_WIDTH - 22,
         workArea.y + 128
       );
     }
-    applyFloatingBallShape();
     if (floatingBallReady) {
+      if (process.platform === "win32") {
+        try {
+          floatingBallWindow.setShape(
+            createFloatingCapsuleShape(
+              FLOATING_BALL_WIDTH,
+              FLOATING_BALL_HEIGHT
+            )
+          );
+        } catch {
+          pendingFloatingShow = false;
+          setFloatingVisibility(false);
+          showRecordingNotification({
+            title: "悬浮窗暂不可用",
+            body: "可从系统托盘查看和控制录音，当前录音状态不变。",
+          });
+          return;
+        }
+      }
       floatingBallWindow.showInactive();
     } else {
       pendingFloatingShow = true;
     }
     updateTray();
-  }
-}
-
-function applyFloatingBallShape() {
-  if (!floatingBallWindow || typeof floatingBallWindow.setShape !== "function")
-    return;
-  const radius = Math.floor(FLOATING_BALL_SIZE / 2);
-  const center = radius;
-  const rects = [];
-  for (let y = 0; y < FLOATING_BALL_SIZE; y += 1) {
-    const dy = y - center + 0.5;
-    const half = Math.sqrt(Math.max(0, radius * radius - dy * dy));
-    const x = Math.max(0, Math.ceil(center - half));
-    const right = Math.min(FLOATING_BALL_SIZE, Math.floor(center + half));
-    rects.push({ x, y, width: Math.max(1, right - x), height: 1 });
-  }
-  try {
-    floatingBallWindow.setShape(rects);
-  } catch {
-    // Some desktop compositors do not expose non-rectangular native windows.
   }
 }
 
@@ -402,8 +415,64 @@ function showMainWindow() {
 }
 
 function hideFloatingBallWindow() {
+  setFloatingVisibility(false);
+  pendingFloatingShow = false;
+  floatingDragOffset = null;
   floatingBallWindow?.hide();
+  if (!settings.floatingHideNoticeSeen) {
+    settings.floatingHideNoticeSeen = true;
+    persistDesktopSettings();
+    showRecordingNotification({
+      title: "悬浮窗已隐藏",
+      body: "录音状态不变，可从系统托盘重新显示悬浮窗。",
+    });
+  }
   updateTray();
+}
+
+function persistDesktopSettings() {
+  if (!workerLocation?.configPath || process.env.ELECTRON_SMOKE_TEST) return;
+  try {
+    persistSettings(workerLocation.configPath, {
+      autoLaunch: settings.autoLaunch,
+      autoRecordEnabled: settings.autoRecordEnabled,
+      inputDevice: settings.inputDevice,
+      apiRoutes: settings.apiRoutes,
+      floatingWindowVisible: settings.floatingWindowVisible,
+      floatingHideNoticeSeen: settings.floatingHideNoticeSeen,
+    });
+  } catch {
+    showRecordingNotification({
+      title: "显示偏好未保存",
+      body: "本次选择已生效，但未能写入数据盘；重启后可能恢复原设置。",
+    });
+  }
+}
+
+function setFloatingVisibility(visible) {
+  settings = { ...settings, floatingWindowVisible: visible };
+  persistDesktopSettings();
+  publishSnapshot({});
+}
+
+function showRecordingNotification({ title, body, urgent = false }) {
+  if (process.env.ELECTRON_SMOKE_TEST || !Notification.isSupported()) return;
+  try {
+    const notification = new Notification({
+      title,
+      body,
+      silent: true,
+      urgency: urgent ? "critical" : "normal",
+    });
+    activeNotifications.add(notification);
+    notification.on("click", showMainWindow);
+    const release = () => activeNotifications.delete(notification);
+    notification.once("close", release);
+    notification.once("failed", release);
+    notification.show();
+  } catch {
+    // Recording and tray state remain available if OS notifications fail.
+  }
 }
 
 function createTray() {
@@ -420,15 +489,15 @@ function createTray() {
 function updateTray() {
   if (!tray) return;
   const stateLabel = STATE_LABELS[recorderState] || STATE_LABELS.idle;
-  tray.setToolTip("课堂录音采集助手");
+  tray.setToolTip(`课堂录音采集助手：${stateLabel}`);
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: `当前状态：${stateLabel}`, enabled: false },
       { type: "separator" },
       { label: "显示主窗口", click: showMainWindow },
-      { label: "显示悬浮球", click: showFloatingBallWindow },
+      { label: "显示录音悬浮窗", click: () => showFloatingBallWindow() },
       {
-        label: "隐藏悬浮球",
+        label: "隐藏录音悬浮窗",
         enabled: Boolean(floatingBallWindow?.isVisible()),
         click: hideFloatingBallWindow,
       },
@@ -458,7 +527,8 @@ function updateTray() {
       { label: "补传队列", click: () => supervisor?.send("flush_queue") },
       { type: "separator" },
       {
-        label: "退出",
+        label:
+          recorderState === "recording" ? "退出界面（继续录音）" : "退出界面",
         click: () => {
           app.isQuitting = true;
           app.quit();
@@ -470,6 +540,7 @@ function updateTray() {
 
 function showFloatingBallMenu() {
   Menu.buildFromTemplate([
+    { label: "隐藏悬浮窗", click: hideFloatingBallWindow },
     { label: "打开主界面", click: showMainWindow },
     { type: "separator" },
     {
@@ -489,7 +560,8 @@ function showFloatingBallMenu() {
     },
     { type: "separator" },
     {
-      label: "退出",
+      label:
+        recorderState === "recording" ? "退出界面（继续录音）" : "退出界面",
       click: () => {
         app.isQuitting = true;
         app.quit();
@@ -556,6 +628,8 @@ function publishSnapshot(snapshot) {
   recorderState = runtime.recording;
   if (workerSnapshot.recording === "recording") keepRecordingAwake();
   else releaseRecordingAwake();
+  const feedback = recordingFeedback(workerSnapshot);
+  if (feedback) showRecordingNotification(feedback);
   updateTray();
   broadcast("recorder:snapshot", {
     ...workerSnapshot,
@@ -663,6 +737,29 @@ async function runSmokeTest() {
       })
     `);
 
+    const recordingBeforeHide = workerSnapshot.recording;
+    const floatingStartedHidden =
+      !floatingBallWindow.isVisible() && !pendingFloatingShow;
+    await floatingBallWindow.webContents.executeJavaScript(
+      "window.recorderShell.showFloat()"
+    );
+    const floatingCanShow =
+      settings.floatingWindowVisible &&
+      (floatingBallWindow.isVisible() || pendingFloatingShow);
+    await floatingBallWindow.webContents.executeJavaScript(`
+      document.querySelector('.floating-close').click();
+      window.recorderShell.getSnapshot();
+    `);
+    mainWindow.close();
+    const floatingInteraction = {
+      startedHidden: floatingStartedHidden,
+      canShow: floatingCanShow,
+      staysHidden: !floatingBallWindow.isVisible() && !pendingFloatingShow,
+      preferenceHidden: settings.floatingWindowVisible === false,
+      recordingUnchanged: workerSnapshot.recording === recordingBeforeHide,
+    };
+    showMainWindow();
+
     let bindingResult = { skipped: true };
     if (bindingServiceMode === "mock") {
       bindingResult = await mainWindow.webContents.executeJavaScript(`
@@ -725,6 +822,7 @@ async function runSmokeTest() {
     `);
 
     const passed =
+      Object.values(floatingInteraction).every(Boolean) &&
       mainResult.bridge &&
       mainResult.hasMainShell &&
       !mainResult.hasBubble &&
@@ -736,8 +834,8 @@ async function runSmokeTest() {
       floatingResult.bridge &&
       floatingResult.hasBubble &&
       !floatingResult.hasMainShell &&
-      floatingResult.width === FLOATING_BALL_SIZE &&
-      floatingResult.height === FLOATING_BALL_SIZE &&
+      floatingResult.width === FLOATING_BALL_WIDTH &&
+      floatingResult.height === FLOATING_BALL_HEIGHT &&
       floatingResult.htmlBackground === "rgba(0, 0, 0, 0)" &&
       floatingResult.bodyBackground === "rgba(0, 0, 0, 0)" &&
       floatingResult.documentTitle === "" &&
@@ -745,8 +843,8 @@ async function runSmokeTest() {
       floatingResult.buttonTitle === "" &&
       floatingResult.buttonAriaLabel === "" &&
       floatingResult.bubbleRole === "" &&
-      floatingResult.scrollWidth <= FLOATING_BALL_SIZE &&
-      floatingResult.scrollHeight <= FLOATING_BALL_SIZE &&
+      floatingResult.scrollWidth <= FLOATING_BALL_WIDTH &&
+      floatingResult.scrollHeight <= FLOATING_BALL_HEIGHT &&
       (bindingResult.skipped ||
         (bindingResult.hasOpenButton &&
           bindingResult.hasWizard &&
@@ -763,6 +861,7 @@ async function runSmokeTest() {
       JSON.stringify({
         main: mainResult,
         floating: floatingResult,
+        floatingInteraction,
         binding: bindingResult,
         settings: settingsResult,
         passed,
@@ -903,7 +1002,8 @@ if (hasSingleInstanceLock)
     createMainWindow();
     createFloatingBallWindow();
     createTray();
-    showFloatingBallWindow();
+    if (settings.floatingWindowVisible)
+      showFloatingBallWindow({ remember: false });
     runSmokeTest();
 
     if (!supervisor)
@@ -1068,6 +1168,8 @@ if (hasSingleInstanceLock)
         autoRecordEnabled: settings.autoRecordEnabled,
         inputDevice: settings.inputDevice,
         apiRoutes: settings.apiRoutes,
+        floatingWindowVisible: settings.floatingWindowVisible,
+        floatingHideNoticeSeen: settings.floatingHideNoticeSeen,
       });
       publishSnapshot({});
       return settings;
@@ -1086,6 +1188,8 @@ if (hasSingleInstanceLock)
         autoRecordEnabled: settings.autoRecordEnabled,
         inputDevice: settings.inputDevice,
         apiRoutes: settings.apiRoutes,
+        floatingWindowVisible: settings.floatingWindowVisible,
+        floatingHideNoticeSeen: settings.floatingHideNoticeSeen,
       });
       autoLaunchStatus = guarded;
       publishSnapshot({});
@@ -1103,7 +1207,8 @@ if (hasSingleInstanceLock)
       const directory = path.join(root, "logs", "diagnostics");
       mkdirSync(directory, { recursive: true });
       const error = await electronShell.openPath(directory);
-      if (error) throw new Error("无法打开日志文件夹，请检查录音保存位置是否可用");
+      if (error)
+        throw new Error("无法打开日志文件夹，请检查录音保存位置是否可用");
       return true;
     });
     ipcMain.handle("recorder:choose-data-root", async () => {
@@ -1160,7 +1265,10 @@ if (hasSingleInstanceLock)
     });
     ipcMain.handle("window:minimize-to-tray", () => {
       mainWindow?.hide();
-      showFloatingBallWindow();
+      return true;
+    });
+    ipcMain.handle("window:hide-float", () => {
+      hideFloatingBallWindow();
       return true;
     });
     ipcMain.handle("window:show-main", () => {

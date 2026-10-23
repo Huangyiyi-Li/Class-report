@@ -11,6 +11,8 @@ import {
 
 export const DEFAULT_SETTINGS = Object.freeze({
   autoLaunch: false,
+  floatingWindowVisible: false,
+  floatingHideNoticeSeen: false,
   autoRecordEnabled: true,
   inputDevice: "default",
   apiRoutes: PRODUCTION_API_ROUTES,
@@ -78,7 +80,11 @@ export function validateSettingsPatch(patch, options = {}) {
     validated.apiRoutes = migrateOfficialApiRoutes(patch.apiRoutes);
     if (options.maintenanceMode === false) {
       const current = migrateOfficialApiRoutes(options.currentApiRoutes);
-      if (Object.keys(validated.apiRoutes).some((key) => validated.apiRoutes[key] !== current[key])) {
+      if (
+        Object.keys(validated.apiRoutes).some(
+          (key) => validated.apiRoutes[key] !== current[key]
+        )
+      ) {
         throw new Error("接口地址仅可在维护模式下修改");
       }
     }
@@ -90,7 +96,13 @@ function validatePersisted(payload) {
   requirePlainObject(payload, "persisted settings");
   if (Object.keys(payload).some((key) => !PERSISTED_KEYS.has(key)))
     throw new TypeError("persisted settings contain unknown fields");
+  for (const key of ["floatingWindowVisible", "floatingHideNoticeSeen"]) {
+    if (Object.hasOwn(payload, key) && typeof payload[key] !== "boolean")
+      throw new TypeError(`${key} must be boolean`);
+  }
   return {
+    floatingWindowVisible: payload.floatingWindowVisible ?? false,
+    floatingHideNoticeSeen: payload.floatingHideNoticeSeen ?? false,
     autoLaunch: validateAutoLaunchValue(payload.autoLaunch),
     autoRecordEnabled: validateSettingsPatch({
       autoRecordEnabled: payload.autoRecordEnabled,

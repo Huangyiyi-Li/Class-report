@@ -13,6 +13,10 @@
 
 基于 `cf083e9` 的 `feat/recorder-first-use` 增加录音说明、麦克风试录回放与最近录音结果。已发布 `v0.2.0-codex.30` 内部测试候选，保留 `.28/.29` 修复，Windows CI 通过、真机麦克风验收待完成；实现边界和 Windows 验收清单见 [FIRST_USE_CHECKS.md](FIRST_USE_CHECKS.md)。
 
+## 本地悬浮窗改造（2026-10-23）
+
+`v0.2.0-codex.36` 内部测试候选包含默认托盘运行、按需圆角胶囊悬浮窗和白边风险收敛；Windows 真机验收未完成。交互约定、官方资料、已确认与待验证的白边原因、现场验收矩阵见 [FLOATING_WINDOW_REDESIGN_2026-10-23.md](FLOATING_WINDOW_REDESIGN_2026-10-23.md)。不能将浏览器截图或自动化测试视为 Windows 白边修复证据。
+
 ## 1. 新 Windows 电脑接手步骤
 
 安装 Codex Windows 客户端、Git、Node.js 22、Python 3.11 和 GitHub CLI。不要使用 Python 3.14 构建当前 worker；CI 和现有依赖基线是 Python 3.11。
