@@ -12,6 +12,11 @@ if (
   console.log("Windows native pointer regression requires Windows.");
   app.exit(0);
 } else {
+  if (process.env.RECORDER_NATIVE_SCALE_FACTOR)
+    app.commandLine.appendSwitch(
+      "force-device-scale-factor",
+      process.env.RECORDER_NATIVE_SCALE_FACTOR
+    );
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const fixture = mkdtempSync(
     path.join(app.getPath("temp"), "recorder-native-input-")
@@ -65,6 +70,8 @@ if (
       );
       if (!floating) throw new Error("floating window did not load");
       console.log("[floating-native-stage] floating renderer ready");
+      if (process.env.RECORDER_NATIVE_FOCUSABLE === "1")
+        floating.setFocusable(true);
       if (process.env.RECORDER_FLOATING_NATIVE_READY_ONLY === "1") {
         clearTimeout(deadline);
         console.log("[floating-native-ready] passed");
@@ -129,6 +136,7 @@ if (
           .getNativeWindowHandle()
           .readBigUInt64LE()
           .toString(),
+        focusable: floating.isFocusable(),
         scaleFactor: screen.getDisplayMatching(beforeClose).scaleFactor,
         beforeClose,
         beforeDrag,

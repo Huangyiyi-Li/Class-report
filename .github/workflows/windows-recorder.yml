@@ -126,7 +126,14 @@ jobs:
       - name: Run Windows native floating pointer regression
         run: |
           npm run build
-          npm run test:floating-native
+          $env:RECORDER_NATIVE_FOCUSABLE = "1"
+          $failed = $false
+          foreach ($factor in @("1", "1.25", "1.5")) {
+            $env:RECORDER_NATIVE_SCALE_FACTOR = $factor
+            npm run test:floating-native
+            if ($LASTEXITCODE -ne 0) { $failed = $true }
+          }
+          if ($failed) { exit 1 }
 
       - name: Install Windows FFmpeg
         run: |
