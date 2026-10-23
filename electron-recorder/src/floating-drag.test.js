@@ -116,3 +116,26 @@ test("saved positions support a left display and recover after a monitor is remo
     { x: 1832, y: 1016 }
   );
 });
+
+test("moving keeps explicit capsule dimensions and reopening avoids DPI round-trip drift", async () => {
+  const { moveFloatingWindow } = await import("./floating-drag.js");
+  assert.equal(typeof moveFloatingWindow, "function");
+  let actual = { x: 309, y: 280, width: 99, height: 38 };
+  const calls = [];
+  const window = {
+    getBounds: () => actual,
+    setBounds: (bounds, animate) => {
+      calls.push({ bounds, animate });
+      actual = bounds;
+    },
+    setPosition: () =>
+      assert.fail("setPosition reuses rounded native dimensions"),
+  };
+  const size = { width: 88, height: 24 };
+  moveFloatingWindow(window, { x: 309, y: 280 }, size);
+  assert.equal(calls.length, 0);
+  moveFloatingWindow(window, { x: 320, y: 290 }, size);
+  assert.deepEqual(calls, [
+    { bounds: { x: 320, y: 290, width: 88, height: 24 }, animate: false },
+  ]);
+});

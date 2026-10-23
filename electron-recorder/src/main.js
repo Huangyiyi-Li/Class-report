@@ -55,6 +55,7 @@ import { createRecordingFeedback } from "./recording-feedback.js";
 import {
   clampFloatingPosition,
   createFloatingCapsuleShape,
+  moveFloatingWindow,
   restoreFloatingPosition,
 } from "./floating-drag.js";
 import ipcResult from "./ipc-result.cjs";
@@ -379,7 +380,10 @@ function showFloatingBallWindow({ remember = true } = {}) {
       bounds: { width: FLOATING_BALL_WIDTH, height: FLOATING_BALL_HEIGHT },
       workAreas,
     });
-    floatingBallWindow.setPosition(position.x, position.y, false);
+    moveFloatingWindow(floatingBallWindow, position, {
+      width: FLOATING_BALL_WIDTH,
+      height: FLOATING_BALL_HEIGHT,
+    });
     if (floatingBallReady) {
       if (process.platform === "win32") {
         try {
@@ -1342,7 +1346,10 @@ if (hasSingleInstanceLock)
         bounds,
         workArea,
       });
-      floatingBallWindow.setPosition(position.x, position.y, false);
+      moveFloatingWindow(floatingBallWindow, position, {
+        width: FLOATING_BALL_WIDTH,
+        height: FLOATING_BALL_HEIGHT,
+      });
       return true;
     });
     ipcMain.handle("floating:drag-end", () => {

@@ -233,3 +233,7 @@ SHA256 1bf1534daa34f6e2d7f02f84e38444701d872b381f2b59f3209c9fe3caabf732
 - 新候选包必须在发生故障的 Windows 真机上走正常启动路径通过。
 - 验证安装包内 worker、FFmpeg、主进程模块，并至少完成一次真实麦克风录音。
 - 更新本文、交接文档和发布记录后才能创建新 prerelease。
+
+### `.38` 候选首次 Windows 回归补充
+
+[39934964096](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39934964096) 三种缩放下首次关闭、拖动、拖动后关闭均成功；125% 下重开从 x=309 漂到 308，且连续 setPosition 将原生窗口宽度从 92 增到 99/100 DIP。因此该次门禁失败，未发布。后续修正对相同坐标跳过重复定位、移动时显式指定固定胶囊尺寸，不回用 getBounds 经缩放舍入后的尺寸；新增重复原生关闭/显示和宽度不累积检查。相似上游报告为 [Electron #9477](https://github.com/electron/electron/issues/9477)、[#48247](https://github.com/electron/electron/issues/48247)，后者缺少复现而关闭；本项目以自己的原生鼠标输出为直接证据。

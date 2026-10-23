@@ -92,3 +92,11 @@ export function restoreFloatingPosition({ position, bounds, workAreas }) {
     workArea,
   });
 }
+
+export function moveFloatingWindow(window, position, bounds) {
+  const current = window.getBounds();
+  // Reapplying a rounded DIP position at 125% can move it by another pixel.
+  if (current.x === position.x && current.y === position.y) return;
+  // setPosition reuses rounded native dimensions, accumulating size on each move.
+  window.setBounds({ ...position, ...bounds }, false);
+}

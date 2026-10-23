@@ -135,12 +135,36 @@ if (
       );
       await waitFor(() => floating.isVisible());
       const afterReopen = floating.getBounds();
+      const reopenCycles = [];
+      for (let cycle = 0; cycle < 3; cycle++) {
+        await inject([
+          { x: afterDrag.x + 74, y: afterDrag.y + 12, button: "down" },
+          { x: afterDrag.x + 74, y: afterDrag.y + 12, button: "up" },
+        ]);
+        const hidden = Boolean(
+          await waitFor(() => !floating.isVisible(), 1500)
+        );
+        await floating.webContents.executeJavaScript(
+          "window.recorderShell.showFloat()"
+        );
+        await waitFor(() => floating.isVisible());
+        reopenCycles.push({ hidden, bounds: floating.getBounds() });
+      }
       const result = {
         closeHidden,
         closeAfterDragHidden,
         dragged: afterDrag.x !== beforeDrag.x || afterDrag.y !== beforeDrag.y,
         positionRestored:
-          afterReopen.x === afterDrag.x && afterReopen.y === afterDrag.y,
+          afterReopen.x === afterDrag.x &&
+          afterReopen.y === afterDrag.y &&
+          reopenCycles.every(
+            ({ hidden, bounds }) =>
+              hidden && bounds.x === afterDrag.x && bounds.y === afterDrag.y
+          ),
+        sizeStable:
+          afterDrag.width <= 89 &&
+          reopenCycles.every(({ bounds }) => bounds.width <= 89),
+        reopenCycles,
         windowHandle: floating
           .getNativeWindowHandle()
           .readBigUInt64LE()
@@ -164,6 +188,7 @@ if (
         result.closeHidden &&
           result.closeAfterDragHidden &&
           result.dragged &&
+          result.sizeStable &&
           result.positionRestored
           ? 0
           : 1
