@@ -70,3 +70,49 @@ test("capsule clipping uses symmetric integer rows with no outer rim", async () 
   assert.ok(rows[0].x > 0);
   assert.equal(rows[11].x, 0);
 });
+
+test("reopening restores the last position instead of recomputing a default", async () => {
+  const { restoreFloatingPosition } = await import("./floating-drag.js");
+  assert.equal(typeof restoreFloatingPosition, "function");
+  const workAreas = [{ x: 0, y: 0, width: 1920, height: 1040 }];
+  assert.deepEqual(
+    restoreFloatingPosition({
+      position: { x: 385, y: 260 },
+      bounds: { width: 88, height: 24 },
+      workAreas,
+    }),
+    { x: 385, y: 260 }
+  );
+});
+
+test("saved positions support a left display and recover after a monitor is removed", async () => {
+  const { restoreFloatingPosition } = await import("./floating-drag.js");
+  assert.equal(typeof restoreFloatingPosition, "function");
+  const bounds = { width: 88, height: 24 };
+  const primary = { x: 0, y: 0, width: 1920, height: 1040 };
+  const secondary = { x: -1280, y: 0, width: 1280, height: 720 };
+  assert.deepEqual(
+    restoreFloatingPosition({
+      position: { x: -650, y: 300 },
+      bounds,
+      workAreas: [primary, secondary],
+    }),
+    { x: -650, y: 300 }
+  );
+  assert.deepEqual(
+    restoreFloatingPosition({
+      position: { x: -650, y: 300 },
+      bounds,
+      workAreas: [primary],
+    }),
+    { x: 0, y: 300 }
+  );
+  assert.deepEqual(
+    restoreFloatingPosition({
+      position: { x: 5000, y: 5000 },
+      bounds,
+      workAreas: [primary],
+    }),
+    { x: 1832, y: 1016 }
+  );
+});

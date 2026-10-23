@@ -52,6 +52,7 @@ test("API routes persist with settings and are accepted by the worker patch boun
     autoLaunch: false,
     floatingWindowVisible: false,
     floatingHideNoticeSeen: false,
+    floatingWindowPosition: null,
     autoRecordEnabled: true,
     inputDevice: "default",
     apiRoutes: PRODUCTION_API_ROUTES,
@@ -111,6 +112,7 @@ test("preferences stay default before bootstrap and persist beside worker config
     autoLaunch: false,
     floatingWindowVisible: false,
     floatingHideNoticeSeen: false,
+    floatingWindowPosition: null,
     autoRecordEnabled: true,
     inputDevice: "default",
     apiRoutes: PRODUCTION_API_ROUTES,
@@ -139,6 +141,7 @@ test("settings persist across a fresh load without worker or binding fields", ()
     autoLaunch: true,
     floatingWindowVisible: false,
     floatingHideNoticeSeen: false,
+    floatingWindowPosition: null,
     autoRecordEnabled: true,
     inputDevice: "mic-2",
     apiRoutes: PRODUCTION_API_ROUTES,
@@ -160,6 +163,7 @@ test("invalid or corrupt persisted settings fall back safely", () => {
     autoLaunch: false,
     floatingWindowVisible: false,
     floatingHideNoticeSeen: false,
+    floatingWindowPosition: null,
     autoRecordEnabled: true,
     inputDevice: "default",
     apiRoutes: PRODUCTION_API_ROUTES,
@@ -353,6 +357,39 @@ test("floating visibility defaults off, migrates old preferences, and survives r
       () => validateSettingsPatch({ floatingWindowVisible: true }),
       /forbidden/
     );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("floating position survives settings reload and older files retain other preferences", () => {
+  const root = fs.mkdtempSync(
+    path.join(os.tmpdir(), "recorder-float-position-")
+  );
+  try {
+    const config = path.join(root, "worker.json");
+    const old = {
+      autoLaunch: true,
+      autoRecordEnabled: false,
+      inputDevice: "mic",
+    };
+    saveSettings(config, {
+      ...old,
+      floatingWindowPosition: { x: -670, y: 240 },
+    });
+    assert.deepEqual(loadSettings(config).floatingWindowPosition, {
+      x: -670,
+      y: 240,
+    });
+    fs.writeFileSync(path.join(root, "settings.json"), JSON.stringify(old));
+    assert.equal(loadSettings(config).floatingWindowPosition, null);
+    assert.equal(loadSettings(config).autoLaunch, true);
+    fs.writeFileSync(
+      path.join(root, "settings.json"),
+      JSON.stringify({ ...old, floatingWindowPosition: { x: "bad", y: 240 } })
+    );
+    assert.equal(loadSettings(config).floatingWindowPosition, null);
+    assert.equal(loadSettings(config).autoLaunch, true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

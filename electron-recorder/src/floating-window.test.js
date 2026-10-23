@@ -23,6 +23,7 @@ test("hide cancels a pending first show without sending recording commands", () 
     pendingFloatingShow: true,
     floatingDragOffset: { x: 1, y: 2 },
     settings: { floatingHideNoticeSeen: true },
+    rememberFloatingBallPosition: () => calls.push("remember"),
     setFloatingVisibility: (visible) => calls.push(visible),
     floatingBallWindow: { hide: () => calls.push("hide") },
     updateTray: () => calls.push("tray"),
@@ -31,12 +32,12 @@ test("hide cancels a pending first show without sending recording commands", () 
   vm.runInContext(
     bodyBetween(
       "function hideFloatingBallWindow()",
-      "function persistDesktopSettings()"
+      "function rememberFloatingBallPosition()"
     ) + "hideFloatingBallWindow();",
     context
   );
   assert.equal(context.pendingFloatingShow, false);
-  assert.deepEqual(calls, [false, "hide", "tray"]);
+  assert.deepEqual(calls, ["remember", false, "hide", "tray"]);
   assert.equal(context.floatingDragOffset, null);
 });
 
@@ -104,4 +105,14 @@ test("capsule layout remains 24px tall when Windows imposes a larger native view
   assert.match(stage, /width: 88px/);
   assert.match(stage, /height: 24px/);
   assert.doesNotMatch(stage, /100vh/);
+});
+
+test("floating controls can accept native mouse focus without activating on show", () => {
+  const options = bodyBetween(
+    "function createFloatingBallWindow()",
+    "function showFloatingBallWindow("
+  );
+  assert.match(options, /focusable: true/);
+  assert.doesNotMatch(options, /setFocusable\(false\)/);
+  assert.match(main, /floatingBallWindow.showInactive\(\)/);
 });

@@ -69,3 +69,26 @@ export function createFloatingCapsuleShape(width, height) {
     return { x, y, width: width - 2 * x, height: 1 };
   });
 }
+
+export function restoreFloatingPosition({ position, bounds, workAreas }) {
+  const primary = workAreas[0];
+  const point = position || {
+    x: primary.x + primary.width - bounds.width - 22,
+    y: primary.y + 128,
+  };
+  const distance = (area) => {
+    const dx = Math.max(area.x - point.x, 0, point.x - area.x - area.width);
+    const dy = Math.max(area.y - point.y, 0, point.y - area.y - area.height);
+    return dx * dx + dy * dy;
+  };
+  const workArea = workAreas.reduce(
+    (best, area) => (distance(area) < distance(best) ? area : best),
+    primary
+  );
+  return clampFloatingPosition({
+    point,
+    offset: { x: 0, y: 0 },
+    bounds,
+    workArea,
+  });
+}

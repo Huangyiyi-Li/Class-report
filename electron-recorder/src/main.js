@@ -55,6 +55,7 @@ import { createRecordingFeedback } from "./recording-feedback.js";
 import {
   clampFloatingPosition,
   createFloatingCapsuleShape,
+  restoreFloatingPosition,
 } from "./floating-drag.js";
 import ipcResult from "./ipc-result.cjs";
 import {
@@ -91,6 +92,7 @@ let settings = {
   autoLaunch: false,
   floatingWindowVisible: false,
   floatingHideNoticeSeen: false,
+  floatingWindowPosition: null,
   autoRecordEnabled: true,
   inputDevice: "default",
   dataRoot: "",
@@ -311,7 +313,7 @@ function createFloatingBallWindow() {
     transparent: process.platform !== "win32",
     roundedCorners: false,
     useContentSize: true,
-    focusable: false,
+    focusable: true,
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
@@ -343,7 +345,6 @@ function createFloatingBallWindow() {
 
   floatingBallWindow.once("ready-to-show", () => {
     floatingBallWindow?.setTitle("");
-    floatingBallWindow?.setFocusable(false);
     floatingBallWindow?.setBackgroundColor(
       process.platform === "win32" ? "#263331" : "#00000000"
     );
@@ -367,20 +368,18 @@ function createFloatingBallWindow() {
 function showFloatingBallWindow({ remember = true } = {}) {
   if (remember) setFloatingVisibility(true);
   if (!floatingBallWindow) createFloatingBallWindow();
-  const focusedBounds = BrowserWindow.getFocusedWindow()?.getBounds();
   if (!floatingBallWindow.isVisible()) {
-    if (focusedBounds) {
-      floatingBallWindow.setPosition(
-        focusedBounds.x + focusedBounds.width - FLOATING_BALL_WIDTH - 22,
-        focusedBounds.y + 128
-      );
-    } else {
-      const { workArea } = screen.getPrimaryDisplay();
-      floatingBallWindow.setPosition(
-        workArea.x + workArea.width - FLOATING_BALL_WIDTH - 22,
-        workArea.y + 128
-      );
-    }
+    const primary = screen.getPrimaryDisplay();
+    const workAreas = [
+      primary,
+      ...screen.getAllDisplays().filter((display) => display.id !== primary.id),
+    ].map((display) => display.workArea);
+    const position = restoreFloatingPosition({
+      position: settings.floatingWindowPosition,
+      bounds: { width: FLOATING_BALL_WIDTH, height: FLOATING_BALL_HEIGHT },
+      workAreas,
+    });
+    floatingBallWindow.setPosition(position.x, position.y, false);
     if (floatingBallReady) {
       if (process.platform === "win32") {
         try {
@@ -415,6 +414,7 @@ function showMainWindow() {
 }
 
 function hideFloatingBallWindow() {
+  rememberFloatingBallPosition();
   setFloatingVisibility(false);
   pendingFloatingShow = false;
   floatingDragOffset = null;
@@ -430,6 +430,13 @@ function hideFloatingBallWindow() {
   updateTray();
 }
 
+function rememberFloatingBallPosition() {
+  if (!floatingBallWindow?.isVisible()) return;
+  const { x, y } = floatingBallWindow.getBounds();
+  settings = { ...settings, floatingWindowPosition: { x, y } };
+  persistDesktopSettings();
+}
+
 function persistDesktopSettings() {
   if (!workerLocation?.configPath || process.env.ELECTRON_SMOKE_TEST) return;
   try {
@@ -440,6 +447,7 @@ function persistDesktopSettings() {
       apiRoutes: settings.apiRoutes,
       floatingWindowVisible: settings.floatingWindowVisible,
       floatingHideNoticeSeen: settings.floatingHideNoticeSeen,
+      floatingWindowPosition: settings.floatingWindowPosition,
     });
   } catch {
     showRecordingNotification({
@@ -1198,6 +1206,7 @@ if (hasSingleInstanceLock)
         apiRoutes: settings.apiRoutes,
         floatingWindowVisible: settings.floatingWindowVisible,
         floatingHideNoticeSeen: settings.floatingHideNoticeSeen,
+        floatingWindowPosition: settings.floatingWindowPosition,
       });
       publishSnapshot({});
       return settings;
@@ -1218,6 +1227,7 @@ if (hasSingleInstanceLock)
         apiRoutes: settings.apiRoutes,
         floatingWindowVisible: settings.floatingWindowVisible,
         floatingHideNoticeSeen: settings.floatingHideNoticeSeen,
+        floatingWindowPosition: settings.floatingWindowPosition,
       });
       autoLaunchStatus = guarded;
       publishSnapshot({});
@@ -1337,6 +1347,7 @@ if (hasSingleInstanceLock)
     });
     ipcMain.handle("floating:drag-end", () => {
       floatingDragOffset = null;
+      rememberFloatingBallPosition();
       return true;
     });
 

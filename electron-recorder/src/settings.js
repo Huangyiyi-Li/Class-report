@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   autoLaunch: false,
   floatingWindowVisible: false,
   floatingHideNoticeSeen: false,
+  floatingWindowPosition: null,
   autoRecordEnabled: true,
   inputDevice: "default",
   apiRoutes: PRODUCTION_API_ROUTES,
@@ -100,7 +101,17 @@ function validatePersisted(payload) {
     if (Object.hasOwn(payload, key) && typeof payload[key] !== "boolean")
       throw new TypeError(`${key} must be boolean`);
   }
+  const position = payload.floatingWindowPosition;
+  const floatingWindowPosition =
+    position &&
+    Number.isSafeInteger(position.x) &&
+    Number.isSafeInteger(position.y) &&
+    Math.abs(position.x) <= 10000000 &&
+    Math.abs(position.y) <= 10000000
+      ? { x: position.x, y: position.y }
+      : null;
   return {
+    floatingWindowPosition,
     floatingWindowVisible: payload.floatingWindowVisible ?? false,
     floatingHideNoticeSeen: payload.floatingHideNoticeSeen ?? false,
     autoLaunch: validateAutoLaunchValue(payload.autoLaunch),

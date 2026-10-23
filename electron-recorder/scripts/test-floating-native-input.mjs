@@ -70,8 +70,6 @@ if (
       );
       if (!floating) throw new Error("floating window did not load");
       console.log("[floating-native-stage] floating renderer ready");
-      if (process.env.RECORDER_NATIVE_FOCUSABLE === "1")
-        floating.setFocusable(true);
       if (process.env.RECORDER_FLOATING_NATIVE_READY_ONLY === "1") {
         clearTimeout(deadline);
         console.log("[floating-native-ready] passed");
@@ -120,15 +118,26 @@ if (
       const dragEvents = await floating.webContents.executeJavaScript(
         "window.__pointerEvents"
       );
-      await floating.webContents.executeJavaScript(
-        "window.recorderShell.hideFloat()"
+      const finalClosePoint = { x: afterDrag.x + 74, y: afterDrag.y + 12 };
+      const nativeCloseAfterDrag = await inject([
+        { ...finalClosePoint, button: "down" },
+        { ...finalClosePoint, button: "up" },
+      ]);
+      const closeAfterDragHidden = Boolean(
+        await waitFor(() => !floating.isVisible(), 1500)
       );
+      if (!closeAfterDragHidden)
+        await floating.webContents.executeJavaScript(
+          "window.recorderShell.hideFloat()"
+        );
       await floating.webContents.executeJavaScript(
         "window.recorderShell.showFloat()"
       );
+      await waitFor(() => floating.isVisible());
       const afterReopen = floating.getBounds();
       const result = {
         closeHidden,
+        closeAfterDragHidden,
         dragged: afterDrag.x !== beforeDrag.x || afterDrag.y !== beforeDrag.y,
         positionRestored:
           afterReopen.x === afterDrag.x && afterReopen.y === afterDrag.y,
@@ -146,12 +155,18 @@ if (
         dragEvents,
         nativeClose,
         nativeDrag,
+        nativeCloseAfterDrag,
       };
       console.log("[floating-native-input]", JSON.stringify(result));
       clearTimeout(deadline);
       app.isQuitting = true;
       app.exit(
-        result.closeHidden && result.dragged && result.positionRestored ? 0 : 1
+        result.closeHidden &&
+          result.closeAfterDragHidden &&
+          result.dragged &&
+          result.positionRestored
+          ? 0
+          : 1
       );
     } catch (error) {
       console.error(error);

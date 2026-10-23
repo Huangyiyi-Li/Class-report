@@ -126,7 +126,6 @@ jobs:
       - name: Run Windows native floating pointer regression
         run: |
           npm run build
-          $env:RECORDER_NATIVE_FOCUSABLE = "1"
           $failed = $false
           foreach ($factor in @("1", "1.25", "1.5")) {
             $env:RECORDER_NATIVE_SCALE_FACTOR = $factor
