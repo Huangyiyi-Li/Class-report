@@ -241,3 +241,7 @@ SHA256 1bf1534daa34f6e2d7f02f84e38444701d872b381f2b59f3209c9fe3caabf732
 ### 修正后 Windows 原生鼠标回归
 
 [39935557854](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39935557854) 的原生输入步骤通过：100%/125%/150% 下首次 ×、拖动、拖动后 ×、连续三轮原生关闭/再次显示恢复坐标、窗口宽度不累积均通过。该步骤是源码配合假的 worker；安装包正常启动与现场验收仍分别记录。
+
+### `.38` 发布与安装包证据
+
+[发布 CI 39936049238](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39936049238) 全部通过，含原生鼠标三种缩放、打包界面和不设置烟测模式的真实 worker 正常启动。[v0.2.0-codex.38](https://github.com/Huangyiyi-Li/Class-report/releases/tag/v0.2.0-codex.38) 已发布内部测试候选。下载 Setup 后 SHA-256 与 GitHub digest 一致，SHA-512 与 codex.yml 一致；原生输入结果和文件校验见 [证据 JSON](evidence/FLOATING-INPUT-2026-10-23/codex.38-native-pointer.json)。现场原设备鼠标、真实系统 DPI/多屏、白边和麦克风验收尚未完成。

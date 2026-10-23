@@ -4,4 +4,4 @@
 - 拖动或隐藏时记住位置，再次打开恢复原位置；原显示器移除后移回可见工作区。
 - 增加 Windows 原生鼠标检查：点 × 隐藏、拖动、拖动后关闭、重新开启恢复位置，覆盖 100%/125%/150% 强制缩放。
 
-本地 Node 224 项、Python 233 项通过（1 项跳过），前端构建和 Mac Electron 界面烟测通过。[Windows 原生鼠标回归](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39935557854) 三种缩放通过，含连续三轮关闭/重开位置和宽度稳定检查。安装包自动化以对应 CI 为准，现场安装包复测待完成；不能将源码原生鼠标回归等同学校现场验收。关闭隐藏不改变录音状态。
+本地 Node 224 项、Python 233 项通过（1 项跳过），前端构建和 Mac Electron 界面烟测通过。[Windows 原生鼠标回归](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39935557854) 三种缩放通过，含连续三轮关闭/重开位置和宽度稳定检查。[发布 CI](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39936049238) 已通过 Python/Node、原生鼠标、Passport、打包资源、打包界面和真实 worker 正常启动门禁。现场安装包复测待完成；不能将源码原生鼠标回归等同学校现场验收。关闭隐藏不改变录音状态。

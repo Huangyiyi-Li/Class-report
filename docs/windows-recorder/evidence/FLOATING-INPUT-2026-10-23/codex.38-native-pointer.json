@@ -1,0 +1,556 @@
+{
+  "release": "v0.2.0-codex.38",
+  "tagCommit": "f8d8e2f",
+  "ci": "https://github.com/Huangyiyi-Li/Class-report/actions/runs/39936049238",
+  "nativeSourceWithFakeWorker": true,
+  "forcedScaleNotFieldMultiMonitor": true,
+  "packagedNormalStartPassed": true,
+  "setupSha256": "312112a9449e64c49d1aae05f55aa20c6db4cd4791be7b144a29707c27a36cf0",
+  "githubDigestMatch": true,
+  "updaterSha512Match": true,
+  "results": [
+    {
+      "closeHidden": true,
+      "closeAfterDragHidden": true,
+      "dragged": true,
+      "positionRestored": true,
+      "sizeStable": true,
+      "reopenCycles": [
+        {
+          "hidden": true,
+          "bounds": {
+            "x": 310,
+            "y": 280,
+            "width": 88,
+            "height": 39
+          }
+        },
+        {
+          "hidden": true,
+          "bounds": {
+            "x": 310,
+            "y": 280,
+            "width": 88,
+            "height": 39
+          }
+        },
+        {
+          "hidden": true,
+          "bounds": {
+            "x": 310,
+            "y": 280,
+            "width": 88,
+            "height": 39
+          }
+        }
+      ],
+      "windowHandle": "328236",
+      "focusable": true,
+      "scaleFactor": 1,
+      "beforeClose": {
+        "x": 220,
+        "y": 220,
+        "width": 88,
+        "height": 39
+      },
+      "beforeDrag": {
+        "x": 220,
+        "y": 220,
+        "width": 88,
+        "height": 39
+      },
+      "afterDrag": {
+        "x": 310,
+        "y": 280,
+        "width": 88,
+        "height": 39
+      },
+      "afterReopen": {
+        "x": 310,
+        "y": 280,
+        "width": 88,
+        "height": 39
+      },
+      "closeEvents": [
+        {
+          "kind": "pointerdown",
+          "target": "floating-close",
+          "x": 294,
+          "y": 232
+        },
+        {
+          "kind": "pointerup",
+          "target": "floating-close",
+          "x": 294,
+          "y": 232
+        },
+        {
+          "kind": "click",
+          "target": "floating-close",
+          "x": 294,
+          "y": 232
+        }
+      ],
+      "dragEvents": [
+        {
+          "kind": "pointerdown",
+          "target": "floating-status-bubble tone-danger",
+          "x": 244,
+          "y": 232
+        },
+        {
+          "kind": "pointerup",
+          "target": "floating-status-bubble tone-danger",
+          "x": 334,
+          "y": 292
+        },
+        {
+          "kind": "click",
+          "target": "floating-status-bubble tone-danger",
+          "x": 334,
+          "y": 292
+        }
+      ],
+      "nativeClose": [
+        {
+          "root": "328236",
+          "x": 294,
+          "hitTest": 1,
+          "y": 232
+        },
+        {
+          "root": "328236",
+          "x": 294,
+          "hitTest": 1,
+          "y": 232
+        }
+      ],
+      "nativeDrag": [
+        {
+          "y": 232,
+          "hitTest": 1,
+          "x": 244,
+          "root": "328236"
+        },
+        {
+          "y": 242,
+          "hitTest": 1,
+          "x": 259,
+          "root": "328236"
+        },
+        {
+          "y": 252,
+          "hitTest": 1,
+          "x": 274,
+          "root": "328236"
+        },
+        {
+          "y": 262,
+          "hitTest": 1,
+          "x": 289,
+          "root": "328236"
+        },
+        {
+          "y": 272,
+          "hitTest": 1,
+          "x": 304,
+          "root": "328236"
+        },
+        {
+          "y": 282,
+          "hitTest": 1,
+          "x": 319,
+          "root": "328236"
+        },
+        {
+          "y": 292,
+          "hitTest": 1,
+          "x": 334,
+          "root": "328236"
+        },
+        {
+          "y": 292,
+          "hitTest": 1,
+          "x": 334,
+          "root": "328236"
+        }
+      ],
+      "nativeCloseAfterDrag": [
+        {
+          "y": 292,
+          "root": "328236",
+          "x": 384,
+          "hitTest": 1
+        },
+        {
+          "y": 292,
+          "root": "328236",
+          "x": 384,
+          "hitTest": 1
+        }
+      ]
+    },
+    {
+      "closeHidden": true,
+      "closeAfterDragHidden": true,
+      "dragged": true,
+      "positionRestored": true,
+      "sizeStable": true,
+      "reopenCycles": [
+        {
+          "hidden": true,
+          "bounds": {
+            "x": 309,
+            "y": 280,
+            "width": 89,
+            "height": 32
+          }
+        },
+        {
+          "hidden": true,
+          "bounds": {
+            "x": 309,
+            "y": 280,
+            "width": 89,
+            "height": 32
+          }
+        },
+        {
+          "hidden": true,
+          "bounds": {
+            "x": 309,
+            "y": 280,
+            "width": 89,
+            "height": 32
+          }
+        }
+      ],
+      "windowHandle": "262314",
+      "focusable": true,
+      "scaleFactor": 1.25,
+      "beforeClose": {
+        "x": 220,
+        "y": 220,
+        "width": 90,
+        "height": 32
+      },
+      "beforeDrag": {
+        "x": 220,
+        "y": 220,
+        "width": 91,
+        "height": 32
+      },
+      "afterDrag": {
+        "x": 309,
+        "y": 280,
+        "width": 89,
+        "height": 32
+      },
+      "afterReopen": {
+        "x": 309,
+        "y": 280,
+        "width": 89,
+        "height": 32
+      },
+      "closeEvents": [
+        {
+          "kind": "pointerdown",
+          "target": "floating-close",
+          "x": 293.6000061035156,
+          "y": 232
+        },
+        {
+          "kind": "pointerup",
+          "target": "floating-close",
+          "x": 293.6000061035156,
+          "y": 232
+        },
+        {
+          "kind": "click",
+          "target": "floating-close",
+          "x": 293,
+          "y": 232
+        }
+      ],
+      "dragEvents": [
+        {
+          "kind": "pointerdown",
+          "target": "floating-status-bubble tone-danger",
+          "x": 244,
+          "y": 232
+        },
+        {
+          "kind": "pointerup",
+          "target": "floating-status-bubble tone-danger",
+          "x": 333.6000061035156,
+          "y": 292
+        },
+        {
+          "kind": "click",
+          "target": "floating-status-bubble tone-danger",
+          "x": 333,
+          "y": 292
+        }
+      ],
+      "nativeClose": [
+        {
+          "y": 290,
+          "hitTest": 1,
+          "x": 367,
+          "root": "262314"
+        },
+        {
+          "y": 290,
+          "hitTest": 1,
+          "x": 367,
+          "root": "262314"
+        }
+      ],
+      "nativeDrag": [
+        {
+          "root": "262314",
+          "y": 290,
+          "hitTest": 1,
+          "x": 305
+        },
+        {
+          "root": "262314",
+          "y": 302,
+          "hitTest": 1,
+          "x": 323
+        },
+        {
+          "root": "262314",
+          "y": 315,
+          "hitTest": 1,
+          "x": 342
+        },
+        {
+          "root": "262314",
+          "y": 327,
+          "hitTest": 1,
+          "x": 361
+        },
+        {
+          "root": "262314",
+          "y": 340,
+          "hitTest": 1,
+          "x": 380
+        },
+        {
+          "root": "262314",
+          "y": 352,
+          "hitTest": 1,
+          "x": 398
+        },
+        {
+          "root": "262314",
+          "y": 365,
+          "hitTest": 1,
+          "x": 417
+        },
+        {
+          "root": "262314",
+          "y": 365,
+          "hitTest": 1,
+          "x": 417
+        }
+      ],
+      "nativeCloseAfterDrag": [
+        {
+          "hitTest": 1,
+          "root": "262314",
+          "x": 478,
+          "y": 365
+        },
+        {
+          "hitTest": 1,
+          "root": "262314",
+          "x": 478,
+          "y": 365
+        }
+      ]
+    },
+    {
+      "closeHidden": true,
+      "closeAfterDragHidden": true,
+      "dragged": true,
+      "positionRestored": true,
+      "sizeStable": true,
+      "reopenCycles": [
+        {
+          "hidden": true,
+          "bounds": {
+            "x": 310,
+            "y": 280,
+            "width": 88,
+            "height": 26
+          }
+        },
+        {
+          "hidden": true,
+          "bounds": {
+            "x": 310,
+            "y": 280,
+            "width": 88,
+            "height": 26
+          }
+        },
+        {
+          "hidden": true,
+          "bounds": {
+            "x": 310,
+            "y": 280,
+            "width": 88,
+            "height": 26
+          }
+        }
+      ],
+      "windowHandle": "459358",
+      "focusable": true,
+      "scaleFactor": 1.5,
+      "beforeClose": {
+        "x": 220,
+        "y": 220,
+        "width": 90,
+        "height": 26
+      },
+      "beforeDrag": {
+        "x": 220,
+        "y": 220,
+        "width": 90,
+        "height": 26
+      },
+      "afterDrag": {
+        "x": 310,
+        "y": 280,
+        "width": 88,
+        "height": 26
+      },
+      "afterReopen": {
+        "x": 310,
+        "y": 280,
+        "width": 88,
+        "height": 26
+      },
+      "closeEvents": [
+        {
+          "kind": "pointerdown",
+          "target": "floating-close",
+          "x": 294,
+          "y": 232
+        },
+        {
+          "kind": "pointerup",
+          "target": "floating-close",
+          "x": 294,
+          "y": 232
+        },
+        {
+          "kind": "click",
+          "target": "floating-close",
+          "x": 294,
+          "y": 232
+        }
+      ],
+      "dragEvents": [
+        {
+          "kind": "pointerdown",
+          "target": "floating-status-bubble tone-danger",
+          "x": 244,
+          "y": 232
+        },
+        {
+          "kind": "pointerup",
+          "target": "floating-status-bubble tone-danger",
+          "x": 334,
+          "y": 292
+        },
+        {
+          "kind": "click",
+          "target": "floating-status-bubble tone-danger",
+          "x": 334,
+          "y": 292
+        }
+      ],
+      "nativeClose": [
+        {
+          "hitTest": 1,
+          "y": 348,
+          "root": "459358",
+          "x": 441
+        },
+        {
+          "hitTest": 1,
+          "y": 348,
+          "root": "459358",
+          "x": 441
+        }
+      ],
+      "nativeDrag": [
+        {
+          "root": "459358",
+          "y": 348,
+          "x": 366,
+          "hitTest": 1
+        },
+        {
+          "root": "459358",
+          "y": 363,
+          "x": 388,
+          "hitTest": 1
+        },
+        {
+          "root": "459358",
+          "y": 378,
+          "x": 411,
+          "hitTest": 1
+        },
+        {
+          "root": "459358",
+          "y": 393,
+          "x": 433,
+          "hitTest": 1
+        },
+        {
+          "root": "459358",
+          "y": 408,
+          "x": 456,
+          "hitTest": 1
+        },
+        {
+          "root": "459358",
+          "y": 423,
+          "x": 478,
+          "hitTest": 1
+        },
+        {
+          "root": "459358",
+          "y": 438,
+          "x": 501,
+          "hitTest": 1
+        },
+        {
+          "root": "459358",
+          "y": 438,
+          "x": 501,
+          "hitTest": 1
+        }
+      ],
+      "nativeCloseAfterDrag": [
+        {
+          "root": "459358",
+          "y": 438,
+          "x": 576,
+          "hitTest": 1
+        },
+        {
+          "root": "459358",
+          "y": 438,
+          "x": 576,
+          "hitTest": 1
+        }
+      ]
+    }
+  ]
+}
