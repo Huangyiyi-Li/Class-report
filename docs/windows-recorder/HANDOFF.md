@@ -17,9 +17,9 @@
 
 `v0.2.0-codex.37` 内部测试候选包含默认托盘运行、按需圆角胶囊悬浮窗和白边风险收敛；Windows 真机验收未完成。交互约定、官方资料、已确认与待验证的白边原因、现场验收矩阵见 [FLOATING_WINDOW_REDESIGN_2026-10-23.md](FLOATING_WINDOW_REDESIGN_2026-10-23.md)。不能将浏览器截图或自动化测试视为 Windows 白边修复证据。
 
-## 1. 新 Windows 电脑接手步骤
+`.38` 源码候选修复 `.37` 鼠标拖动丢失和重开位置被覆盖：允许正常接收鼠标焦点，仍以 `showInactive()` 显示；拖动结束及隐藏前保存坐标，显示器移除后限制到可见工作区。新增 Windows 原生鼠标回归，覆盖 100%/125%/150% 缩放。调查见 [INCIDENTS.md](INCIDENTS.md)。本地 Node 224 项、Python 233 项通过（1 项跳过），构建和 Mac 界面烟测通过；[Windows 原生鼠标回归](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39935557854) 三种缩放全部通过；打包正常启动及现场复测分别确认。
 
-`.38` 源码候选修复 `.37` 鼠标拖动丢失和重开位置被覆盖：允许正常接收鼠标焦点，仍以 `showInactive()` 显示；拖动结束及隐藏前保存坐标，显示器移除后限制到可见工作区。新增 Windows 原生鼠标回归，覆盖 100%/125%/150% 缩放。调查见 [INCIDENTS.md](INCIDENTS.md)。本地 Node 224 项、Python 233 项通过（1 项跳过），构建和 Mac 界面烟测通过；最终 Windows 回归及现场复测待完成。
+## 1. 新 Windows 电脑接手步骤
 
 安装 Codex Windows 客户端、Git、Node.js 22、Python 3.11 和 GitHub CLI。不要使用 Python 3.14 构建当前 worker；CI 和现有依赖基线是 Python 3.11。
 

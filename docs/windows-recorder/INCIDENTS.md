@@ -237,3 +237,7 @@ SHA256 1bf1534daa34f6e2d7f02f84e38444701d872b381f2b59f3209c9fe3caabf732
 ### `.38` 候选首次 Windows 回归补充
 
 [39934964096](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39934964096) 三种缩放下首次关闭、拖动、拖动后关闭均成功；125% 下重开从 x=309 漂到 308，且连续 setPosition 将原生窗口宽度从 92 增到 99/100 DIP。因此该次门禁失败，未发布。后续修正对相同坐标跳过重复定位、移动时显式指定固定胶囊尺寸，不回用 getBounds 经缩放舍入后的尺寸；新增重复原生关闭/显示和宽度不累积检查。相似上游报告为 [Electron #9477](https://github.com/electron/electron/issues/9477)、[#48247](https://github.com/electron/electron/issues/48247)，后者缺少复现而关闭；本项目以自己的原生鼠标输出为直接证据。
+
+### 修正后 Windows 原生鼠标回归
+
+[39935557854](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39935557854) 的原生输入步骤通过：100%/125%/150% 下首次 ×、拖动、拖动后 ×、连续三轮原生关闭/再次显示恢复坐标、窗口宽度不累积均通过。该步骤是源码配合假的 worker；安装包正常启动与现场验收仍分别记录。
