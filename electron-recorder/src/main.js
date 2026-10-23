@@ -733,9 +733,26 @@ async function runSmokeTest() {
         buttonAriaLabel: document.querySelector(".floating-status-bubble")?.getAttribute("aria-label") || "",
         bubbleRole: document.querySelector(".floating-status-bubble")?.getAttribute("role") || "",
         scrollWidth: document.documentElement.scrollWidth,
-        scrollHeight: document.documentElement.scrollHeight
+        scrollHeight: document.documentElement.scrollHeight,
+        capsule: document.querySelector('.floating-ball-stage').getBoundingClientRect().toJSON(),
+        close: document.querySelector('.floating-close').getBoundingClientRect().toJSON()
       })
     `);
+
+    // Windows can enforce a native minimum height above the visible capsule.
+    // Exercise that geometry on all hosts, then restore the original viewport.
+    floatingBallWindow.setContentSize(FLOATING_BALL_WIDTH, 48);
+    const largerViewport = await floatingBallWindow.webContents
+      .executeJavaScript(`
+      new Promise(resolve => requestAnimationFrame(() => resolve({
+        capsuleHeight: document.querySelector('.floating-ball-stage').getBoundingClientRect().height,
+        closeBottom: document.querySelector('.floating-close').getBoundingClientRect().bottom
+      })))
+    `);
+    floatingBallWindow.setContentSize(
+      FLOATING_BALL_WIDTH,
+      floatingResult.height
+    );
 
     const recordingBeforeHide = workerSnapshot.recording;
     const floatingStartedHidden =
@@ -835,7 +852,13 @@ async function runSmokeTest() {
       floatingResult.hasBubble &&
       !floatingResult.hasMainShell &&
       floatingResult.width === FLOATING_BALL_WIDTH &&
-      floatingResult.height === FLOATING_BALL_HEIGHT &&
+      floatingResult.height >= FLOATING_BALL_HEIGHT &&
+      floatingResult.capsule.width === FLOATING_BALL_WIDTH &&
+      floatingResult.capsule.height === FLOATING_BALL_HEIGHT &&
+      floatingResult.close.top >= 0 &&
+      floatingResult.close.bottom <= FLOATING_BALL_HEIGHT &&
+      largerViewport.capsuleHeight === FLOATING_BALL_HEIGHT &&
+      largerViewport.closeBottom <= FLOATING_BALL_HEIGHT &&
       floatingResult.htmlBackground === "rgba(0, 0, 0, 0)" &&
       floatingResult.bodyBackground === "rgba(0, 0, 0, 0)" &&
       floatingResult.documentTitle === "" &&
@@ -844,7 +867,7 @@ async function runSmokeTest() {
       floatingResult.buttonAriaLabel === "" &&
       floatingResult.bubbleRole === "" &&
       floatingResult.scrollWidth <= FLOATING_BALL_WIDTH &&
-      floatingResult.scrollHeight <= FLOATING_BALL_HEIGHT &&
+      floatingResult.scrollHeight <= floatingResult.height &&
       (bindingResult.skipped ||
         (bindingResult.hasOpenButton &&
           bindingResult.hasWizard &&
@@ -862,6 +885,7 @@ async function runSmokeTest() {
         main: mainResult,
         floating: floatingResult,
         floatingInteraction,
+        largerViewport,
         binding: bindingResult,
         settings: settingsResult,
         passed,

@@ -1,7 +1,7 @@
 # 课堂录音客户端悬浮窗：场景设计与白边排查
 
-日期：2026-10-23。目标链路：`feat/recorder-first-use`，基线 `0.2.0-codex.35`，候选版本 `0.2.0-codex.36`。
-状态：准备发布 `v0.2.0-codex.36` 内部测试候选；Windows 现场白边尚未复现，不能宣称已修复现场故障。
+日期：2026-10-23。目标链路：`feat/recorder-first-use`，基线 `0.2.0-codex.35`，候选版本 `0.2.0-codex.37`。
+状态：准备发布 `v0.2.0-codex.37` 内部测试候选；Windows 现场白边尚未复现，不能宣称已修复现场故障。
 
 ## 产品目标与交互
 
@@ -48,7 +48,7 @@
 
 ## 验证与验收边界
 
-本地验证：Node 218 项通过及 clean-checkout 检查通过；Python worker/timeout 233 项通过、1 项跳过；Vite 构建通过；Mac 上 Electron 35.7.5 源码烟测通过（默认隐藏、显示、点击 × 隐藏、关闭主窗口仍隐藏、模拟录音状态不变、设置窗口可用）。Electron 下载文件核对官方 SHA-256。所有烟测均使用假的 worker，不能证明真实录音或 Windows 原生边缘无白边。浏览器截图 [胶囊预览](evidence/FLOATING-WINDOW-2026-10-23/preview.png) 使用真实编译页面置于 88×24 iframe，检查浅/深背景的页面样式；不是 Windows 原生窗口截图。
+本地验证：Node 219 项通过及 clean-checkout 检查通过；Python worker/timeout 233 项通过、1 项跳过；Vite 构建通过；Mac 上 Electron 35.7.5 源码烟测通过（默认隐藏、显示、点击 × 隐藏、关闭主窗口仍隐藏、模拟录音状态不变、设置窗口可用）。Electron 下载文件核对官方 SHA-256。所有烟测均使用假的 worker，不能证明真实录音或 Windows 原生边缘无白边。浏览器截图 [胶囊预览](evidence/FLOATING-WINDOW-2026-10-23/preview.png) 使用真实编译页面置于 88×24 iframe，检查浅/深背景的页面样式；不是 Windows 原生窗口截图。
 
 Windows 同一设备、同一新安装包必须补验：
 
@@ -60,3 +60,11 @@ Windows 同一设备、同一新安装包必须补验：
 6. 实际开始、暂停、恢复、拔麦、磁盘不可用；同一持续故障不重复提醒，恢复后再次故障可提醒。
 7. 断网/补传失败仍录音时不提示“录音中断”；通知点击能打开主界面。分别检查系统通知开启/关闭/勿扰状态。
 8. 不使用 `ELECTRON_SMOKE_TEST` 的真实 worker 录音和正常安装包启动。
+
+## `.36` Windows 构建阻断与 `.37` 修正
+
+[Windows CI 39888240585](https://github.com/Huangyiyi-Li/Class-report/actions/runs/39888240585) 在 `.36` 观察到请求 88×24、实际渲染视口 88×39；其余绑定、设置、隐藏交互通过，界面烟测整体失败，Release 未创建。原布局 `height:100vh` 会跟随原生最小高度变厚，底部还可能被 24px 原生 region 裁切。
+
+`.37` 将可见组件固定为 88×24，不依赖原生最小高度；Windows 外围仍由同样 88×24 的胶囊 region 限定。界面烟测同时检查可见组件尺寸、关闭按钮完整位于 24px 内，以及主动将原生视口增至 48px 后可见组件仍为 24px。允许原生视口高于组件并非放行更厚的可见状态条。
+
+[上游 issue #23200](https://github.com/electron/electron/issues/23200) 也有 Windows 最小窗口高度及用 setShape 限定可见部分的历史反馈；本次 39px 以自己的 CI 输出为直接证据。`.36` 标签保留且不复用。

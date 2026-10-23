@@ -1,0 +1,60 @@
+{
+  "run": "https://github.com/Huangyiyi-Li/Class-report/actions/runs/39888240585",
+  "smoke": {
+    "main": {
+      "bridge": true,
+      "hasMainShell": true,
+      "hasBubble": false,
+      "hash": "",
+      "width": 1008,
+      "height": 640,
+      "scrollWidth": 1008,
+      "scrollHeight": 640,
+      "overflowing": []
+    },
+    "floating": {
+      "bridge": true,
+      "hasMainShell": false,
+      "hasBubble": true,
+      "hash": "#floating-ball",
+      "width": 88,
+      "height": 39,
+      "htmlBackground": "rgba(0, 0, 0, 0)",
+      "bodyBackground": "rgba(0, 0, 0, 0)",
+      "documentTitle": "",
+      "bubbleTag": "DIV",
+      "buttonTitle": "",
+      "buttonAriaLabel": "",
+      "bubbleRole": "",
+      "scrollWidth": 88,
+      "scrollHeight": 39
+    },
+    "floatingInteraction": {
+      "startedHidden": true,
+      "canShow": true,
+      "staysHidden": true,
+      "preferenceHidden": true,
+      "recordingUnchanged": true
+    },
+    "binding": {
+      "skipped": false,
+      "hasOpenButton": true,
+      "hasWizard": true,
+      "hasContextBar": true,
+      "hasProgress": true,
+      "hasMockBadge": true,
+      "reachedBindingType": true,
+      "errors": [],
+      "overflowing": []
+    },
+    "settings": {
+      "hasModal": true,
+      "hasFooter": true,
+      "footerVisible": true,
+      "modalBottom": 640,
+      "footerBottom": 640,
+      "errors": []
+    },
+    "passed": false
+  }
+}

@@ -94,3 +94,14 @@ test("startup respects visibility preference and puts configured clients in the 
     /show: !workerLocation \|\| Boolean\(process\.env\.ELECTRON_SMOKE_TEST\)/
   );
 });
+
+test("capsule layout remains 24px tall when Windows imposes a larger native viewport", () => {
+  const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+  const stage = css.slice(
+    css.indexOf(".floating-ball-stage {"),
+    css.indexOf(".floating-status-bubble {")
+  );
+  assert.match(stage, /width: 88px/);
+  assert.match(stage, /height: 24px/);
+  assert.doesNotMatch(stage, /100vh/);
+});
